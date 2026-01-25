@@ -17,7 +17,12 @@ from typing import Any, Dict, List, Sequence, Union
 import numpy as np
 from numpy.typing import NDArray
 
-import asset_asrl as ast  # type: ignore
+try:
+    import asset_asrl as ast  # type: ignore
+except Exception:  # pragma: no cover
+    ast = None  # type: ignore
+
+from .options import SolverOptions
 
 from ..dynamics import TwoBodyECI
 from ..specs import TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec
@@ -27,34 +32,184 @@ from ..astro.units import default_units
 from ..astro.lambert import LambertSeed, select_best_lambert_seed
 from ..astro.kepler import kepler_dense_guess, estimate_orbital_period_s, propagate_cartesian_rv
 
-vf = ast.VectorFunctions
-oc = ast.OptimalControl
-Tmodes = oc.TranscriptionModes
+if ast is not None:  # pragma: no cover
+    vf = ast.VectorFunctions
+    oc = ast.OptimalControl
+    Tmodes = oc.TranscriptionModes
+else:  # pragma: no cover
+    vf = None  # type: ignore
+    oc = None  # type: ignore
+    Tmodes = None  # type: ignore
 
 TrajArray = NDArray[np.float64]
+
+def _require_asset() -> None:
+    """Raise a clear error if ASSET is not installed."""
+    if ast is None:
+        raise RuntimeError(
+            "asset_asrl is required for optimization solves. Install it (and its compiled dependencies) "
+            "in your environment before calling octavian.solvers.*"
+        )
+
 
 
 @dataclass
 class RendezvousResult:
-    """Common result returned by rendezvous solvers."""
+    """Result returned by rendezvous solvers.
+
+    Attributes:
+        converged: Whether ASSET reported convergence.
+        traj: Dense trajectory array. For the current impulsive problems this is
+            typically ``[x0..x5, t]`` where ``t`` is the phase time variable.
+        maneuvers: Maneuver markers derived from the solution.
+        last_obj: Last objective value returned by ASSET.
+        info: Free-form metadata (seed selection, bounds used, etc.).
+
+    The result object is designed to be the *currency* of studies:
+    it supports human-readable summaries and simple persistence.
+    """
+
     converged: bool
     traj: TrajArray
     maneuvers: List[Maneuver] = field(default_factory=list)
     last_obj: float = float("nan")
     info: Dict[str, Any] = field(default_factory=dict)
 
+    def tf_s(self) -> float:
+        """Return the final time-of-flight in seconds from the trajectory."""
+        if self.traj.size == 0:
+            return float("nan")
+        return float(self.traj[-1, -1])
 
-def solve(spec: Union[TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec]) -> RendezvousResult:
+    def total_dv_mps(self) -> float:
+        """Return total delta-v magnitude sum across maneuvers [m/s]."""
+        if not self.maneuvers:
+            return 0.0
+        return float(sum(np.linalg.norm(m.dv_mps) for m in self.maneuvers))
+
+    def summary(self) -> str:
+        """Return a compact, human-readable summary string."""
+        lines: List[str] = []
+        status = "CONVERGED" if self.converged else "NOT CONVERGED"
+        lines.append(f"Octavian result: {status}")
+        lines.append(f"  tf: {self.tf_s():.3f} s")
+        lines.append(f"  total dv: {self.total_dv_mps():.6f} m/s")
+        if np.isfinite(self.last_obj):
+            lines.append(f"  last objective: {self.last_obj:.6g}")
+        if self.maneuvers:
+            lines.append("  maneuvers:")
+            for m in self.maneuvers:
+                dv = float(np.linalg.norm(m.dv_mps))
+                lines.append(f"    - {m.name}: t={m.t_s:.3f} s | |dv|={dv:.6f} m/s")
+        # show a couple of useful info keys, without dumping everything
+        for k in ("seed", "nrev", "precoast_t1_s", "study_index"):
+            if k in self.info:
+                lines.append(f"  {k}: {self.info[k]!r}")
+        return "\n".join(lines)
+
+    def to_npz(self, path: str | 'Path') -> None:
+        """Save this result to a ``.npz`` file.
+
+        The file contains:
+            - traj: float array
+            - converged: int (0/1)
+            - last_obj: float
+            - maneuver_r_m: (M,3) float
+            - maneuver_dv_mps: (M,3) float
+            - maneuver_t_s: (M,) float
+            - maneuver_name: (M,) object array
+            - info_json: UTF-8 JSON string (object array scalar)
+
+        Args:
+            path: Output file path.
+        """
+        from pathlib import Path as _Path
+        import json as _json
+
+        p = _Path(path)
+        r = np.asarray([m.r_m for m in self.maneuvers], dtype=float) if self.maneuvers else np.empty((0, 3), dtype=float)
+        dv = np.asarray([m.dv_mps for m in self.maneuvers], dtype=float) if self.maneuvers else np.empty((0, 3), dtype=float)
+        t = np.asarray([m.t_s for m in self.maneuvers], dtype=float) if self.maneuvers else np.empty((0,), dtype=float)
+        names = np.asarray([m.name for m in self.maneuvers], dtype=object) if self.maneuvers else np.empty((0,), dtype=object)
+        info_json = _json.dumps(self.info, ensure_ascii=False)
+        np.savez_compressed(
+            p,
+            traj=np.asarray(self.traj, dtype=float),
+            converged=np.asarray(int(bool(self.converged)), dtype=np.int8),
+            last_obj=np.asarray(float(self.last_obj), dtype=float),
+            maneuver_r_m=r,
+            maneuver_dv_mps=dv,
+            maneuver_t_s=t,
+            maneuver_name=names,
+            info_json=np.asarray(info_json, dtype=object),
+        )
+
+    @classmethod
+    def from_npz(cls, path: str | 'Path') -> 'RendezvousResult':
+        """Load a :class:`RendezvousResult` from a ``.npz`` file."""
+        from pathlib import Path as _Path
+        import json as _json
+
+        p = _Path(path)
+        data = np.load(p, allow_pickle=True)
+        traj = np.asarray(data["traj"], dtype=float)
+        converged = bool(int(data["converged"]))
+        last_obj = float(data["last_obj"])
+        info_json = str(data["info_json"].item())
+        info = _json.loads(info_json) if info_json else {}
+        r = np.asarray(data["maneuver_r_m"], dtype=float)
+        dv = np.asarray(data["maneuver_dv_mps"], dtype=float)
+        t = np.asarray(data["maneuver_t_s"], dtype=float)
+        names = np.asarray(data["maneuver_name"], dtype=object)
+        maneuvers = [
+            Maneuver(r_m=r[i], t_s=float(t[i]), dv_mps=dv[i], name=str(names[i]))
+            for i in range(len(t))
+        ]
+        return cls(converged=converged, traj=traj, maneuvers=maneuvers, last_obj=last_obj, info=info)
+
+    def to_json(self, *, indent: int | None = None) -> str:
+        """Serialize result metadata (not the full trajectory) to JSON."""
+        import json as _json
+
+        obj = {
+            "converged": bool(self.converged),
+            "last_obj": float(self.last_obj),
+            "tf_s": self.tf_s(),
+            "total_dv_mps": self.total_dv_mps(),
+            "maneuvers": [
+                {
+                    "name": m.name,
+                    "t_s": float(m.t_s),
+                    "r_m": [float(x) for x in m.r_m],
+                    "dv_mps": [float(x) for x in m.dv_mps],
+                }
+                for m in self.maneuvers
+            ],
+            "info": self.info,
+        }
+        return _json.dumps(obj, indent=indent, ensure_ascii=False)
+
+
+def solve(
+    spec: Union[TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec],
+    *,
+    options: SolverOptions | None = None,
+) -> RendezvousResult:
     """Dispatch to the appropriate rendezvous solver."""
     if isinstance(spec, TwoImpulseFreeTimeSpec):
-        return solve_two_impulse_free_time(spec)
+        return solve_two_impulse_free_time(spec, options=options)
     if isinstance(spec, TwoImpulsePreCoastSpec):
-        return solve_two_impulse_precoast(spec)
+        return solve_two_impulse_precoast(spec, options=options)
     raise TypeError(f"Unsupported spec type: {type(spec).__name__}")
 
 
-def solve_two_impulse_free_time(spec: TwoImpulseFreeTimeSpec) -> RendezvousResult:
+def solve_two_impulse_free_time(
+    spec: TwoImpulseFreeTimeSpec,
+    *,
+    options: SolverOptions | None = None,
+) -> RendezvousResult:
     """Two-impulse rendezvous with a single coast phase and bounded free final time."""
+    _require_asset()
     tfmin, tfmax = map(float, spec.tf_bounds_s)
     if not (tfmin > 0.0 and tfmax > tfmin):
         raise ValueError("tf_bounds_s must satisfy 0 < tfmin < tfmax")
@@ -127,13 +282,14 @@ def solve_two_impulse_free_time(spec: TwoImpulseFreeTimeSpec) -> RendezvousResul
     ocp = oc.OptimalControlProblem()
     ocp.addPhase(phase)
 
-    ocp.optimizer.PrintLevel = 0
-    ocp.optimizer.MaxLSIters = 2
-    ocp.optimizer.set_QPOrderingMode("MINDEG")
+    opts = options or SolverOptions()
+    ocp.optimizer.PrintLevel = int(opts.print_level)
+    ocp.optimizer.MaxLSIters = int(opts.max_ls_iters)
+    ocp.optimizer.set_QPOrderingMode(str(opts.qp_ordering_mode))
 
-    phase.setAutoScaling(True)
+    phase.setAutoScaling(bool(opts.enable_auto_scaling))
     phase.setUnits(R=r_unit, V=v_unit, t=t_unit)
-    phase.setAdaptiveMesh(True)
+    phase.setAdaptiveMesh(bool(opts.enable_adaptive_mesh))
     ocp.setAutoScaling(True,True)
     ocp.setAdaptiveMesh(True)
 
@@ -171,8 +327,13 @@ def solve_two_impulse_free_time(spec: TwoImpulseFreeTimeSpec) -> RendezvousResul
     )
 
 
-def solve_two_impulse_precoast(spec: TwoImpulsePreCoastSpec) -> RendezvousResult:
+def solve_two_impulse_precoast(
+    spec: TwoImpulsePreCoastSpec,
+    *,
+    options: SolverOptions | None = None,
+) -> RendezvousResult:
     """Two-impulse rendezvous with variable pre-coast before the first impulse."""
+    _require_asset()
     t1min, t1max = map(float, spec.t1_bounds_s)
     tfmin, tfmax = map(float, spec.tf_bounds_s)
 
@@ -184,6 +345,8 @@ def solve_two_impulse_precoast(spec: TwoImpulsePreCoastSpec) -> RendezvousResult
         raise ValueError("tf must be after t1: require tfmax > t1min")
 
     r_unit, v_unit, t_unit = default_units(spec)
+    _require_asset()
+
     mu = float(spec.mu_m3ps2)
     ode = TwoBodyECI(mu_m3ps2=mu)
     t0 = 0.0

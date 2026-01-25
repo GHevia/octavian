@@ -1,5 +1,6 @@
 import numpy as np
 from octavian.specs import BoundaryState, TwoImpulseFreeTimeSpec
+from octavian.solvers import SolverOptions
 from octavian.solvers.rendezvous import solve_two_impulse_free_time
 from octavian.viz import save_trajectory_html
 
@@ -20,11 +21,12 @@ spec = TwoImpulseFreeTimeSpec(
     nrevs_to_try=(0, 1),
 )
 
-res = solve_two_impulse_free_time(spec)
-print("Converged:", res.converged)
-print("tf [s]:", res.info.get("tf_sol_s"))
-for m in res.maneuvers:
-    print(m.name, "|dv| [m/s] =", np.linalg.norm(m.dv_mps))
+opts = SolverOptions(print_level=0)
+res = solve_two_impulse_free_time(spec, options=opts)
+print(res.summary())
+
+# Persist result (trajectory + maneuvers + metadata)
+res.to_npz("two_impulse_free_time.npz")
 
 save_trajectory_html(
     traj=res.traj,

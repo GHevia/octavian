@@ -4,14 +4,43 @@ build-backend = "hatchling.build"
 
 [project]
 name = "octavian"
-version = "0.1.1"
+version = "0.1.2"
 description = "Trajectory optimization and astrodynamics in Python using ASSET, with mission-script APIs."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Octavian Contributors" }]
-dependencies = ["numpy>=1.23"]
-optional-dependencies = { viz = ["plotly>=5.18.0"] }
+dependencies = [
+  "numpy>=1.23",
+  "plotly>=5.18.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.4",
+  "ruff>=0.6",
+  "black>=24.0",
+  "pre-commit>=3.6",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["octavian"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.setuptools.package-data]
+"octavian.viz.data" = ["*.jpg", "*.png"]

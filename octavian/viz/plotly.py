@@ -1,9 +1,20 @@
 from __future__ import annotations
+
+from importlib.resources import files
+from pathlib import Path
 from typing import Optional, Sequence
+
 import numpy as np
+
 from ..types import Maneuver
 
 EARTH_RADIUS_M = 6378137.0
+
+
+def _get_default_earth_texture_path() -> str:
+    """Return the packaged default Earth texture path."""
+    return str(files("octavian.viz.data").joinpath("cartoon_earth_map.PNG"))
+
 
 def save_trajectory_html(
     traj: np.ndarray,
@@ -16,11 +27,51 @@ def save_trajectory_html(
     maneuvers: Optional[Sequence[Maneuver]] = None,
     title: str = "octavian trajectory",
     earth_radius_m: float = EARTH_RADIUS_M,
+    # NEW: toggle textured Earth on/off
+    use_earth_texture: bool = True,
+    # If None: use packaged default. If "": disable. If path: use user-provided.
+    earth_texture_path: Optional[str] = None,
 ) -> None:
-    """Save a 3D Plotly HTML visualization of an ECI trajectory."""
+    """Save a 3D Plotly HTML visualization of an ECI trajectory.
+
+    Args:
+        traj: Trajectory array with columns [rx, ry, rz, vx, vy, vz, t] (meters, m/s, seconds).
+        out_html: Output HTML path.
+        x0_r_m: Initial position (m).
+        x0_v_mps: Initial velocity (m/s).
+        xf_r_m: Final position (m).
+        xf_v_mps: Final velocity (m/s).
+        maneuvers: Optional maneuver markers.
+        title: Plot title.
+        earth_radius_m: Earth radius used for the sphere (m).
+        use_earth_texture: If True, render Earth with a texture map (if available). If False, use a solid sphere.
+        earth_texture_path: Optional path to an equirectangular Earth texture image (2:1 aspect).
+            - None: uses packaged default texture in `octavian/viz/data`
+            - "": disables texture (solid sphere)
+            - non-empty: uses provided path (relative paths resolved from current working directory)
+    """
     import plotly.graph_objects as go
 
+    # -----------------------------
+    # Resolve texture path / toggle
+    # -----------------------------
+    if not use_earth_texture:
+        resolved_texture_path: Optional[str] = None
+    else:
+        if earth_texture_path is None:
+            resolved_texture_path = _get_default_earth_texture_path()
+        elif earth_texture_path == "":
+            resolved_texture_path = None
+        else:
+            resolved_texture_path = str(Path(earth_texture_path).expanduser())
+
+    # -----------------------------
+    # Normalize inputs
+    # -----------------------------
     traj = np.asarray(traj, float)
+    if traj.ndim != 2 or traj.shape[1] < 7:
+        raise ValueError("traj must be a 2D array with at least 7 columns: [r(3), v(3), t].")
+
     r = traj[:, 0:3]
     t = traj[:, 6]
     tf = float(t[-1])
@@ -30,32 +81,75 @@ def save_trajectory_html(
     xf_r = np.asarray(xf_r_m, float).reshape(3)
     xf_v = np.asarray(xf_v_mps, float).reshape(3)
 
-    # Earth sphere
-    nu, nv = 60, 30
-    u = np.linspace(0, 2 * np.pi, nu)
-    v = np.linspace(0, np.pi, nv)
-    uu, vv = np.meshgrid(u, v)
+    # -----------------------------
+    # Earth sphere (optionally textured)
+    # -----------------------------
     Re = float(earth_radius_m)
-    xs = Re * np.cos(uu) * np.sin(vv)
-    ys = Re * np.sin(uu) * np.sin(vv)
-    zs = Re * np.cos(vv)
 
-    earth = go.Surface(
-        x=xs, y=ys, z=zs,
-        showscale=False,
-        colorscale=[[0.0, "blue"], [1.0, "blue"]],
-        name="Earth",
-        text="Earth (spherical)",
-        hoverinfo="text"
-        # opacity=1,
-    )
+    if resolved_texture_path is not None:
+        from PIL import Image
 
+        img = Image.open(resolved_texture_path).convert("RGB")
+        img = img.resize((720, 360))  # keep modest
+
+        # Quantize to a small palette so we can build a small colorscale (<=256 stops)
+        img_q = img.quantize(colors=256, method=Image.Quantize.MEDIANCUT).convert("P")
+        palette = img_q.getpalette() or ([0, 0, 0] * 256)
+        pal = np.array(palette, dtype=np.uint8).reshape(-1, 3)  # (256, 3)
+
+        tex_idx = np.asarray(img_q, dtype=np.uint8)  # (H, W)
+        H, W = tex_idx.shape
+
+        u = np.linspace(0.0, 2.0 * np.pi, W)
+        v = np.linspace(0.0, np.pi, H)
+        uu, vv = np.meshgrid(u, v)
+
+        xs = Re * np.cos(uu) * np.sin(vv)
+        ys = Re * np.sin(uu) * np.sin(vv)
+        zs = Re * np.cos(vv)
+
+        colorscale = []
+        for k in range(256):
+            rr, gg, bb = pal[k]
+            s = k / 255.0
+            colorscale.append([s, f"rgb({int(rr)},{int(gg)},{int(bb)})"])
+
+        earth = go.Surface(
+            x=xs, y=ys, z=zs,
+            surfacecolor=tex_idx.astype(np.float64),  # 0..255
+            cmin=0, cmax=255,
+            colorscale=colorscale,
+            showscale=False,
+            name="Earth",
+            hoverinfo="skip",
+            lighting=dict(ambient=0.9, diffuse=0.8, specular=0.2, roughness=0.9),
+        )
+    else:
+        nu, nv = 60, 30
+        u = np.linspace(0, 2 * np.pi, nu)
+        v = np.linspace(0, np.pi, nv)
+        uu, vv = np.meshgrid(u, v)
+
+        xs = Re * np.cos(uu) * np.sin(vv)
+        ys = Re * np.sin(uu) * np.sin(vv)
+        zs = Re * np.cos(vv)
+
+        earth = go.Surface(
+            x=xs, y=ys, z=zs,
+            showscale=False,
+            colorscale=[[0.0, "blue"], [1.0, "blue"]],
+            name="Earth",
+            hoverinfo="skip",
+        )
+
+    # -----------------------------
+    # Trajectory + markers
+    # -----------------------------
     line = go.Scatter3d(
         x=r[:, 0], y=r[:, 1], z=r[:, 2],
         mode="lines",
         name="Trajectory",
         line=dict(width=6, color="white"),
-        # hoverinfo="skip",
     )
 
     start_text = (

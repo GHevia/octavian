@@ -24,3 +24,18 @@ pip install "octavian[viz]"
 python examples/run_two_impulse_free_time.py
 python examples/run_two_impulse_precoast.py
 ```
+
+
+## Development
+
+- Install editable with dev tools:
+
+```bash
+pip install -e ".[dev]"
+pre-commit install
+pytest
+```
+
+## Studies
+
+Use `octavian.study.grid` to run parameter sweeps and optionally save results to disk.
