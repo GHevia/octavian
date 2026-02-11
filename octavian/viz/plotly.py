@@ -20,16 +20,14 @@ def save_trajectory_html(
     traj: np.ndarray,
     out_html: str,
     *,
-    x0_r_m: np.ndarray,
-    x0_v_mps: np.ndarray,
-    xf_r_m: np.ndarray,
-    xf_v_mps: np.ndarray,
+    x0_r_m: Optional[np.ndarray] = None,
+    x0_v_mps: Optional[np.ndarray] = None,
+    xf_r_m: Optional[np.ndarray] = None,
+    xf_v_mps: Optional[np.ndarray] = None,
     maneuvers: Optional[Sequence[Maneuver]] = None,
     title: str = "octavian trajectory",
     earth_radius_m: float = EARTH_RADIUS_M,
-    # NEW: toggle textured Earth on/off
     use_earth_texture: bool = True,
-    # If None: use packaged default. If "": disable. If path: use user-provided.
     earth_texture_path: Optional[str] = None,
 ) -> None:
     """Save a 3D Plotly HTML visualization of an ECI trajectory.
@@ -37,10 +35,10 @@ def save_trajectory_html(
     Args:
         traj: Trajectory array with columns [rx, ry, rz, vx, vy, vz, t] (meters, m/s, seconds).
         out_html: Output HTML path.
-        x0_r_m: Initial position (m).
-        x0_v_mps: Initial velocity (m/s).
-        xf_r_m: Final position (m).
-        xf_v_mps: Final velocity (m/s).
+        x0_r_m: Optional initial position override (m). If None, taken from traj[0,0:3].
+        x0_v_mps: Optional initial velocity override (m/s). If None, taken from traj[0,3:6].
+        xf_r_m: Optional final position override (m). If None, taken from traj[-1,0:3].
+        xf_v_mps: Optional final velocity override (m/s). If None, taken from traj[-1,3:6].
         maneuvers: Optional maneuver markers.
         title: Plot title.
         earth_radius_m: Earth radius used for the sphere (m).
@@ -51,6 +49,53 @@ def save_trajectory_html(
             - non-empty: uses provided path (relative paths resolved from current working directory)
     """
     import plotly.graph_objects as go
+
+    # -----------------------------
+    # Resolve texture path / toggle
+    # -----------------------------
+    if not use_earth_texture:
+        resolved_texture_path: Optional[str] = None
+    else:
+        if earth_texture_path is None:
+            resolved_texture_path = _get_default_earth_texture_path()
+        elif earth_texture_path == "":
+            resolved_texture_path = None
+        else:
+            resolved_texture_path = str(Path(earth_texture_path).expanduser())
+            
+    # -----------------------------
+    # Normalize inputs
+    # -----------------------------
+    traj = np.asarray(traj, float)
+    if traj.ndim != 2 or traj.shape[1] < 7:
+        raise ValueError("traj must be a 2D array with at least 7 columns: [r(3), v(3), t].")
+
+    r = traj[:, 0:3]
+    v = traj[:, 3:6]
+    t = traj[:, 6]
+    tf = float(t[-1])
+
+    # Infer endpoints from trajectory unless overrides provided
+    if x0_r_m is None:
+        x0_r = r[0].copy()
+    else:
+        x0_r = np.asarray(x0_r_m, float).reshape(3)
+
+    if x0_v_mps is None:
+        x0_v = v[0].copy()
+    else:
+        x0_v = np.asarray(x0_v_mps, float).reshape(3)
+
+    if xf_r_m is None:
+        xf_r = r[-1].copy()
+    else:
+        xf_r = np.asarray(xf_r_m, float).reshape(3)
+
+    if xf_v_mps is None:
+        xf_v = v[-1].copy()
+    else:
+        xf_v = np.asarray(xf_v_mps, float).reshape(3)
+
 
     # -----------------------------
     # Resolve texture path / toggle
@@ -76,10 +121,12 @@ def save_trajectory_html(
     t = traj[:, 6]
     tf = float(t[-1])
 
-    x0_r = np.asarray(x0_r_m, float).reshape(3)
-    x0_v = np.asarray(x0_v_mps, float).reshape(3)
-    xf_r = np.asarray(xf_r_m, float).reshape(3)
-    xf_v = np.asarray(xf_v_mps, float).reshape(3)
+    # breakpoint()
+
+    # x0_r = np.asarray(x0_r_m, float).reshape(3)
+    # x0_v = np.asarray(x0_v_mps, float).reshape(3)
+    # xf_r = np.asarray(xf_r_m, float).reshape(3)
+    # xf_v = np.asarray(xf_v_mps, float).reshape(3)
 
     # -----------------------------
     # Earth sphere (optionally textured)

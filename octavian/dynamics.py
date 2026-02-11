@@ -12,13 +12,28 @@ clear error, but importing this module will still succeed.
 
 import numpy as np
 
-import asset_asrl as ast  # type: ignore
+try:
+    import asset_asrl as ast  # type: ignore
+except Exception:  # pragma: no cover
+    ast = None  # type: ignore
 
-vf = ast.VectorFunctions
-oc = ast.OptimalControl
+if ast is not None:  # pragma: no cover
+    vf = ast.VectorFunctions
+    oc = ast.OptimalControl
+else:  # pragma: no cover
+    vf = None  # type: ignore
+    oc = None  # type: ignore
 
 
-class TwoBodyECI(oc.ODEBase):
+def _require_asset() -> None:
+    if ast is None:
+        raise RuntimeError(
+            "asset_asrl is required to construct ASSET-backed dynamics. "
+            "Install it (and its compiled dependencies) before calling solvers."
+        )
+
+
+class TwoBodyECI(oc.ODEBase if oc is not None else object):
     """Two-body point-mass gravity in ECI.
 
     ODE state has 6 components: ``[r(3), v(3)]``.
@@ -31,6 +46,7 @@ class TwoBodyECI(oc.ODEBase):
     """
 
     def __init__(self, *, mu_m3ps2: float) -> None:
+        _require_asset()
         self.mu = float(mu_m3ps2)
 
         XtU = oc.ODEArguments(6, 0)  # 6 states, 0 controls

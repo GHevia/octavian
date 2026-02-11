@@ -254,24 +254,33 @@ def solve_two_impulse_free_time(
     # Back time bound
     phase.addLUVarBound("Back", "time", tfmin, tfmax)
 
-    # Objectives: ||dv1||^2 + ||dv2||^2 (+ w_time * tf).
-    # We construct objectives in dimensional units and supply explicit AutoScale so that
-    # state and link/terminal terms are scaled consistently.
+    # Optional: if boundary impulses are disabled, fix boundary velocity to the provided boundary state.
+    if not bool(getattr(spec, "dv_front", True)):
+        phase.addBoundaryValue("Front", ["V"], as_vec3(spec.x0.v_mps))
+    if not bool(getattr(spec, "dv_back", True)):
+        phase.addBoundaryValue("Back", ["V"], as_vec3(spec.xf.v_mps))
+
+
+    # Objectives (explicit):
+    #  - If minimize_dv: include Δv penalties at enabled impulsive boundaries.
+    #  - If w_time != 0: include w_time * tf at Back.
     v0 = as_vec3(spec.x0.v_mps)
     vf_ = as_vec3(spec.xf.v_mps)
 
-    a = vf.Arguments(3)
-    d1 = a - v0
-    dv1_sq = vf.sqrt(d1.dot(d1))
+    vel_obj_scale = float(v_unit)
 
-    b = vf.Arguments(3)
-    d2 = vf_ - b
-    dv2_sq = vf.sqrt(d2.dot(d2))
+    if bool(getattr(spec, "minimize_dv", True)):
+        w_dv = float(getattr(spec, "dv_weight", 1.0) or 1.0)
 
-    vel_obj_scale = float(v_unit)  # (m/s)^2
+        if bool(getattr(spec, "dv_front", True)):
+            a = vf.Arguments(3)
+            dv1 = vf.sqrt((a - v0).dot(a - v0))
+            phase.addStateObjective("Front", w_dv * dv1, [3, 4, 5], [], [], vel_obj_scale)
 
-    phase.addStateObjective("Front", dv1_sq, [3, 4, 5], [], [], vel_obj_scale)
-    phase.addStateObjective("Back", dv2_sq, [3, 4, 5], [], [], vel_obj_scale)
+        if bool(getattr(spec, "dv_back", True)):
+            b = vf.Arguments(3)
+            dv2 = vf.sqrt((vf_ - b).dot(vf_ - b))
+            phase.addStateObjective("Back", w_dv * dv2, [3, 4, 5], [], [], vel_obj_scale)
 
     phase.addLowerDeltaTimeBound(0.1)
 
@@ -292,8 +301,9 @@ def solve_two_impulse_free_time(
     phase.setAdaptiveMesh(bool(opts.enable_adaptive_mesh))
     ocp.setAutoScaling(True,True)
     ocp.setAdaptiveMesh(True)
+    ocp.PrintMeshInfo = False
 
-    converged = bool(ocp.solve_optimize()) if hasattr(ocp, "solve_optimize") else bool(ocp.optimize())
+    converged = ocp.solve_optimize_solve()
 
     traj = np.asarray(phase.returnTraj(), dtype=np.float64)
     # traj columns for XVars=6,UVars=0 typically: [x0..x5, t]
@@ -429,11 +439,17 @@ def solve_two_impulse_precoast(
 
     phase0 = ode.phase(Tmodes.LGL3, ig0, int(spec.nsegs_precoast))
     phase1 = ode.phase(Tmodes.LGL3, ig1, int(spec.nsegs_transfer))
-
-    
-
+ 
     # Phase 0 boundary: fix full state and t0, bound t1 (time index 6)
-    phase0.addBoundaryValue("Front", ["R", "V", "t"], np.hstack([as_vec3(spec.x0.r_m), as_vec3(spec.x0.v_mps), [t0]]))
+
+    if bool(getattr(spec, "dv_front", False)):
+        phase0.addBoundaryValue("Front", ["R", "t"], np.hstack([as_vec3(spec.x0.r_m), [t0]]))
+    else:
+        phase0.addBoundaryValue(
+            "Front",
+            ["R", "V", "t"],
+            np.hstack([as_vec3(spec.x0.r_m), as_vec3(spec.x0.v_mps), [t0]]),
+        )
     try:
         phase0.addLUVarBound("Back", "time", t1min, t1max)
     except Exception:
@@ -442,6 +458,9 @@ def solve_two_impulse_precoast(
 
     # Phase 1 boundary: fix final position, bound tf
     phase1.addBoundaryValue("Back", ["R"], as_vec3(spec.xf.r_m))
+    # Optional: if terminal impulse is disabled, fix final velocity.
+    if not bool(getattr(spec, "dv_back", True)):
+        phase1.addBoundaryValue("Back", ["V"], as_vec3(spec.xf.v_mps))
     phase1.addLUVarBound("Back", "time", tfmin, tfmax)
     phase1.addLowerDeltaTimeBound(float(spec.min_dt_transfer_s))
 
@@ -451,42 +470,66 @@ def solve_two_impulse_precoast(
     ocp.addPhase(phase0)
     ocp.addPhase(phase1)
 
-    # Link constraints: continuity of position and time at burn
-    ocp.addForwardLinkEqualCon(phase0, phase1, ["R", "t"])
 
-    # Objectives:
-    # Link Δv1: minimize ||v_plus - v_minus||^2 at link.
-    a = vf.Arguments(6)
-    v_minus = a.head(3)
-    v_plus = a.segment(3, 3)
-    dv = v_plus - v_minus
-    dv1_sq = vf.sqrt(dv.dot(dv))
+    # Link constraints: choose continuity groups based on spec.link_kind
+    if str(getattr(spec, "link_kind", "impulsive")).lower() == "continuous":
+        ocp.addForwardLinkEqualCon(phase0, phase1, ["R", "V", "t"])
+    else:
+        ocp.addForwardLinkEqualCon(phase0, phase1, ["R", "t"])
+
+    # Objectives (explicit):
 
     vel_obj_scale = float(v_unit)
-    ocp.addLinkObjective(
-        dv1_sq,
-        phase0, "Back",  [3, 4, 5], [], [],
-        phase1, "Front", [3, 4, 5], [], [],
-        [],
-        vel_obj_scale,
-    )
 
-    # Terminal Δv2: minimize ||vf - v(tf-)||^2
-    vf_ = as_vec3(spec.xf.v_mps)
-    b = vf.Arguments(3)
-    dv2_sq = vf.sqrt((vf_ - b).dot(vf_ - b))
-    phase1.addStateObjective("Back", dv2_sq, [3, 4, 5], [], [], vel_obj_scale)
+    if bool(getattr(spec, "minimize_dv", True)):
+        w_dv = float(getattr(spec, "dv_weight", 1.0) or 1.0)
+
+        # Optional initial Δv0 at phase0 Front
+        if bool(getattr(spec, "dv_front", False)):
+            v0 = as_vec3(spec.x0.v_mps)
+            a0 = vf.Arguments(3)
+            dv0 = vf.sqrt((a0 - v0).dot(a0 - v0))
+            phase0.addStateObjective("Front", w_dv * dv0, [3, 4, 5], [], [], vel_obj_scale)
+
+        # Link Δv1 only for impulsive links
+        if bool(getattr(spec, "dv_link", True)) and str(getattr(spec, "link_kind", "impulsive")).lower() != "continuous":
+            a = vf.Arguments(6)
+            v_minus = a.head(3)
+            v_plus = a.segment(3, 3)
+            dv = v_plus - v_minus
+            dv1 = vf.sqrt(dv.dot(dv))
+            ocp.addLinkObjective(
+                w_dv * dv1,
+                phase0, "Back",  [3, 4, 5], [], [],
+                phase1, "Front", [3, 4, 5], [], [],
+                [],
+                vel_obj_scale,
+            )
+
+        # Terminal Δv2
+        if bool(getattr(spec, "dv_back", True)):
+            vf_ = as_vec3(spec.xf.v_mps)
+            b = vf.Arguments(3)
+            dv2 = vf.sqrt((vf_ - b).dot(vf_ - b))
+            phase1.addStateObjective("Back", w_dv * dv2, [3, 4, 5], [], [], vel_obj_scale)
 
     if float(spec.w_time) != 0.0:
         at = vf.Arguments(1).tolist()[0]
         phase1.addStateObjective("Back", float(spec.w_time) * at, [6], [], [], float(t_unit))
 
-    ocp.optimizer.PrintLevel = 0
-    ocp.optimizer.MaxLSIters = 2
-    ocp.optimizer.set_QPOrderingMode("MINDEG")
-
     # ocp.optimizer.set_EContol(tol)
     ocp.optimizer.set_AccKKTtol(1e-6)
+
+    
+    opts = options or SolverOptions()
+    ocp.optimizer.PrintLevel = int(opts.print_level)
+    ocp.optimizer.MaxLSIters = int(opts.max_ls_iters)
+    ocp.optimizer.set_QPOrderingMode(str(opts.qp_ordering_mode))
+
+    for phase in [phase1, phase0]:
+        phase.setAutoScaling(bool(opts.enable_auto_scaling))
+        phase.setUnits(R=r_unit, V=v_unit, t=t_unit)
+        phase.setAdaptiveMesh(bool(opts.enable_adaptive_mesh))
 
     for ph in (phase0, phase1):
         ph.setAutoScaling(True)
@@ -495,9 +538,10 @@ def solve_two_impulse_precoast(
     
     ocp.setAutoScaling(True,True)
     ocp.setAdaptiveMesh(True)
+    ocp.PrintMeshInfo = False
 
     converged = ocp.solve()
-    converged = ocp.optimize()
+    converged = ocp.optimize_solve()
 
     traj0 = np.asarray(phase0.returnTraj(), dtype=np.float64)
     traj1 = np.asarray(phase1.returnTraj(), dtype=np.float64)
@@ -507,13 +551,18 @@ def solve_two_impulse_precoast(
     v1p = traj1[0, 3:6]
     dv1 = v1p - v1m
 
+    vf_target = as_vec3(spec.xf.v_mps)
+
     v2m = traj1[-1, 3:6]
-    dv2 = vf_ - v2m
+    dv2 = vf_target - v2m
 
     maneuvers = [
         Maneuver(r_m=traj0[-1, 0:3], t_s=float(traj0[-1, 6]), dv_mps=dv1, name="Δv1 (link)"),
-        Maneuver(r_m=traj1[-1, 0:3], t_s=float(traj1[-1, 6]), dv_mps=dv2, name="Δv2 (end)"),
     ]
+    if bool(getattr(spec, "dv_back", True)):
+        maneuvers.append(
+            Maneuver(r_m=traj1[-1, 0:3], t_s=float(traj1[-1, 6]), dv_mps=dv2, name="Δv2 (end)")
+        )
 
     return RendezvousResult(
         converged=converged,

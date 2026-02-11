@@ -14,4 +14,8 @@ __all__ = [
     "solve",
     "solve_two_impulse_free_time",
     "solve_two_impulse_precoast",
+    "solve_composable_mission",
 ]
+
+
+from .composable import solve_composable_mission
