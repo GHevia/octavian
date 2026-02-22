@@ -1,33 +1,27 @@
 """Octavian: trajectory optimization and astrodynamics in Python using ASSET."""
 
 # Public, config-like objects
-from .spacecraft import Spacecraft, Thruster
-from .models import Dynamics, SolveConfig, RunPlan, RetryPolicy
-from .phase import Phase
-from .mission import Mission
-from .solution import Solution
-from .links import Link
-from . import links
-from .events import BoundaryEvent
-from . import events
-from .objectives import Objective
-from . import objectives
 from . import constraints
+from . import events
+from . import links
+from . import objectives
 from . import variables
-
-
-# Current v0.x rendezvous specs + solvers (kept for power users)
-from .specs import BoundaryState, TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec
-from .types import Maneuver
+from .conops import rendezvous_two_impulse, rendezvous_precoast_then_transfer
+from .events import BoundaryEvent
+from .links import Link
+from .mission import Mission
+from .models import Dynamics, RetryPolicy, RunPlan, SolveConfig
+from .objectives import Objective
+from .phase import Phase
+from .quick import state, two_burn_rendezvous
+from .solution import Solution
 from .solvers import SolverOptions
 from .solvers.rendezvous import RendezvousResult, solve, solve_two_impulse_free_time, solve_two_impulse_precoast
-
-# Convenience layers
-from .quick import two_burn_rendezvous, state
-from .conops import rendezvous_two_impulse, rendezvous_precoast_then_transfer
+from .spacecraft import Spacecraft, Thruster
+from .specs import BoundaryState, TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec
+from .study import best_by as study_best_by, grid as study_grid
 from .time import cumulative_time_bounds, normalize_time_bounds
-
-from .study import grid as study_grid, best_by as study_best_by
+from .types import Maneuver
 
 __all__ = [
     # config-like API
@@ -70,4 +64,3 @@ __all__ = [
     "constraints",
     "variables",
 ]
-

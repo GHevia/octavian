@@ -12,7 +12,17 @@ from __future__ import annotations
 
 import numpy as np
 
-from octavian import Dynamics, Mission, Phase, Spacecraft, Thruster, constraints, links, objectives, variables
+from octavian import (
+    Dynamics,
+    Mission,
+    Phase,
+    Spacecraft,
+    Thruster,
+    constraints,
+    links,
+    objectives,
+    variables,
+)
 from octavian.quick import state
 from octavian.viz.plotly import save_trajectory_html
 

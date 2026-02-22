@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from octavian import state, two_burn_rendezvous
 from octavian.solvers import SolverOptions
-from octavian import two_burn_rendezvous, state
 from octavian.viz.plotly import save_trajectory_html
 
 MU = 3.986004418e14

@@ -19,7 +19,17 @@ directly to ASSET.
 
 import numpy as np
 
-from octavian import Dynamics, Mission, Phase, Spacecraft, Thruster, links, constraints, variables, objectives
+from octavian import (
+    Dynamics,
+    Mission,
+    Phase,
+    Spacecraft,
+    Thruster,
+    constraints,
+    links,
+    objectives,
+    variables,
+)
 from octavian.quick import state
 from octavian.viz import save_trajectory_html
 
