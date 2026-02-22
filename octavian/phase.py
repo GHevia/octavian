@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Phase definition.
 
 `Phase` is the unit of composition for a Mission.
@@ -13,46 +11,51 @@ Phase objects still matter because they:
 This module also hosts the small `state(...)` convenience helper.
 """
 
+from __future__ import annotations
+
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any
 
 import numpy as np
 
+from .events import BoundaryEvent
+from .links import Link
+from .links import continuous as continuous_link
+from .links import impulsive as impulsive_link
 from .models import Dynamics
 from .spacecraft import Spacecraft
 from .specs import BoundaryState
-from .events import BoundaryEvent
-from .links import Link, impulsive as impulsive_link, continuous as continuous_link
 
 
 @dataclass(slots=True)
 class Phase:
     name: str = "phase"
     mode: str = "coast"  # "coast" | "burn" | "rendezvous" (semantics layer)
-    spacecraft: Union[Spacecraft, str, None] = None
-    dynamics: Optional[Dynamics] = None
+    spacecraft: Spacecraft | str | None = None
+    dynamics: Dynamics | None = None
 
-    initial_state: Optional[BoundaryState] = None
-    final_state: Optional[BoundaryState] = None
+    initial_state: BoundaryState | None = None
+    final_state: BoundaryState | None = None
 
-    epoch: Optional[str] = None
+    epoch: str | None = None
 
     # User-facing declarations
-    constraints: List[Any] = field(default_factory=list)
-    events: List[BoundaryEvent] = field(default_factory=list)
+    constraints: list[Any] = field(default_factory=list)
+    events: list[BoundaryEvent] = field(default_factory=list)
 
     # Decision variables / structure (composable missions)
-    variables: List[Any] = field(default_factory=list)
+    variables: list[Any] = field(default_factory=list)
 
     # Linking to a previous phase
-    previous: Optional["Phase"] = None
-    link: Optional[Link] = None
+    previous: Phase | None = None
+    link: Link | None = None
 
     # Time-of-flight bounds; interpreted as absolute Back-time bounds by default.
     # Set tof_is_relative=True to treat bounds as per-phase durations.
-    tof_bounds_s: Optional[Tuple[float, float]] = None
+    tof_bounds_s: tuple[float, float] | None = None
     tof_is_relative: bool = False
-    info: Dict[str, Any] = field(default_factory=dict)
+    info: dict[str, Any] = field(default_factory=dict)
 
     def inherit_defaults(self) -> None:
         if self.previous is None:

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Decision-variable declarations for composable missions.
 
 In Octavian's composable layer, a "variable" is a user-facing declaration that
@@ -11,6 +9,8 @@ v0.x supports a minimal set:
 
 Future: control profiles, thrust direction constraints, mass, attitude, etc.
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import ClassVar, Literal

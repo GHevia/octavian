@@ -1,8 +1,11 @@
 from __future__ import annotations
-from typing import Any, Tuple
+
+from typing import Any
+
 import numpy as np
 
-def default_units(spec: Any) -> Tuple[float, float, float]:
+
+def default_units(spec: Any) -> tuple[float, float, float]:
     """Choose dimensional units for ASSET auto-scaling.
 
     Uses boundary magnitudes unless overrides are provided.

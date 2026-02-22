@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from importlib.resources import files
 from pathlib import Path
-from typing import Optional, Sequence
 
 import numpy as np
 
@@ -20,15 +20,15 @@ def save_trajectory_html(
     traj: np.ndarray,
     out_html: str,
     *,
-    x0_r_m: Optional[np.ndarray] = None,
-    x0_v_mps: Optional[np.ndarray] = None,
-    xf_r_m: Optional[np.ndarray] = None,
-    xf_v_mps: Optional[np.ndarray] = None,
-    maneuvers: Optional[Sequence[Maneuver]] = None,
+    x0_r_m: np.ndarray | None = None,
+    x0_v_mps: np.ndarray | None = None,
+    xf_r_m: np.ndarray | None = None,
+    xf_v_mps: np.ndarray | None = None,
+    maneuvers: Sequence[Maneuver] | None = None,
     title: str = "octavian trajectory",
     earth_radius_m: float = EARTH_RADIUS_M,
     use_earth_texture: bool = True,
-    earth_texture_path: Optional[str] = None,
+    earth_texture_path: str | None = None,
 ) -> None:
     """Save a 3D Plotly HTML visualization of an ECI trajectory.
 
@@ -54,7 +54,7 @@ def save_trajectory_html(
     # Resolve texture path / toggle
     # -----------------------------
     if not use_earth_texture:
-        resolved_texture_path: Optional[str] = None
+        resolved_texture_path: str | None = None
     else:
         if earth_texture_path is None:
             resolved_texture_path = _get_default_earth_texture_path()
@@ -76,32 +76,20 @@ def save_trajectory_html(
     tf = float(t[-1])
 
     # Infer endpoints from trajectory unless overrides provided
-    if x0_r_m is None:
-        x0_r = r[0].copy()
-    else:
-        x0_r = np.asarray(x0_r_m, float).reshape(3)
+    x0_r = r[0].copy() if x0_r_m is None else np.asarray(x0_r_m, float).reshape(3)
 
-    if x0_v_mps is None:
-        x0_v = v[0].copy()
-    else:
-        x0_v = np.asarray(x0_v_mps, float).reshape(3)
+    x0_v = v[0].copy() if x0_v_mps is None else np.asarray(x0_v_mps, float).reshape(3)
 
-    if xf_r_m is None:
-        xf_r = r[-1].copy()
-    else:
-        xf_r = np.asarray(xf_r_m, float).reshape(3)
+    xf_r = r[-1].copy() if xf_r_m is None else np.asarray(xf_r_m, float).reshape(3)
 
-    if xf_v_mps is None:
-        xf_v = v[-1].copy()
-    else:
-        xf_v = np.asarray(xf_v_mps, float).reshape(3)
+    xf_v = v[-1].copy() if xf_v_mps is None else np.asarray(xf_v_mps, float).reshape(3)
 
 
     # -----------------------------
     # Resolve texture path / toggle
     # -----------------------------
     if not use_earth_texture:
-        resolved_texture_path: Optional[str] = None
+        resolved_texture_path: str | None = None
     else:
         if earth_texture_path is None:
             resolved_texture_path = _get_default_earth_texture_path()

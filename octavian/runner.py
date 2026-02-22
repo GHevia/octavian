@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Mission runner.
 
 The runner owns *how* we solve:
@@ -12,16 +10,20 @@ so it does not hide real issues, but it can automatically handle common
 "transcription"/mesh mismatches and initial-guess sensitivity.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from typing import TYPE_CHECKING
 
 from .models import RetryPolicy, RunPlan, SolveConfig
 from .solution import AttemptLog, Solution
-from .specs import TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec
 from .solvers import SolverOptions
-from .solvers.rendezvous import solve as solve_rendezvous
 from .solvers.composable import solve_composable_mission
-from .variables import ImpulsiveDeltaV
+from .solvers.rendezvous import solve as solve_rendezvous
+from .specs import TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec
+
+if TYPE_CHECKING:
+    from .mission import Mission
 
 
 class MissionBuildError(ValueError):
@@ -35,7 +37,7 @@ class MissionRunner:
     plan: RunPlan = field(default_factory=RunPlan.default)
     retry: RetryPolicy = field(default_factory=RetryPolicy.default)
 
-    def solve(self, mission: "Mission") -> Solution:
+    def solve(self, mission: Mission) -> Solution:
         # deferred import to avoid cycles
         from .mission import Mission
 
@@ -46,10 +48,11 @@ class MissionRunner:
         mission.validate()
 
         attempts = []
-        last_error: Optional[str] = None
+        last_error: str | None = None
 
         stages = list(self.plan.stages) or [None]
-        stage_name = lambda s: getattr(s, "name", "default") if s is not None else "default"
+        def stage_name(s):
+            return getattr(s, "name", "default") if s is not None else "default"
 
         for sidx, stage in enumerate(stages):
             stage_label = stage_name(stage)
@@ -93,7 +96,7 @@ class MissionRunner:
         return sol
 
 
-def _mission_to_rendezvous_spec(mission: "Mission") -> TwoImpulseFreeTimeSpec | TwoImpulsePreCoastSpec:
+def _mission_to_rendezvous_spec(mission: Mission) -> TwoImpulseFreeTimeSpec | TwoImpulsePreCoastSpec:
     """Map Mission phases into the currently supported rendezvous specs.
 
     Supported patterns (v0.x):
@@ -179,10 +182,7 @@ def _mission_to_rendezvous_spec(mission: "Mission") -> TwoImpulseFreeTimeSpec | 
         dv_link = (link_kind.lower() == "impulsive")
 
         mode1 = (p1.mode or "").lower()
-        if p1.events:
-            dv_back = p1.has_impulse("back")
-        else:
-            dv_back = mode1 in ("rendezvous", "transfer")
+        dv_back = p1.has_impulse("back") if p1.events else mode1 in ("rendezvous", "transfer")
 
         return TwoImpulsePreCoastSpec(
             x0=p0.initial_state,
@@ -252,19 +252,18 @@ def _apply_simple_retry(
             }
         )
 
-    if "did not converge" in msg or "converge" in msg:
-        if isinstance(spec, TwoImpulseFreeTimeSpec):
-            tfmin, tfmax = spec.tf_bounds_s
-            mid = 0.5 * (float(tfmin) + float(tfmax))
-            guess = mid if (attempt % 2 == 1) else (0.75 * float(tfmax) + 0.25 * float(tfmin))
-            return TwoImpulseFreeTimeSpec(**{**spec.__dict__, "tf_guess_s": guess})
+    if ("did not converge" in msg or "converge" in msg) and isinstance(spec, TwoImpulseFreeTimeSpec):
+        tfmin, tfmax = spec.tf_bounds_s
+        mid = 0.5 * (float(tfmin) + float(tfmax))
+        guess = mid if (attempt % 2 == 1) else (0.75 * float(tfmax) + 0.25 * float(tfmin))
+        return TwoImpulseFreeTimeSpec(**{**spec.__dict__, "tf_guess_s": guess})
 
     if isinstance(spec, TwoImpulseFreeTimeSpec):
         return TwoImpulseFreeTimeSpec(**{**spec.__dict__, "lambert_grid_size": int(spec.lambert_grid_size) + 20})
     return TwoImpulsePreCoastSpec(**{**spec.__dict__, "lambert_grid_size": int(spec.lambert_grid_size) + 20})
 
 
-def _is_composable_mission(mission: "Mission") -> bool:
+def _is_composable_mission(mission: Mission) -> bool:
     """Detect whether a mission should use the composable compiler backend.
 
     Heuristic (v0.1):
@@ -272,9 +271,8 @@ def _is_composable_mission(mission: "Mission") -> bool:
       - any Phase.constraints contains a composable State/Position constraint.
     """
     for ph in getattr(mission, "phases", []) or []:
-        if getattr(ph, "variables", None):
-            if len(list(getattr(ph, "variables") or [])) > 0:
-                return True
+        if getattr(ph, "variables", None) and len(list(ph.variables or [])) > 0:
+            return True
         for c in getattr(ph, "constraints", []) or []:
             if getattr(c, "kind", "") in ("state", "position"):
                 return True

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Mission composition.
 
 The `Mission` object is Octavian's main user-facing API. It is intentionally
@@ -9,8 +7,9 @@ Advanced behavior (continuation plans, retries, solve options) is available via
 defaults so simple scripts stay simple.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
 
 from .models import RetryPolicy, RunPlan, SolveConfig
 from .objectives import Objective, minimize_total_delta_v
@@ -23,11 +22,11 @@ from .spacecraft import Spacecraft
 
 @dataclass(slots=True)
 class Mission:
-    phases: List[Phase] = field(default_factory=list)
-    spacecraft: Dict[str, Spacecraft] = field(default_factory=dict)
+    phases: list[Phase] = field(default_factory=list)
+    spacecraft: dict[str, Spacecraft] = field(default_factory=dict)
     name: str = "Mission"
 
-    objectives: List[Objective] = field(default_factory=lambda: [minimize_total_delta_v()])
+    objectives: list[Objective] = field(default_factory=lambda: [minimize_total_delta_v()])
 
     # solving defaults
     plan: RunPlan = field(default_factory=RunPlan.default)
@@ -39,7 +38,7 @@ class Mission:
     mesh_nsegs_transfer: int = 60
     mesh_nsegs_precoast: int = 30
     lambert_grid_size: int = 60
-    nrevs_to_try: Tuple[int, ...] = (0, 1)
+    nrevs_to_try: tuple[int, ...] = (0, 1)
     precoast_grid_size: int = 10
     limit_precoast_to_one_period: bool = True
     w_time: float = 0.0
@@ -59,10 +58,10 @@ class Mission:
     def solve(
         self,
         *,
-        plan: Optional[RunPlan] = None,
-        retry: Optional[RetryPolicy] = None,
-        solve_config: Optional[SolveConfig] = None,
-        solver_options: Optional[SolverOptions] = None,
+        plan: RunPlan | None = None,
+        retry: RetryPolicy | None = None,
+        solve_config: SolveConfig | None = None,
+        solver_options: SolverOptions | None = None,
     ) -> Solution:
         runner = MissionRunner(
             solve_options=solver_options or self.solver_options,

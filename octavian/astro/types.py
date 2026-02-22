@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Shared numeric types for astrodynamics helpers."""
+
+from __future__ import annotations
 
 from typing import Any
 

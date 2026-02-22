@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Sequence
+
 import numpy as np
+
 
 @dataclass(frozen=True)
 class BoundaryState:
@@ -25,15 +26,15 @@ class TwoImpulseFreeTimeSpec:
     xf: BoundaryState
 
     tf_bounds_s: tuple[float, float] = (600.0, 7200.0)
-    tf_guess_s: Optional[float] = None
+    tf_guess_s: float | None = None
 
     mu_m3ps2: float = 3.986004418e14
     nsegs: int = 60
 
     # Auto-scaling overrides
-    r_unit_m: Optional[float] = None
-    v_unit_mps: Optional[float] = None
-    t_unit_s: Optional[float] = None
+    r_unit_m: float | None = None
+    v_unit_mps: float | None = None
+    t_unit_s: float | None = None
 
     w_time: float = 0.0
 
@@ -45,8 +46,8 @@ class TwoImpulseFreeTimeSpec:
     # Boundary impulse structure
     dv_front: bool = True
     dv_back: bool = True
-    dv_front_max_mps: Optional[float] = None
-    dv_back_max_mps: Optional[float] = None
+    dv_front_max_mps: float | None = None
+    dv_back_max_mps: float | None = None
 
     lambert_grid_size: int = 50
     nrevs_to_try: tuple[int, ...] = (0, 1)
@@ -81,9 +82,9 @@ class TwoImpulsePreCoastSpec:
     nsegs_transfer: int = 60
 
     # Auto-scaling overrides
-    r_unit_m: Optional[float] = None
-    v_unit_mps: Optional[float] = None
-    t_unit_s: Optional[float] = None
+    r_unit_m: float | None = None
+    v_unit_mps: float | None = None
+    t_unit_s: float | None = None
 
     w_time: float = 0.0
 
@@ -95,8 +96,8 @@ class TwoImpulsePreCoastSpec:
     # Boundary impulse structure
     dv_front: bool = True
     dv_back: bool = True
-    dv_front_max_mps: Optional[float] = None
-    dv_back_max_mps: Optional[float] = None
+    dv_front_max_mps: float | None = None
+    dv_back_max_mps: float | None = None
 
     # Link semantics between precoast and transfer:
     # "continuous" => (R, V, t) continuous

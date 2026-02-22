@@ -10,7 +10,6 @@ If ASSET is not installed, constructing ASSET-backed dynamics will raise a
 clear error, but importing this module will still succeed.
 """
 
-import numpy as np
 
 try:
     import asset_asrl as ast  # type: ignore

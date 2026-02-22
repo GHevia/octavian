@@ -1,13 +1,13 @@
-from __future__ import annotations
-
 """Spacecraft and propulsion models.
 
 These objects are intentionally "config-like": they are meant to read well in
 Python scripts and to remain stable even as solver backends evolve.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -17,8 +17,8 @@ class Thruster:
     name: str = "main"
     thrust_N: float = 0.0
     isp_s: float = 0.0
-    propellant_mass_kg: Optional[float] = None
-    info: Dict[str, Any] = field(default_factory=dict)
+    propellant_mass_kg: float | None = None
+    info: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -30,8 +30,8 @@ class Spacecraft:
 
     name: str = "SC"
     dry_mass_kg: float = 0.0
-    thrusters: List[Thruster] = field(default_factory=list)
-    info: Dict[str, Any] = field(default_factory=dict)
+    thrusters: list[Thruster] = field(default_factory=list)
+    info: dict[str, Any] = field(default_factory=dict)
 
     @property
     def initial_mass_kg(self) -> float:

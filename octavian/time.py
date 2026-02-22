@@ -1,13 +1,13 @@
-from __future__ import annotations
-
 """Time helper utilities for composable missions."""
 
-from typing import Iterable, List, Optional, Sequence, Tuple
+from __future__ import annotations
+
+from collections.abc import Sequence
 
 from .phase import Phase
 
 
-def cumulative_time_bounds(*dur_bounds: Tuple[float, float]) -> List[Tuple[float, float]]:
+def cumulative_time_bounds(*dur_bounds: tuple[float, float]) -> list[tuple[float, float]]:
     """Convert per-phase duration bounds into absolute Back-time bounds.
 
     Example:
@@ -15,7 +15,7 @@ def cumulative_time_bounds(*dur_bounds: Tuple[float, float]) -> List[Tuple[float
     """
     tmin = 0.0
     tmax = 0.0
-    out: List[Tuple[float, float]] = []
+    out: list[tuple[float, float]] = []
     for dmin, dmax in dur_bounds:
         tmin += float(dmin)
         tmax += float(dmax)
@@ -23,13 +23,13 @@ def cumulative_time_bounds(*dur_bounds: Tuple[float, float]) -> List[Tuple[float
     return out
 
 
-def normalize_time_bounds(phases: Sequence[Phase]) -> List[Optional[Tuple[float, float]]]:
+def normalize_time_bounds(phases: Sequence[Phase]) -> list[tuple[float, float] | None]:
     """Return absolute Back-time bounds for each phase.
 
     If a phase has tof_is_relative=True, its bounds are treated as per-phase durations
     and accumulated from the previous phases.
     """
-    out: List[Optional[Tuple[float, float]]] = []
+    out: list[tuple[float, float] | None] = []
     tmin = 0.0
     tmax = 0.0
     for ph in phases:

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Study utilities (parameter sweeps).
 
 Octavian encourages a workflow where a mission script is a *configuration file*
@@ -9,26 +7,28 @@ This module provides small helpers to sweep specs, run solvers, and persist
 results in a consistent layout.
 """
 
+from __future__ import annotations
+
+from collections.abc import Iterable, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any
 
 from .solvers import SolverOptions
 from .solvers.rendezvous import RendezvousResult, solve
 from .specs import TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec
 
-
-Spec = Union[TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec]
+Spec = TwoImpulseFreeTimeSpec | TwoImpulsePreCoastSpec
 
 
 def grid(
     base_spec: Spec,
-    overrides: Sequence[Dict[str, Any]],
+    overrides: Sequence[dict[str, Any]],
     *,
-    options: Optional[SolverOptions] = None,
-    save_dir: Optional[Union[str, Path]] = None,
+    options: SolverOptions | None = None,
+    save_dir: str | Path | None = None,
     save_prefix: str = "run",
-) -> List[RendezvousResult]:
+) -> list[RendezvousResult]:
     """Run a grid study by applying overrides to a base spec.
 
     Args:
@@ -52,7 +52,7 @@ def grid(
     if out_dir is not None:
         out_dir.mkdir(parents=True, exist_ok=True)
 
-    results: List[RendezvousResult] = []
+    results: list[RendezvousResult] = []
     for i, ov in enumerate(overrides):
         spec_i = replace(base_spec, **ov)
         res = solve(spec_i, options=opts)

@@ -1,6 +1,8 @@
 from __future__ import annotations
+
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Optional, Sequence, Tuple
+
 import numpy as np
 
 try:
@@ -9,6 +11,7 @@ except Exception:  # pragma: no cover
     ast = None  # type: ignore
 
 from .types import Vec3, as_vec3
+
 
 @dataclass(frozen=True)
 class LambertSeed:
@@ -20,7 +23,7 @@ class LambertSeed:
     v2_mps: Vec3
     total_dv_mps: float
 
-def _call_lambert_izzo(r0: Vec3, rf: Vec3, tof_s: float, mu: float, longway: bool, nrev: int, rightbranch: bool) -> Tuple[Vec3, Vec3]:
+def _call_lambert_izzo(r0: Vec3, rf: Vec3, tof_s: float, mu: float, longway: bool, nrev: int, rightbranch: bool) -> tuple[Vec3, Vec3]:
     if ast is None:
         raise RuntimeError("asset_asrl is required for lambert_izzo.")
     if int(nrev) == 0:
@@ -84,7 +87,7 @@ def select_best_lambert_seed(
     v0 = as_vec3(v0_mps)
     vf = as_vec3(vf_mps)
 
-    best: Optional[LambertSeed] = None
+    best: LambertSeed | None = None
     for tof in np.linspace(tmin, tmax, int(n_tofs)):
         for longway in (False, True):
             for nrev in nrevs:

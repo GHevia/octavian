@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """ConOps (Concept of Operations) builders.
 
 ConOps is the "middle" layer between `quick` templates and fully custom
@@ -9,16 +7,14 @@ solving.
 v0.x ships ConOps helpers for the built-in impulsive rendezvous solver.
 """
 
-from typing import Optional, Sequence, Tuple
+from __future__ import annotations
 
-from .models import Dynamics
+from collections.abc import Sequence
 
 from .mission import Mission
-
+from .models import Dynamics
 from .phase import Phase
-
 from .spacecraft import Spacecraft
-
 from .specs import BoundaryState
 
 
@@ -28,13 +24,13 @@ def rendezvous_two_impulse(
     dynamics: Dynamics,
     initial_state: BoundaryState,
     final_state: BoundaryState,
-    tf_bounds_s: Tuple[float, float] = (600.0, 7200.0),
+    tf_bounds_s: tuple[float, float] = (600.0, 7200.0),
     nsegs: int = 60,
     lambert_grid_size: int = 60,
-    nrevs_to_try: Tuple[int, ...] = (0, 1),
+    nrevs_to_try: tuple[int, ...] = (0, 1),
     w_time: float = 0.0,
     name: str = "Two-impulse rendezvous",
-    constraints: Optional[Sequence[object]] = None,
+    constraints: Sequence[object] | None = None,
 ) -> Mission:
     """Build a single-phase impulsive rendezvous mission."""
 
@@ -65,18 +61,18 @@ def rendezvous_precoast_then_transfer(
     dynamics: Dynamics,
     initial_state: BoundaryState,
     final_state: BoundaryState,
-    t1_bounds_s: Tuple[float, float] = (0.0, 1800.0),
-    tf_bounds_s: Tuple[float, float] = (600.0, 7200.0),
+    t1_bounds_s: tuple[float, float] = (0.0, 1800.0),
+    tf_bounds_s: tuple[float, float] = (600.0, 7200.0),
     nsegs_precoast: int = 30,
     nsegs_transfer: int = 60,
     precoast_grid_size: int = 10,
     limit_precoast_to_one_period: bool = True,
     lambert_grid_size: int = 60,
-    nrevs_to_try: Tuple[int, ...] = (0, 1),
+    nrevs_to_try: tuple[int, ...] = (0, 1),
     w_time: float = 0.0,
     name: str = "Precoast + two-impulse rendezvous",
-    constraints_precoast: Optional[Sequence[object]] = None,
-    constraints_rendezvous: Optional[Sequence[object]] = None,
+    constraints_precoast: Sequence[object] | None = None,
+    constraints_rendezvous: Sequence[object] | None = None,
 ) -> Mission:
     """Build a two-phase mission: precoast then impulsive rendezvous."""
 

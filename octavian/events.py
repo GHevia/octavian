@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import ClassVar, Optional, Literal
+from typing import ClassVar, Literal
 
 BoundaryWhere = Literal["Front", "Back"]
 
@@ -26,12 +26,12 @@ class Impulse(BoundaryEvent):
     """Impulsive Δv at a phase boundary."""
     kind: ClassVar[str] = "impulse"
     where: BoundaryWhere = "Front"
-    dv_max_mps: Optional[float] = None
+    dv_max_mps: float | None = None
 
     def __post_init__(self) -> None:
         # normalize aliases like "start", "t0", etc.
         object.__setattr__(self, "where", _norm_where(self.where))
 
 
-def impulse(where: str, dv_max_mps: Optional[float] = None) -> Impulse:
+def impulse(where: str, dv_max_mps: float | None = None) -> Impulse:
     return Impulse(where=where, dv_max_mps=dv_max_mps)

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Solution and reporting.
 
 `Solution` is Octavian's stable output contract.
@@ -10,8 +8,10 @@ adds:
   - a small viz namespace
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 
@@ -29,10 +29,10 @@ class AttemptLog:
 @dataclass(slots=True)
 class Solution:
     ok: bool
-    result: Optional[RendezvousResult] = None
-    attempts: List[AttemptLog] = field(default_factory=list)
-    info: Dict[str, Any] = field(default_factory=dict)
-    last_error: Optional[str] = None
+    result: RendezvousResult | None = None
+    attempts: list[AttemptLog] = field(default_factory=list)
+    info: dict[str, Any] = field(default_factory=dict)
+    last_error: str | None = None
 
     def summary(self) -> str:
         if self.result is not None:

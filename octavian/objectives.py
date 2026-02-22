@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Objective definitions.
 
 Objectives are explicit, user-facing objects. They are collected on `Mission`
@@ -11,6 +9,8 @@ v0.x focuses on impulsive rendezvous, so the built-in objectives are:
 
 Future versions can add control effort, propellant, pointing, etc.
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 

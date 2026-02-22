@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, ClassVar, Optional, Literal, Sequence
+from typing import Any, ClassVar, Literal
 
-
-from .specs import BoundaryState
 import numpy as np
 
+from .specs import BoundaryState
 
 Where = Literal["Front", "Back", "Path"]
 
@@ -40,7 +40,7 @@ class SemiMajorAxis(Constraint):
     kind: ClassVar[str] = "semi_major_axis"
     a_m: float = 0.0
     where: Where = "Path"
-    tol_m: Optional[float] = None
+    tol_m: float | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "where", _norm_where(self.where))
@@ -55,7 +55,7 @@ class InclinationDeg(Constraint):
     kind: ClassVar[str] = "inclination_deg"
     inc_deg: float = 0.0
     where: Where = "Path"
-    tol_deg: Optional[float] = None
+    tol_deg: float | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "where", _norm_where(self.where))
@@ -128,10 +128,10 @@ def position(r_m: Sequence[float], where: str = "Front") -> Position:
     return Position(r_m=r_m, where=where)
 
 # Factory helpers (nice user API)
-def semi_major_axis(a_m: float, where: str = "Path", tol_m: Optional[float] = None) -> SemiMajorAxis:
+def semi_major_axis(a_m: float, where: str = "Path", tol_m: float | None = None) -> SemiMajorAxis:
     return SemiMajorAxis(a_m=a_m, where=where, tol_m=tol_m)
 
-def inclination_deg(inc_deg: float, where: str = "Path", tol_deg: Optional[float] = None) -> InclinationDeg:
+def inclination_deg(inc_deg: float, where: str = "Path", tol_deg: float | None = None) -> InclinationDeg:
     return InclinationDeg(inc_deg=inc_deg, where=where, tol_deg=tol_deg)
 
 def min_radius(r_min_m: float, where: str = "Path") -> MinRadius:

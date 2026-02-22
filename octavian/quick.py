@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Quick templates.
 
 Quick templates are the lowest-friction entry point:
@@ -8,22 +6,24 @@ Quick templates are the lowest-friction entry point:
   - use safe defaults (plan/retry/config) without exposing complexity
 """
 
-from typing import Optional, Sequence, Tuple, Union
+from __future__ import annotations
+
+from collections.abc import Sequence
 
 import numpy as np
 
 from .conops import rendezvous_precoast_then_transfer, rendezvous_two_impulse
-from .models import Dynamics
 from .mission import Mission
+from .models import Dynamics
 from .phase import state as _state
+from .solvers import SolverOptions
 from .spacecraft import Spacecraft, Thruster
 from .specs import BoundaryState
-from .solvers import SolverOptions
 
 
 def state(
-    r_m: Union[np.ndarray, Sequence[float]],
-    v_mps: Union[np.ndarray, Sequence[float]],
+    r_m: np.ndarray | Sequence[float],
+    v_mps: np.ndarray | Sequence[float],
 ) -> BoundaryState:
     """Helper to build a :class:`~octavian.specs.BoundaryState`."""
 
@@ -35,18 +35,18 @@ def two_burn_rendezvous(
     xf: BoundaryState,
     *,
     mu_m3ps2: float = 3.986004418e14,
-    tf_bounds_s: Tuple[float, float] = (600.0, 7200.0),
+    tf_bounds_s: tuple[float, float] = (600.0, 7200.0),
     nsegs: int = 60,
     lambert_grid_size: int = 60,
-    nrevs_to_try: Tuple[int, ...] = (0, 1),
+    nrevs_to_try: tuple[int, ...] = (0, 1),
     w_time: float = 0.0,
     precoast: bool = False,
-    t1_bounds_s: Tuple[float, float] = (0.0, 1800.0),
+    t1_bounds_s: tuple[float, float] = (0.0, 1800.0),
     precoast_grid_size: int = 10,
     limit_precoast_to_one_period: bool = True,
     name: str = "Two-burn rendezvous",
-    constraints: Optional[Sequence[object]] = None,
-    solver_options: Optional[SolverOptions] = None,
+    constraints: Sequence[object] | None = None,
+    solver_options: SolverOptions | None = None,
 ) -> Mission:
     """Create a ready-to-solve two-impulse rendezvous mission."""
 

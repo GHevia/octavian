@@ -1,13 +1,14 @@
-from __future__ import annotations
-
 """High-level configuration models.
 
 These classes exist to keep user scripts readable while still allowing
 advanced solving behavior (continuation / retries) via sensible defaults.
 """
 
+from __future__ import annotations
+
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -20,11 +21,11 @@ class Dynamics:
     """
 
     mu_m3ps2: float = 3.986004418e14
-    third_bodies: Tuple[str, ...] = ()
+    third_bodies: tuple[str, ...] = ()
     j2: bool = False
     srp: bool = False
     drag: bool = False
-    info: Dict[str, Any] = field(default_factory=dict)
+    info: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -41,7 +42,7 @@ class Stage:
     """A single continuation stage (minimal in v0.x)."""
 
     name: str
-    nsegs_scale: Optional[float] = None
+    nsegs_scale: float | None = None
     tighten_bounds: bool = False
 
 
@@ -52,7 +53,7 @@ class RunPlan:
     stages: Sequence[Stage] = ()
 
     @staticmethod
-    def default() -> "RunPlan":
+    def default() -> RunPlan:
         return RunPlan(stages=())
 
 
@@ -64,5 +65,5 @@ class RetryPolicy:
     max_retries: int = 2
 
     @staticmethod
-    def default() -> "RetryPolicy":
+    def default() -> RetryPolicy:
         return RetryPolicy(enabled=True, max_retries=2)

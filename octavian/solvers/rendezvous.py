@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Impulsive rendezvous solvers built on ASSET's UpdatedInterface.
 
 Key correctness notes (from ASSET source/examples):
@@ -11,8 +9,11 @@ Key correctness notes (from ASSET source/examples):
 This module keeps everything dimensional at the user API, and relies on ASSET auto-scaling.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Sequence, Union
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -22,15 +23,14 @@ try:
 except Exception:  # pragma: no cover
     ast = None  # type: ignore
 
-from .options import SolverOptions
-
+from ..astro.kepler import estimate_orbital_period_s, kepler_dense_guess, propagate_cartesian_rv
+from ..astro.lambert import LambertSeed, select_best_lambert_seed
+from ..astro.types import as_vec3
+from ..astro.units import default_units
 from ..dynamics import TwoBodyECI
 from ..specs import TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec
 from ..types import Maneuver
-from ..astro.types import as_vec3, Vec3
-from ..astro.units import default_units
-from ..astro.lambert import LambertSeed, select_best_lambert_seed
-from ..astro.kepler import kepler_dense_guess, estimate_orbital_period_s, propagate_cartesian_rv
+from .options import SolverOptions
 
 if ast is not None:  # pragma: no cover
     vf = ast.VectorFunctions
@@ -71,9 +71,9 @@ class RendezvousResult:
 
     converged: bool
     traj: TrajArray
-    maneuvers: List[Maneuver] = field(default_factory=list)
+    maneuvers: list[Maneuver] = field(default_factory=list)
     last_obj: float = float("nan")
-    info: Dict[str, Any] = field(default_factory=dict)
+    info: dict[str, Any] = field(default_factory=dict)
 
     def tf_s(self) -> float:
         """Return the final time-of-flight in seconds from the trajectory."""
@@ -89,7 +89,7 @@ class RendezvousResult:
 
     def summary(self) -> str:
         """Return a compact, human-readable summary string."""
-        lines: List[str] = []
+        lines: list[str] = []
         status = "CONVERGED" if self.converged else "NOT CONVERGED"
         lines.append(f"Octavian result: {status}")
         lines.append(f"  tf: {self.tf_s():.3f} s")
@@ -107,7 +107,7 @@ class RendezvousResult:
                 lines.append(f"  {k}: {self.info[k]!r}")
         return "\n".join(lines)
 
-    def to_npz(self, path: str | 'Path') -> None:
+    def to_npz(self, path: str | Path) -> None:
         """Save this result to a ``.npz`` file.
 
         The file contains:
@@ -123,8 +123,8 @@ class RendezvousResult:
         Args:
             path: Output file path.
         """
-        from pathlib import Path as _Path
         import json as _json
+        from pathlib import Path as _Path
 
         p = _Path(path)
         r = np.asarray([m.r_m for m in self.maneuvers], dtype=float) if self.maneuvers else np.empty((0, 3), dtype=float)
@@ -145,10 +145,10 @@ class RendezvousResult:
         )
 
     @classmethod
-    def from_npz(cls, path: str | 'Path') -> 'RendezvousResult':
+    def from_npz(cls, path: str | Path) -> RendezvousResult:
         """Load a :class:`RendezvousResult` from a ``.npz`` file."""
-        from pathlib import Path as _Path
         import json as _json
+        from pathlib import Path as _Path
 
         p = _Path(path)
         data = np.load(p, allow_pickle=True)
@@ -191,7 +191,7 @@ class RendezvousResult:
 
 
 def solve(
-    spec: Union[TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec],
+    spec: TwoImpulseFreeTimeSpec | TwoImpulsePreCoastSpec,
     *,
     options: SolverOptions | None = None,
 ) -> RendezvousResult:
@@ -413,7 +413,7 @@ def solve_two_impulse_precoast(
     t1_guess = float(best["t1"])
     rv1_guess = np.asarray(best["rv1"], dtype=float).reshape(6)
     r1_guess = rv1_guess[0:3]
-    v1_minus_guess = rv1_guess[3:6]
+    rv1_guess[3:6]
     seed: LambertSeed = best["seed"]
 
     tf_guess = float(t1_guess + seed.tof_s)

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Solver configuration objects.
 
 Octavian's philosophy is that *Python is the GUI*:
@@ -10,6 +8,8 @@ Octavian's philosophy is that *Python is the GUI*:
 This module defines small option dataclasses that keep optimizer knobs out of
 solver implementations.
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 
