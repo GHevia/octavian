@@ -36,6 +36,10 @@ def main() -> None:
     spacecraft = Spacecraft(name="DemoSat", dry_mass_kg=150.0, thrusters=[Thruster(name="main")])
     dynamics = Dynamics(mu_m3ps2=MU)
 
+    R_EARTH_M = 6378.1363e3
+    min_altitude_m = 60e3
+    r_min_m = R_EARTH_M + min_altitude_m
+
     x0 = state(
         r_m=[7000e3, 0.0, 0.0],
         v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 0.0],
@@ -51,7 +55,7 @@ def main() -> None:
         mode="coast",
         spacecraft=spacecraft,
         dynamics=dynamics,
-        tof_bounds_s=(0.0, 6000.0),
+        tof_bounds_s=(1.0, 600.0),
         constraints=[constraints.state(x0, where="Front")],
     )
 
@@ -62,8 +66,10 @@ def main() -> None:
         dynamics=dynamics,
         previous=precoast,
         link=links.impulsive(),
-        tof_bounds_s=(400.0, 60_000.0),
-        constraints=[constraints.state(xf, where="Back")],
+        tof_bounds_s=(600.0, 60_000.0),
+        constraints=[constraints.state(xf, where="Back"),
+            constraints.min_radius(r_min_m, where="Path"),
+        ],
         variables=[variables.ImpulsiveDeltaV(where="Front"), variables.ImpulsiveDeltaV(where="Back")],
     )
 

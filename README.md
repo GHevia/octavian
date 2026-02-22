@@ -21,8 +21,8 @@ pip install "octavian[viz]"
 ## Examples
 
 ```bash
-python examples/run_two_impulse_free_time.py
-python examples/run_two_impulse_precoast.py
+python examples/quick/01_two_impulse_free_time.py
+python examples/quick/02_two_impulse_precoast_impulsive_link.py
 ```
 
 

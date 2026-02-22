@@ -25,6 +25,7 @@ from .solvers.rendezvous import RendezvousResult, solve, solve_two_impulse_free_
 # Convenience layers
 from .quick import two_burn_rendezvous, state
 from .conops import rendezvous_two_impulse, rendezvous_precoast_then_transfer
+from .time import cumulative_time_bounds, normalize_time_bounds
 
 from .study import grid as study_grid, best_by as study_best_by
 
@@ -44,6 +45,8 @@ __all__ = [
     "state",
     "rendezvous_two_impulse",
     "rendezvous_precoast_then_transfer",
+    "cumulative_time_bounds",
+    "normalize_time_bounds",
     # rendezvous specs + solver
     "BoundaryState",
     "TwoImpulseFreeTimeSpec",
@@ -67,5 +70,4 @@ __all__ = [
     "constraints",
     "variables",
 ]
-
 

@@ -42,10 +42,11 @@ def main() -> None:
         mode="coast",
         spacecraft=spacecraft,
         dynamics=dynamics,
-        tof_bounds_s=(600.0, 20_000.0),
+        tof_bounds_s=(60.0, 20_000.0),
         constraints=[
             constraints.state(x0, where="Front"),
             constraints.state(xf, where="Back"),
+            constraints.min_radius(6000e3, where="Path"),
         ],
         variables=[
             variables.ImpulsiveDeltaV(where="Front"),

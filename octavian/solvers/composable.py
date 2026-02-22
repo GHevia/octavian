@@ -37,7 +37,7 @@ except Exception:  # pragma: no cover
 from .options import SolverOptions
 from .rendezvous import RendezvousResult  # reuse stable result type
 from ..types import Maneuver
-from ..constraints import State as StateConstraint, Position as PositionConstraint
+from ..constraints import Constraint
 from ..variables import ImpulsiveDeltaV
 from ..phase import Phase
 from typing import TYPE_CHECKING
@@ -49,6 +49,7 @@ from ..astro.types import as_vec3
 from ..astro.units import default_units
 from ..astro.kepler import kepler_dense_guess, propagate_cartesian_rv, estimate_orbital_period_s
 from ..astro.lambert import select_best_lambert_seed
+from ..time import normalize_time_bounds
 
 
 if ast is not None:  # pragma: no cover
@@ -94,20 +95,39 @@ def _has_impulsive_var(phase: Phase, where: str) -> bool:
     return False
 
 
-def _get_state_constraint(phase: Phase, where: str) -> Optional[StateConstraint]:
+def _get_constraint(phase: Phase, kind: str, where: str) -> Optional[Constraint]:
     loc = "Front" if where.lower().startswith("f") else "Back"
     for c in getattr(phase, "constraints", []) or []:
-        if isinstance(c, StateConstraint) and getattr(c, "where", "") == loc:
+        if getattr(c, "kind", "") == kind and getattr(c, "where", "") == loc:
             return c
     return None
 
 
-def _get_position_constraint(phase: Phase, where: str) -> Optional[PositionConstraint]:
-    loc = "Front" if where.lower().startswith("f") else "Back"
-    for c in getattr(phase, "constraints", []) or []:
-        if isinstance(c, PositionConstraint) and getattr(c, "where", "") == loc:
-            return c
-    return None
+def _get_state_constraint(phase: Phase, where: str) -> Optional[Constraint]:
+    return _get_constraint(phase, kind="state", where=where)
+
+
+def _get_position_constraint(phase: Phase, where: str) -> Optional[Constraint]:
+    return _get_constraint(phase, kind="position", where=where)
+
+
+def _state_boundary_value(c: Optional[Constraint]) -> Any:
+    if c is None:
+        return None
+    return getattr(c, "value", {}).get("x")
+
+
+def _state_groups(c: Optional[Constraint]) -> tuple[str, ...]:
+    if c is None:
+        return tuple()
+    groups = getattr(c, "value", {}).get("groups", ("R", "V"))
+    return tuple(str(g) for g in groups)
+
+
+def _position_boundary_value(c: Optional[Constraint]) -> Optional[np.ndarray]:
+    if c is None:
+        return None
+    return np.asarray(getattr(c, "value"), dtype=float).reshape(3)
 
 
 def _objective_weights(mission: Mission) -> Tuple[bool, float, bool, float]:
@@ -136,6 +156,8 @@ def _build_guess_two_phase_precoast_transfer(
     p1: Phase,
     *,
     mu: float,
+    t1_bounds: Tuple[float, float],
+    tf_bounds: Tuple[float, float],
     nsegs0: int,
     nsegs1: int,
     precoast_grid_size: int,
@@ -150,18 +172,20 @@ def _build_guess_two_phase_precoast_transfer(
     if p0.initial_state is None and _get_state_constraint(p0, "Front") is None:
         raise ValueError("Precoast phase requires an initial state (phase.initial_state or State constraint at Front).")
 
-    x0 = p0.initial_state or _get_state_constraint(p0, "Front").x  # type: ignore[union-attr]
+    x0 = p0.initial_state or _state_boundary_value(_get_state_constraint(p0, "Front"))  # type: ignore[union-attr]
     xf_state = _get_state_constraint(p1, "Back")
     xf_pos = _get_position_constraint(p1, "Back")
 
     if xf_state is None and xf_pos is None and p1.final_state is None:
         raise ValueError("Transfer phase requires a terminal position (State/Position constraint or phase.final_state).")
 
-    rf = as_vec3((xf_state.x.r_m if xf_state is not None else (p1.final_state.r_m if p1.final_state is not None else xf_pos.r_m)))  # type: ignore[arg-type]
-    vf_target = as_vec3((xf_state.x.v_mps if xf_state is not None else (p1.final_state.v_mps if p1.final_state is not None else x0.v_mps)))
+    xf_state_val = _state_boundary_value(xf_state)
+    xf_pos_val = _position_boundary_value(xf_pos)
+    rf = as_vec3((xf_state_val.r_m if xf_state_val is not None else (p1.final_state.r_m if p1.final_state is not None else xf_pos_val)))  # type: ignore[arg-type]
+    vf_target = as_vec3((xf_state_val.v_mps if xf_state_val is not None else (p1.final_state.v_mps if p1.final_state is not None else x0.v_mps)))
 
-    t1min, t1max = p0.tof_bounds_s or (0.0, 1800.0)
-    tfmin, tfmax = p1.tof_bounds_s or (600.0, 7200.0)
+    t1min, t1max = t1_bounds
+    tfmin, tfmax = tf_bounds
 
     t1min = float(t1min); t1max = float(t1max)
     tfmin = float(tfmin); tfmax = float(tfmax)
@@ -248,6 +272,89 @@ def _build_guess_two_phase_precoast_transfer(
     return ig0, ig1
 
 
+def _boundary_velocity_target(phase: Phase, where: str) -> Optional[np.ndarray]:
+    """Return a boundary velocity target from State constraint or phase state."""
+    st = _get_state_constraint(phase, where)
+    if st is not None:
+        st_val = _state_boundary_value(st)
+        if st_val is not None:
+            return as_vec3(st_val.v_mps)
+    if where.lower().startswith("f") and phase.initial_state is not None:
+        return as_vec3(phase.initial_state.v_mps)
+    if where.lower().startswith("b") and phase.final_state is not None:
+        return as_vec3(phase.final_state.v_mps)
+    return None
+
+
+def _build_front_impulse_velocity_targets(phases: Sequence[Phase]) -> Dict[int, np.ndarray]:
+    """Seed only the first front-link impulse; later front links default to zero impulse.
+
+    This keeps multi-link guesses close to the two-burn structure:
+    - first front impulsive link: nonzero seed (midpoint in velocity space)
+    - additional front impulsive links: zero seed (inherit incoming velocity)
+    """
+    if not phases:
+        return {}
+
+    v_start = _boundary_velocity_target(phases[0], "Front")
+    v_end = _boundary_velocity_target(phases[-1], "Back")
+    if v_start is None or v_end is None:
+        return {}
+
+    front_impulse_idxs: List[int] = []
+    for idx, ph in enumerate(phases):
+        if idx == 0 or ph.previous is None:
+            continue
+        link_kind = (ph.link.kind if ph.link is not None else "continuous").lower()
+        if link_kind != "continuous" and _has_impulsive_var(ph, "Front"):
+            front_impulse_idxs.append(idx)
+
+    if not front_impulse_idxs:
+        return {}
+
+    out: Dict[int, np.ndarray] = {}
+    first_idx = int(front_impulse_idxs[0])
+    out[first_idx] = 0.5 * as_vec3(v_start) + 0.5 * as_vec3(v_end)
+    return out
+
+
+def _fallback_phase_tf_guess(
+    *,
+    phase: Phase,
+    bounds_abs: Optional[Tuple[float, float]],
+    t_start: float,
+    r_start_m: np.ndarray,
+    v_start_mps: np.ndarray,
+    mu_m3ps2: float,
+) -> float:
+    """Choose a practical fallback Back-time guess for a phase."""
+    if bounds_abs is None:
+        return float(t_start + 3600.0)
+
+    tmin_abs, tmax_abs = map(float, bounds_abs)
+
+    if phase.tof_is_relative and phase.tof_bounds_s is not None:
+        dmin, dmax = map(float, phase.tof_bounds_s)
+        dmid = 0.5 * (dmin + dmax)
+
+        # Keep relative-duration fallback physically moderate when wide bounds are provided.
+        T = estimate_orbital_period_s(r_start_m, v_start_mps, mu_m3ps2)
+        if T is not None:
+            dcap = max(dmin, min(dmax, float(T)))
+            dguess = min(dmid, dcap)
+        else:
+            dguess = dmid
+
+        dguess = max(dmin, min(dguess, dmax))
+        tf_guess = float(t_start + dguess)
+    else:
+        tf_guess = float(0.5 * (tmin_abs + tmax_abs))
+
+    tf_guess = min(max(tf_guess, tmin_abs), tmax_abs)
+    tf_guess = max(tf_guess, float(t_start) + 0.1)
+    return float(tf_guess)
+
+
 def solve_composable_mission(
     mission: Mission,
     *,
@@ -267,6 +374,9 @@ def solve_composable_mission(
 
     minimize_dv, w_dv, minimize_time, w_time = _objective_weights(mission)
 
+    # Normalize time bounds (absolute Back-time bounds for each phase).
+    abs_bounds = normalize_time_bounds(phases)
+
     # Units / scaling: use default_units() with a tiny dummy spec carrying x0/xf.
     first = phases[0]
     last = phases[-1]
@@ -274,13 +384,13 @@ def solve_composable_mission(
 
     x0_for_units = (
         first.initial_state
-        or (_get_state_constraint(first, "Front").x if _get_state_constraint(first, "Front") else None)
-        or (_get_state_constraint(first, "Back").x if _get_state_constraint(first, "Back") else None)
+        or _state_boundary_value(_get_state_constraint(first, "Front"))
+        or _state_boundary_value(_get_state_constraint(first, "Back"))
     )
     xf_for_units = (
         last.final_state
-        or (_get_state_constraint(last, "Back").x if _get_state_constraint(last, "Back") else None)
-        or (_get_state_constraint(last, "Front").x if _get_state_constraint(last, "Front") else None)
+        or _state_boundary_value(_get_state_constraint(last, "Back"))
+        or _state_boundary_value(_get_state_constraint(last, "Front"))
     )
 
     if x0_for_units is None or xf_for_units is None:
@@ -296,7 +406,8 @@ def solve_composable_mission(
             self.v_unit_mps = None
             self.t_unit_s = None
             # approximate time bounds from last phase if available
-            self.tf_bounds_s = getattr(last, "tof_bounds_s", (0.0, 10.0))
+            last_bounds = abs_bounds[-1]
+            self.tf_bounds_s = last_bounds if last_bounds is not None else (0.0, 10.0)
 
     r_unit, v_unit, t_unit = default_units(_UnitSpec(x0_for_units, xf_for_units, mu))
 
@@ -310,9 +421,13 @@ def solve_composable_mission(
 
     if len(phases) == 2 and (phases[0].mode or "").lower() == "coast" and phases[1].previous is not None:
         p0, p1 = phases
+        t1_bounds = abs_bounds[0] or (0.0, 1800.0)
+        tf_bounds = abs_bounds[1] or (600.0, 7200.0)
         ig0, ig1 = _build_guess_two_phase_precoast_transfer(
             p0, p1,
             mu=mu,
+            t1_bounds=t1_bounds,
+            tf_bounds=tf_bounds,
             nsegs0=nsegs0,
             nsegs1=nsegs1,
             precoast_grid_size=int(getattr(mission, "precoast_grid_size", 10)),
@@ -322,6 +437,8 @@ def solve_composable_mission(
         )
         guesses[p0.name] = ig0
         guesses[p1.name] = ig1
+
+    front_impulse_v_targets = _build_front_impulse_velocity_targets(phases)
 
     # Compile phases
     ocp = oc.OptimalControlProblem()
@@ -337,10 +454,18 @@ def solve_composable_mission(
             nsegs = nsegs0 if idx == 0 else nsegs1
             # fallback midpoint guess using available initial state
             if idx == 0:
-                x0 = ph.initial_state or (_get_state_constraint(ph, "Front").x if _get_state_constraint(ph, "Front") else None)
+                x0 = ph.initial_state or _state_boundary_value(_get_state_constraint(ph, "Front"))
                 if x0 is None:
                     raise ValueError("First phase must have an initial_state or State constraint at Front.")
-                tf_guess = float(ph.tof_bounds_s[1] if ph.tof_bounds_s else 1800.0) * 0.5
+                bounds = abs_bounds[idx]
+                tf_guess = _fallback_phase_tf_guess(
+                    phase=ph,
+                    bounds_abs=bounds,
+                    t_start=0.0,
+                    r_start_m=as_vec3(x0.r_m),
+                    v_start_mps=as_vec3(x0.v_mps),
+                    mu_m3ps2=mu,
+                )
                 ig = kepler_dense_guess(r0_m=as_vec3(x0.r_m), v0_mps=as_vec3(x0.v_mps), t0_s=0.0, tf_s=tf_guess, npts=nsegs+1, mu_m3ps2=mu)
             else:
                 # start from previous guess end
@@ -350,13 +475,24 @@ def solve_composable_mission(
                     prev_guess = np.asarray(built[-1].asset_phase.returnTraj(), dtype=float).tolist()  # type: ignore
                 rv_start = np.asarray(prev_guess[-1])[0:6]
                 t_start = float(np.asarray(prev_guess[-1])[6])
-                tf_guess = float(ph.tof_bounds_s[1] if ph.tof_bounds_s else (t_start + 3600.0))
-                ig = kepler_dense_guess(r0_m=as_vec3(rv_start[0:3]), v0_mps=as_vec3(rv_start[3:6]), t0_s=t_start, tf_s=tf_guess, npts=nsegs+1, mu_m3ps2=mu)
+                bounds = abs_bounds[idx]
+                tf_guess = _fallback_phase_tf_guess(
+                    phase=ph,
+                    bounds_abs=bounds,
+                    t_start=t_start,
+                    r_start_m=as_vec3(rv_start[0:3]),
+                    v_start_mps=as_vec3(rv_start[3:6]),
+                    mu_m3ps2=mu,
+                )
+                v_start_guess = as_vec3(rv_start[3:6])
+                if idx in front_impulse_v_targets:
+                    v_start_guess = as_vec3(front_impulse_v_targets[idx])
+                ig = kepler_dense_guess(r0_m=as_vec3(rv_start[0:3]), v0_mps=v_start_guess, t0_s=t_start, tf_s=tf_guess, npts=nsegs+1, mu_m3ps2=mu)
 
         asset_phase = ode.phase(Tmodes.LGL3, ig, int(nsegs))
         ocp.addPhase(asset_phase)
 
-        built.append(_PhaseBuild(ph=ph, asset_phase=asset_phase, t_bounds=tuple(ph.tof_bounds_s or (0.0, 1.0)), index=idx))
+        built.append(_PhaseBuild(ph=ph, asset_phase=asset_phase, t_bounds=tuple(abs_bounds[idx] or (0.0, 1.0)), index=idx))
 
     # Set scaling & mesh options
     opts = options or SolverOptions()
@@ -392,10 +528,11 @@ def solve_composable_mission(
 
             # Position constraint always applied (if present)
             if pos is not None:
-                ap.addBoundaryValue(loc, ["R"], np.asarray(as_vec3(pos.r_m), dtype=float))
+                ap.addBoundaryValue(loc, ["R"], np.asarray(as_vec3(_position_boundary_value(pos)), dtype=float))
 
             if st is not None:
-                groups = tuple(getattr(st, "groups", ("R","V")))
+                st_val = _state_boundary_value(st)
+                groups = _state_groups(st)
 
                 # If an impulsive Δv is declared at this boundary, we drop V from the constraint
                 if _has_impulsive_var(ph, loc) and "V" in groups:
@@ -406,10 +543,10 @@ def solve_composable_mission(
                 use_groups = []
                 for g in groups:
                     if g == "R":
-                        vals.extend(list(as_vec3(st.x.r_m)))
+                        vals.extend(list(as_vec3(st_val.r_m)))
                         use_groups.append("R")
                     elif g == "V":
-                        vals.extend(list(as_vec3(st.x.v_mps)))
+                        vals.extend(list(as_vec3(st_val.v_mps)))
                         use_groups.append("V")
                     elif g in ("t","time"):
                         # if user requested fixing time explicitly, we honor it if phase has epoch semantics (not yet)
@@ -429,9 +566,22 @@ def solve_composable_mission(
                     if use_groups:
                         ap.addBoundaryValue(loc, use_groups, np.asarray(vals, dtype=float))
 
-        # Time bounds: interpret phase.tof_bounds_s as absolute bounds on Back time
-        if ph.tof_bounds_s is not None:
-            tmin, tmax = map(float, ph.tof_bounds_s)
+        # Path constraints (e.g., min radius)
+        for c in getattr(ph, "constraints", []) or []:
+            if getattr(c, "kind", "") == "min_radius":
+                rmin = float(getattr(c, "value"))
+                # rmin_nd = rmin / float(r_unit)
+                loc = "Path" if getattr(c, "where", "Path") == "Path" else getattr(c, "where", "Path")
+                # "R" is in scaled units here, so use a scaled bound with AutoScale=1.
+                ap.addLowerNormBound(loc, "R", rmin, AutoScale=1.0/r_unit)
+                # ap.addInequalCon(loc, rmin*rmin - vf.Arguments(3).squared_norm(), ["R"])
+
+                # breakpoint()
+
+        # Time bounds: normalize tof_bounds_s to absolute Back-time bounds.
+        bounds = abs_bounds[b.index]
+        if bounds is not None:
+            tmin, tmax = map(float, bounds)
             try:
                 ap.addLUVarBound("Back", "time", tmin, tmax)
             except Exception:
@@ -474,7 +624,7 @@ def solve_composable_mission(
                 float(w_dv) * dvmag,
                 prev_ap, "Back",  [3,4,5], [], [],
                 ap,     "Front", [3,4,5], [], [],
-                [], float(v_unit),
+                [], AutoScale=1.0 / float(v_unit),
             )
 
     # Boundary Δv objectives (mission start and terminal)
@@ -486,10 +636,11 @@ def solve_composable_mission(
             st = _get_state_constraint(first_ph, "Front")
             if st is None and first_ph.initial_state is None:
                 raise ValueError("ImpulsiveDeltaV at mission start requires a desired initial velocity (State constraint or initial_state).")
-            v_target = as_vec3((st.x.v_mps if st is not None else first_ph.initial_state.v_mps))  # type: ignore[union-attr]
+            st_val = _state_boundary_value(st)
+            v_target = as_vec3((st_val.v_mps if st_val is not None else first_ph.initial_state.v_mps))  # type: ignore[union-attr]
             a0 = vf.Arguments(3)
             dv0 = vf.sqrt((a0 - v_target).dot(a0 - v_target))
-            first_ap.addStateObjective("Front", float(w_dv) * dv0, [3,4,5], [], [], float(v_unit))
+            first_ap.addStateObjective("Front", float(w_dv) * dv0, [3,4,5], [], [], AutoScale=1.0 / float(v_unit))
 
         # Terminal: if last phase has impulsive Δv at Back, penalize relative to desired terminal velocity
         last_ph = built[-1].ph
@@ -498,19 +649,21 @@ def solve_composable_mission(
             st = _get_state_constraint(last_ph, "Back")
             if st is None and last_ph.final_state is None:
                 raise ValueError("ImpulsiveDeltaV at mission end requires a desired terminal velocity (State constraint or final_state).")
-            v_target = as_vec3((st.x.v_mps if st is not None else last_ph.final_state.v_mps))  # type: ignore[union-attr]
+            st_val = _state_boundary_value(st)
+            v_target = as_vec3((st_val.v_mps if st_val is not None else last_ph.final_state.v_mps))  # type: ignore[union-attr]
             b0 = vf.Arguments(3)
             dvf = vf.sqrt((v_target - b0).dot(v_target - b0))
-            last_ap.addStateObjective("Back", float(w_dv) * dvf, [3,4,5], [], [], float(v_unit))
+            last_ap.addStateObjective("Back", float(w_dv) * dvf, [3,4,5], [], [], AutoScale=1.0 / float(v_unit))
 
     # Time objective: minimize final time at last phase Back
     if minimize_time and float(w_time) != 0.0:
         last_ap = built[-1].asset_phase
         at = vf.Arguments(1).tolist()[0]
-        last_ap.addStateObjective("Back", float(w_time) * at, [6], [], [], float(t_unit))
+        last_ap.addStateObjective("Back", float(w_time) * at, [6], [], [], AutoScale=1.0 / float(t_unit))
 
     # Solve
     converged = ocp.solve_optimize_solve() if hasattr(ocp, "solve_optimize_solve") else ocp.optimize_solve()
+    # converged = True
 
     # Extract trajectory (stitch)
     trajs = [np.asarray(b.asset_phase.returnTraj(), dtype=float) for b in built]
@@ -520,6 +673,15 @@ def solve_composable_mission(
 
     # Maneuver bookkeeping: link dv and terminal dv if requested
     maneuvers: List[Maneuver] = []
+    # start maneuver (mission start boundary)
+    if built and _has_impulsive_var(built[0].ph, "Front"):
+        st0 = _get_state_constraint(built[0].ph, "Front")
+        st0_val = _state_boundary_value(st0)
+        v_target0 = as_vec3((st0_val.v_mps if st0_val is not None else built[0].ph.initial_state.v_mps))  # type: ignore[union-attr]
+        v_start = trajs[0][0, 3:6]
+        dv0 = v_start - v_target0
+        maneuvers.append(Maneuver(r_m=trajs[0][0,0:3], t_s=float(trajs[0][0,6]), dv_mps=dv0, name="Δv (start)"))
+
     # link maneuvers: for each phase with previous and impulsive var at front and link not continuous
     for i, b in enumerate(built):
         ph = b.ph
@@ -538,7 +700,8 @@ def solve_composable_mission(
     # terminal maneuver
     if built and _has_impulsive_var(built[-1].ph, "Back"):
         st = _get_state_constraint(built[-1].ph, "Back")
-        v_target = as_vec3((st.x.v_mps if st is not None else built[-1].ph.final_state.v_mps))  # type: ignore[union-attr]
+        st_val = _state_boundary_value(st)
+        v_target = as_vec3((st_val.v_mps if st_val is not None else built[-1].ph.final_state.v_mps))  # type: ignore[union-attr]
         v_end = trajs[-1][-1, 3:6]
         dv = v_target - v_end
         maneuvers.append(Maneuver(r_m=trajs[-1][-1,0:3], t_s=float(trajs[-1][-1,6]), dv_mps=dv, name="Δv (terminal)"))

@@ -21,7 +21,6 @@ from .specs import TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec
 from .solvers import SolverOptions
 from .solvers.rendezvous import solve as solve_rendezvous
 from .solvers.composable import solve_composable_mission
-from .constraints import State as StateConstraint, Position as PositionConstraint
 from .variables import ImpulsiveDeltaV
 
 
@@ -277,6 +276,6 @@ def _is_composable_mission(mission: "Mission") -> bool:
             if len(list(getattr(ph, "variables") or [])) > 0:
                 return True
         for c in getattr(ph, "constraints", []) or []:
-            if isinstance(c, (StateConstraint, PositionConstraint)):
+            if getattr(c, "kind", "") in ("state", "position"):
                 return True
     return False

@@ -48,7 +48,10 @@ class Phase:
     previous: Optional["Phase"] = None
     link: Optional[Link] = None
 
+    # Time-of-flight bounds; interpreted as absolute Back-time bounds by default.
+    # Set tof_is_relative=True to treat bounds as per-phase durations.
     tof_bounds_s: Optional[Tuple[float, float]] = None
+    tof_is_relative: bool = False
     info: Dict[str, Any] = field(default_factory=dict)
 
     def inherit_defaults(self) -> None:

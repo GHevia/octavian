@@ -267,7 +267,7 @@ def solve_two_impulse_free_time(
     v0 = as_vec3(spec.x0.v_mps)
     vf_ = as_vec3(spec.xf.v_mps)
 
-    vel_obj_scale = float(v_unit)
+    vel_obj_scale = 1.0 / float(v_unit)
 
     if bool(getattr(spec, "minimize_dv", True)):
         w_dv = float(getattr(spec, "dv_weight", 1.0) or 1.0)
@@ -275,18 +275,18 @@ def solve_two_impulse_free_time(
         if bool(getattr(spec, "dv_front", True)):
             a = vf.Arguments(3)
             dv1 = vf.sqrt((a - v0).dot(a - v0))
-            phase.addStateObjective("Front", w_dv * dv1, [3, 4, 5], [], [], vel_obj_scale)
+            phase.addStateObjective("Front", w_dv * dv1, [3, 4, 5], [], [], AutoScale=vel_obj_scale)
 
         if bool(getattr(spec, "dv_back", True)):
             b = vf.Arguments(3)
             dv2 = vf.sqrt((vf_ - b).dot(vf_ - b))
-            phase.addStateObjective("Back", w_dv * dv2, [3, 4, 5], [], [], vel_obj_scale)
+            phase.addStateObjective("Back", w_dv * dv2, [3, 4, 5], [], [], AutoScale=vel_obj_scale)
 
     phase.addLowerDeltaTimeBound(0.1)
 
     if float(spec.w_time) != 0.0:
         at = vf.Arguments(1).tolist()[0]
-        phase.addStateObjective("Back", float(spec.w_time) * at, [6], [], [], float(t_unit))
+        phase.addStateObjective("Back", float(spec.w_time) * at, [6], [], [], AutoScale=1.0 / float(t_unit))
 
     ocp = oc.OptimalControlProblem()
     ocp.addPhase(phase)
@@ -479,7 +479,7 @@ def solve_two_impulse_precoast(
 
     # Objectives (explicit):
 
-    vel_obj_scale = float(v_unit)
+    vel_obj_scale = 1.0 / float(v_unit)
 
     if bool(getattr(spec, "minimize_dv", True)):
         w_dv = float(getattr(spec, "dv_weight", 1.0) or 1.0)
@@ -489,7 +489,7 @@ def solve_two_impulse_precoast(
             v0 = as_vec3(spec.x0.v_mps)
             a0 = vf.Arguments(3)
             dv0 = vf.sqrt((a0 - v0).dot(a0 - v0))
-            phase0.addStateObjective("Front", w_dv * dv0, [3, 4, 5], [], [], vel_obj_scale)
+            phase0.addStateObjective("Front", w_dv * dv0, [3, 4, 5], [], [], AutoScale=vel_obj_scale)
 
         # Link Δv1 only for impulsive links
         if bool(getattr(spec, "dv_link", True)) and str(getattr(spec, "link_kind", "impulsive")).lower() != "continuous":
@@ -503,7 +503,7 @@ def solve_two_impulse_precoast(
                 phase0, "Back",  [3, 4, 5], [], [],
                 phase1, "Front", [3, 4, 5], [], [],
                 [],
-                vel_obj_scale,
+                AutoScale=vel_obj_scale,
             )
 
         # Terminal Δv2
@@ -511,11 +511,11 @@ def solve_two_impulse_precoast(
             vf_ = as_vec3(spec.xf.v_mps)
             b = vf.Arguments(3)
             dv2 = vf.sqrt((vf_ - b).dot(vf_ - b))
-            phase1.addStateObjective("Back", w_dv * dv2, [3, 4, 5], [], [], vel_obj_scale)
+            phase1.addStateObjective("Back", w_dv * dv2, [3, 4, 5], [], [], AutoScale=vel_obj_scale)
 
     if float(spec.w_time) != 0.0:
         at = vf.Arguments(1).tolist()[0]
-        phase1.addStateObjective("Back", float(spec.w_time) * at, [6], [], [], float(t_unit))
+        phase1.addStateObjective("Back", float(spec.w_time) * at, [6], [], [], AutoScale=1.0 / float(t_unit))
 
     # ocp.optimizer.set_EContol(tol)
     ocp.optimizer.set_AccKKTtol(1e-6)
