@@ -26,6 +26,7 @@ def _norm_where(where: str) -> Where:
 
 class Constraint(ABC):
     """Base class for constraints with a uniform value accessor."""
+
     kind: ClassVar[str]
     where: Where
 
@@ -47,7 +48,10 @@ class SemiMajorAxis(Constraint):
 
     @property
     def value(self) -> dict[str, float | None]:
-        return {"a_m": float(self.a_m), "tol_m": (None if self.tol_m is None else float(self.tol_m))}
+        return {
+            "a_m": float(self.a_m),
+            "tol_m": (None if self.tol_m is None else float(self.tol_m)),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,12 +66,16 @@ class InclinationDeg(Constraint):
 
     @property
     def value(self) -> dict[str, float | None]:
-        return {"inc_deg": float(self.inc_deg), "tol_deg": (None if self.tol_deg is None else float(self.tol_deg))}
+        return {
+            "inc_deg": float(self.inc_deg),
+            "tol_deg": (None if self.tol_deg is None else float(self.tol_deg)),
+        }
 
 
 @dataclass(frozen=True, slots=True)
 class MinRadius(Constraint):
     """Minimum radius magnitude constraint (path or boundary)."""
+
     kind: ClassVar[str] = "min_radius"
     r_min_m: float = 0.0
     where: Where = "Path"
@@ -80,8 +88,6 @@ class MinRadius(Constraint):
         return float(self.r_min_m)
 
 
-
-
 @dataclass(frozen=True, slots=True)
 class State(Constraint):
     """Fix a boundary Cartesian state.
@@ -91,6 +97,7 @@ class State(Constraint):
     ImpulsiveDeltaV variable exists at the same boundary, and instead
     treat the difference to the desired V as an objective term.
     """
+
     kind: ClassVar[str] = "state"
     x: BoundaryState = BoundaryState(np.zeros(3), np.zeros(3))
     where: Where = "Front"
@@ -108,6 +115,7 @@ class State(Constraint):
 @dataclass(frozen=True, slots=True)
 class Position(Constraint):
     """Fix a boundary position vector."""
+
     kind: ClassVar[str] = "position"
     r_m: Sequence[float] = (0.0, 0.0, 0.0)
     where: Where = "Front"
@@ -121,18 +129,24 @@ class Position(Constraint):
 
 
 # Factory helpers (nice user API)
-def state(x: BoundaryState, where: str = "Front", groups: Sequence[str] = ("R","V")) -> State:
+def state(x: BoundaryState, where: str = "Front", groups: Sequence[str] = ("R", "V")) -> State:
     return State(x=x, where=where, groups=tuple(str(g) for g in groups))
+
 
 def position(r_m: Sequence[float], where: str = "Front") -> Position:
     return Position(r_m=r_m, where=where)
+
 
 # Factory helpers (nice user API)
 def semi_major_axis(a_m: float, where: str = "Path", tol_m: float | None = None) -> SemiMajorAxis:
     return SemiMajorAxis(a_m=a_m, where=where, tol_m=tol_m)
 
-def inclination_deg(inc_deg: float, where: str = "Path", tol_deg: float | None = None) -> InclinationDeg:
+
+def inclination_deg(
+    inc_deg: float, where: str = "Path", tol_deg: float | None = None
+) -> InclinationDeg:
     return InclinationDeg(inc_deg=inc_deg, where=where, tol_deg=tol_deg)
+
 
 def min_radius(r_min_m: float, where: str = "Path") -> MinRadius:
     return MinRadius(r_min_m=r_min_m, where=where)

@@ -28,12 +28,14 @@ class Objective:
 @dataclass(frozen=True, slots=True)
 class MinimizeDeltaV(Objective):
     """Minimize the sum of Δv magnitudes for impulsive maneuvers."""
+
     kind: str = "delta_v"
 
 
 @dataclass(frozen=True, slots=True)
 class MinimizeTime(Objective):
     """Minimize total time-of-flight (weighted)."""
+
     kind: str = "time"
 
 

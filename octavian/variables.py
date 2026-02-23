@@ -29,6 +29,7 @@ def _norm_where(where: str) -> Where:
 
 class Variable:
     """Marker base class for composable decision variables."""
+
     kind: ClassVar[str]
     where: Where
 
@@ -51,6 +52,7 @@ class ImpulsiveDeltaV(Variable):
       - If a State constraint exists at Back providing a desired terminal velocity,
         Δv is measured between this.Back.V and the desired V.
     """
+
     kind: ClassVar[str] = "impulsive_delta_v"
     where: Where = "Front"
 

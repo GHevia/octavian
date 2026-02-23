@@ -23,17 +23,24 @@ class LambertSeed:
     v2_mps: Vec3
     total_dv_mps: float
 
-def _call_lambert_izzo(r0: Vec3, rf: Vec3, tof_s: float, mu: float, longway: bool, nrev: int, rightbranch: bool) -> tuple[Vec3, Vec3]:
+
+def _call_lambert_izzo(
+    r0: Vec3, rf: Vec3, tof_s: float, mu: float, longway: bool, nrev: int, rightbranch: bool
+) -> tuple[Vec3, Vec3]:
     if ast is None:
         raise RuntimeError("asset_asrl is required for lambert_izzo.")
     if int(nrev) == 0:
         v1, v2 = ast.Astro.lambert_izzo(r0, rf, float(tof_s), float(mu), bool(longway))
     else:
-        v1, v2 = ast.Astro.lambert_izzo(r0, rf, float(tof_s), float(mu), bool(longway), int(nrev), bool(rightbranch))
+        v1, v2 = ast.Astro.lambert_izzo(
+            r0, rf, float(tof_s), float(mu), bool(longway), int(nrev), bool(rightbranch)
+        )
     return as_vec3(v1), as_vec3(v2)
+
 
 def _total_dv(v1: Vec3, v2: Vec3, v0: Vec3, vf: Vec3) -> float:
     return float(np.linalg.norm(v1 - v0) + np.linalg.norm(vf - v2))
+
 
 def select_best_lambert_seed(
     *,
@@ -95,7 +102,13 @@ def select_best_lambert_seed(
                 for rightbranch in rb_iter:
                     try:
                         v1, v2 = _call_lambert_izzo(
-                            r0, rf, float(tof), float(mu_m3ps2), bool(longway), int(nrev), bool(rightbranch)
+                            r0,
+                            rf,
+                            float(tof),
+                            float(mu_m3ps2),
+                            bool(longway),
+                            int(nrev),
+                            bool(rightbranch),
                         )
                     except Exception:
                         continue
@@ -116,4 +129,3 @@ def select_best_lambert_seed(
     if best is None:
         raise RuntimeError("No Lambert solution succeeded for any TOF/branch.")
     return best
-

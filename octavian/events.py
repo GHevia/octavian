@@ -17,6 +17,7 @@ def _norm_where(where: str) -> BoundaryWhere:
 
 class BoundaryEvent:
     """Marker base class for boundary events."""
+
     kind: ClassVar[str]
     where: BoundaryWhere
 
@@ -24,6 +25,7 @@ class BoundaryEvent:
 @dataclass(frozen=True, slots=True)
 class Impulse(BoundaryEvent):
     """Impulsive Δv at a phase boundary."""
+
     kind: ClassVar[str] = "impulse"
     where: BoundaryWhere = "Front"
     dv_max_mps: float | None = None

@@ -51,7 +51,9 @@ def main() -> None:
         dv = sol.result.total_dv_mps()
         tf = sol.result.tf_s()
         results.append((dv, tf, sol, dy))
-        print(f"case {i}: dy={dy/1e3:6.0f} km | converged={sol.result.converged} | tf={tf:8.1f} s | dv={dv:10.3f} m/s")
+        print(
+            f"case {i}: dy={dy/1e3:6.0f} km | converged={sol.result.converged} | tf={tf:8.1f} s | dv={dv:10.3f} m/s"
+        )
 
     # pick best by dv among converged
     converged = [r for r in results if r[2].result.converged]
@@ -63,7 +65,12 @@ def main() -> None:
     print(sol_best.summary())
 
     out_html = "traj_quick_batch_best.html"
-    save_trajectory_html(sol_best.result.traj, out_html, maneuvers=sol_best.result.maneuvers, title=f"Quick sweep BEST (dy={dy_best/1e3:.0f} km)")
+    save_trajectory_html(
+        sol_best.result.traj,
+        out_html,
+        maneuvers=sol_best.result.maneuvers,
+        title=f"Quick sweep BEST (dy={dy_best/1e3:.0f} km)",
+    )
     print(f"Wrote: {out_html}")
 
 

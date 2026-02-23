@@ -49,7 +49,7 @@ def main() -> None:
         dynamics=dynamics,
         tof_bounds_s=(0.0, 6000.0),
         constraints=[constraints.state(x0, where="Front")],
-        variables=[variables.ImpulsiveDeltaV(where="Front")]
+        variables=[variables.ImpulsiveDeltaV(where="Front")],
     )
 
     transfer = Phase(
@@ -74,7 +74,9 @@ def main() -> None:
     print(sol.summary())
 
     out_html = "traj_composable_precoast_continuous_link.html"
-    save_trajectory_html(sol.result.traj, out_html, maneuvers=sol.result.maneuvers, title=mission.name)
+    save_trajectory_html(
+        sol.result.traj, out_html, maneuvers=sol.result.maneuvers, title=mission.name
+    )
     print(f"Wrote: {out_html}")
 
 

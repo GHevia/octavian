@@ -59,7 +59,9 @@ def main() -> None:
         print(sol.summary())
 
         out_html = f"traj_quick_time_tradeoff_{tag}.html"
-        save_trajectory_html(sol.result.traj, out_html, maneuvers=sol.result.maneuvers, title=mission.name)
+        save_trajectory_html(
+            sol.result.traj, out_html, maneuvers=sol.result.maneuvers, title=mission.name
+        )
         print(f"Wrote: {out_html}")
 
 

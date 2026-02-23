@@ -74,10 +74,17 @@ class Phase:
 
     def has_impulse(self, where: str) -> bool:
         w = (where or "").strip().lower()
-        loc = "Front" if w in ("front", "start", "initial", "t0") else "Back" if w in ("back", "end", "final", "tf") else None
+        loc = (
+            "Front"
+            if w in ("front", "start", "initial", "t0")
+            else "Back" if w in ("back", "end", "final", "tf") else None
+        )
         if loc is None:
             raise ValueError("where must be 'front' or 'back'")
-        return any(getattr(ev, "kind", "") == "impulse" and getattr(ev, "where", "") == loc for ev in self.events)
+        return any(
+            getattr(ev, "kind", "") == "impulse" and getattr(ev, "where", "") == loc
+            for ev in self.events
+        )
 
     def validate(self) -> None:
         self.inherit_defaults()

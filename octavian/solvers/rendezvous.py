@@ -43,6 +43,7 @@ else:  # pragma: no cover
 
 TrajArray = NDArray[np.float64]
 
+
 def _require_asset() -> None:
     """Raise a clear error if ASSET is not installed."""
     if ast is None:
@@ -50,7 +51,6 @@ def _require_asset() -> None:
             "asset_asrl is required for optimization solves. Install it (and its compiled dependencies) "
             "in your environment before calling octavian.solvers.*"
         )
-
 
 
 @dataclass
@@ -127,10 +127,26 @@ class RendezvousResult:
         from pathlib import Path as _Path
 
         p = _Path(path)
-        r = np.asarray([m.r_m for m in self.maneuvers], dtype=float) if self.maneuvers else np.empty((0, 3), dtype=float)
-        dv = np.asarray([m.dv_mps for m in self.maneuvers], dtype=float) if self.maneuvers else np.empty((0, 3), dtype=float)
-        t = np.asarray([m.t_s for m in self.maneuvers], dtype=float) if self.maneuvers else np.empty((0,), dtype=float)
-        names = np.asarray([m.name for m in self.maneuvers], dtype=object) if self.maneuvers else np.empty((0,), dtype=object)
+        r = (
+            np.asarray([m.r_m for m in self.maneuvers], dtype=float)
+            if self.maneuvers
+            else np.empty((0, 3), dtype=float)
+        )
+        dv = (
+            np.asarray([m.dv_mps for m in self.maneuvers], dtype=float)
+            if self.maneuvers
+            else np.empty((0, 3), dtype=float)
+        )
+        t = (
+            np.asarray([m.t_s for m in self.maneuvers], dtype=float)
+            if self.maneuvers
+            else np.empty((0,), dtype=float)
+        )
+        names = (
+            np.asarray([m.name for m in self.maneuvers], dtype=object)
+            if self.maneuvers
+            else np.empty((0,), dtype=object)
+        )
         info_json = _json.dumps(self.info, ensure_ascii=False)
         np.savez_compressed(
             p,
@@ -165,7 +181,9 @@ class RendezvousResult:
             Maneuver(r_m=r[i], t_s=float(t[i]), dv_mps=dv[i], name=str(names[i]))
             for i in range(len(t))
         ]
-        return cls(converged=converged, traj=traj, maneuvers=maneuvers, last_obj=last_obj, info=info)
+        return cls(
+            converged=converged, traj=traj, maneuvers=maneuvers, last_obj=last_obj, info=info
+        )
 
     def to_json(self, *, indent: int | None = None) -> str:
         """Serialize result metadata (not the full trajectory) to JSON."""
@@ -246,7 +264,6 @@ def solve_two_impulse_free_time(
 
     phase = ode.phase(Tmodes.LGL3, ig, int(spec.nsegs))
 
-
     # Constraints: fix start R and time, fix end R, bound end time (time index = 6)
     phase.addBoundaryValue("Front", ["R", "t"], np.hstack([as_vec3(spec.x0.r_m), [t0]]))
     phase.addBoundaryValue("Back", ["R"], as_vec3(spec.xf.r_m))
@@ -259,7 +276,6 @@ def solve_two_impulse_free_time(
         phase.addBoundaryValue("Front", ["V"], as_vec3(spec.x0.v_mps))
     if not bool(getattr(spec, "dv_back", True)):
         phase.addBoundaryValue("Back", ["V"], as_vec3(spec.xf.v_mps))
-
 
     # Objectives (explicit):
     #  - If minimize_dv: include Δv penalties at enabled impulsive boundaries.
@@ -286,7 +302,9 @@ def solve_two_impulse_free_time(
 
     if float(spec.w_time) != 0.0:
         at = vf.Arguments(1).tolist()[0]
-        phase.addStateObjective("Back", float(spec.w_time) * at, [6], [], [], AutoScale=1.0 / float(t_unit))
+        phase.addStateObjective(
+            "Back", float(spec.w_time) * at, [6], [], [], AutoScale=1.0 / float(t_unit)
+        )
 
     ocp = oc.OptimalControlProblem()
     ocp.addPhase(phase)
@@ -299,7 +317,7 @@ def solve_two_impulse_free_time(
     phase.setAutoScaling(bool(opts.enable_auto_scaling))
     phase.setUnits(R=r_unit, V=v_unit, t=t_unit)
     phase.setAdaptiveMesh(bool(opts.enable_adaptive_mesh))
-    ocp.setAutoScaling(True,True)
+    ocp.setAutoScaling(True, True)
     ocp.setAdaptiveMesh(True)
     ocp.PrintMeshInfo = False
 
@@ -400,7 +418,6 @@ def solve_two_impulse_precoast(
             nrevs=tuple(int(n) for n in spec.nrevs_to_try),
         )
 
-
         dv1 = as_vec3(seed.v1_mps) - as_vec3(v1_minus)
         dv2 = as_vec3(spec.xf.v_mps) - as_vec3(seed.v2_mps)
         score = float(np.linalg.norm(dv1) + np.linalg.norm(dv2))
@@ -439,7 +456,7 @@ def solve_two_impulse_precoast(
 
     phase0 = ode.phase(Tmodes.LGL3, ig0, int(spec.nsegs_precoast))
     phase1 = ode.phase(Tmodes.LGL3, ig1, int(spec.nsegs_transfer))
- 
+
     # Phase 0 boundary: fix full state and t0, bound t1 (time index 6)
 
     if bool(getattr(spec, "dv_front", False)):
@@ -470,7 +487,6 @@ def solve_two_impulse_precoast(
     ocp.addPhase(phase0)
     ocp.addPhase(phase1)
 
-
     # Link constraints: choose continuity groups based on spec.link_kind
     if str(getattr(spec, "link_kind", "impulsive")).lower() == "continuous":
         ocp.addForwardLinkEqualCon(phase0, phase1, ["R", "V", "t"])
@@ -489,10 +505,15 @@ def solve_two_impulse_precoast(
             v0 = as_vec3(spec.x0.v_mps)
             a0 = vf.Arguments(3)
             dv0 = vf.sqrt((a0 - v0).dot(a0 - v0))
-            phase0.addStateObjective("Front", w_dv * dv0, [3, 4, 5], [], [], AutoScale=vel_obj_scale)
+            phase0.addStateObjective(
+                "Front", w_dv * dv0, [3, 4, 5], [], [], AutoScale=vel_obj_scale
+            )
 
         # Link Δv1 only for impulsive links
-        if bool(getattr(spec, "dv_link", True)) and str(getattr(spec, "link_kind", "impulsive")).lower() != "continuous":
+        if (
+            bool(getattr(spec, "dv_link", True))
+            and str(getattr(spec, "link_kind", "impulsive")).lower() != "continuous"
+        ):
             a = vf.Arguments(6)
             v_minus = a.head(3)
             v_plus = a.segment(3, 3)
@@ -500,8 +521,16 @@ def solve_two_impulse_precoast(
             dv1 = vf.sqrt(dv.dot(dv))
             ocp.addLinkObjective(
                 w_dv * dv1,
-                phase0, "Back",  [3, 4, 5], [], [],
-                phase1, "Front", [3, 4, 5], [], [],
+                phase0,
+                "Back",
+                [3, 4, 5],
+                [],
+                [],
+                phase1,
+                "Front",
+                [3, 4, 5],
+                [],
+                [],
                 [],
                 AutoScale=vel_obj_scale,
             )
@@ -515,12 +544,13 @@ def solve_two_impulse_precoast(
 
     if float(spec.w_time) != 0.0:
         at = vf.Arguments(1).tolist()[0]
-        phase1.addStateObjective("Back", float(spec.w_time) * at, [6], [], [], AutoScale=1.0 / float(t_unit))
+        phase1.addStateObjective(
+            "Back", float(spec.w_time) * at, [6], [], [], AutoScale=1.0 / float(t_unit)
+        )
 
     # ocp.optimizer.set_EContol(tol)
     ocp.optimizer.set_AccKKTtol(1e-6)
 
-    
     opts = options or SolverOptions()
     ocp.optimizer.PrintLevel = int(opts.print_level)
     ocp.optimizer.MaxLSIters = int(opts.max_ls_iters)
@@ -535,8 +565,8 @@ def solve_two_impulse_precoast(
         ph.setAutoScaling(True)
         ph.setUnits(R=r_unit, V=v_unit, t=t_unit)
         ph.setAdaptiveMesh(True)
-    
-    ocp.setAutoScaling(True,True)
+
+    ocp.setAutoScaling(True, True)
     ocp.setAdaptiveMesh(True)
     ocp.PrintMeshInfo = False
 

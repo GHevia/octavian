@@ -91,7 +91,9 @@ def main() -> None:
         print(f"terminal velocity error vs desired: {verr:.6e} m/s")
 
         out_html = f"traj_composable_terminal_velocity_{tag}.html"
-        save_trajectory_html(sol.result.traj, out_html, maneuvers=sol.result.maneuvers, title=mission.name)
+        save_trajectory_html(
+            sol.result.traj, out_html, maneuvers=sol.result.maneuvers, title=mission.name
+        )
         print(f"Wrote: {out_html}")
 
     solve_case("hard", terminal_is_objective=False)

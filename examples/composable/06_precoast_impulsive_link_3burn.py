@@ -113,7 +113,9 @@ def main() -> None:
     print(sol.summary())
 
     out_html = "traj_composable_precoast_impulsive_link_3burn.html"
-    save_trajectory_html(sol.result.traj, out_html, maneuvers=sol.result.maneuvers, title=mission.name)
+    save_trajectory_html(
+        sol.result.traj, out_html, maneuvers=sol.result.maneuvers, title=mission.name
+    )
     print(f"Wrote: {out_html}")
 
 

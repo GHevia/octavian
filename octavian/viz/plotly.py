@@ -62,7 +62,7 @@ def save_trajectory_html(
             resolved_texture_path = None
         else:
             resolved_texture_path = str(Path(earth_texture_path).expanduser())
-            
+
     # -----------------------------
     # Normalize inputs
     # -----------------------------
@@ -83,7 +83,6 @@ def save_trajectory_html(
     xf_r = r[-1].copy() if xf_r_m is None else np.asarray(xf_r_m, float).reshape(3)
 
     xf_v = v[-1].copy() if xf_v_mps is None else np.asarray(xf_v_mps, float).reshape(3)
-
 
     # -----------------------------
     # Resolve texture path / toggle
@@ -150,9 +149,12 @@ def save_trajectory_html(
             colorscale.append([s, f"rgb({int(rr)},{int(gg)},{int(bb)})"])
 
         earth = go.Surface(
-            x=xs, y=ys, z=zs,
+            x=xs,
+            y=ys,
+            z=zs,
             surfacecolor=tex_idx.astype(np.float64),  # 0..255
-            cmin=0, cmax=255,
+            cmin=0,
+            cmax=255,
             colorscale=colorscale,
             showscale=False,
             name="Earth",
@@ -170,7 +172,9 @@ def save_trajectory_html(
         zs = Re * np.cos(vv)
 
         earth = go.Surface(
-            x=xs, y=ys, z=zs,
+            x=xs,
+            y=ys,
+            z=zs,
             showscale=False,
             colorscale=[[0.0, "blue"], [1.0, "blue"]],
             name="Earth",
@@ -181,7 +185,9 @@ def save_trajectory_html(
     # Trajectory + markers
     # -----------------------------
     line = go.Scatter3d(
-        x=r[:, 0], y=r[:, 1], z=r[:, 2],
+        x=r[:, 0],
+        y=r[:, 1],
+        z=r[:, 2],
         mode="lines",
         name="Trajectory",
         line=dict(width=6, color="white"),
@@ -204,7 +210,9 @@ def save_trajectory_html(
     )
 
     start = go.Scatter3d(
-        x=[r[0, 0]], y=[r[0, 1]], z=[r[0, 2]],
+        x=[r[0, 0]],
+        y=[r[0, 1]],
+        z=[r[0, 2]],
         mode="markers",
         marker=dict(size=6, color="white"),
         name="Start",
@@ -213,7 +221,9 @@ def save_trajectory_html(
     )
 
     end = go.Scatter3d(
-        x=[r[-1, 0]], y=[r[-1, 1]], z=[r[-1, 2]],
+        x=[r[-1, 0]],
+        y=[r[-1, 1]],
+        z=[r[-1, 2]],
         mode="markers",
         marker=dict(size=6, color="white"),
         name="End",
@@ -237,7 +247,9 @@ def save_trajectory_html(
             )
             man_traces.append(
                 go.Scatter3d(
-                    x=[mr[0]], y=[mr[1]], z=[mr[2]],
+                    x=[mr[0]],
+                    y=[mr[1]],
+                    z=[mr[2]],
                     mode="markers",
                     marker=dict(size=7, color="red"),
                     name=f"M{i}: {m.name}",
@@ -254,9 +266,21 @@ def save_trajectory_html(
         font=dict(color="white"),
         scene=dict(
             bgcolor="black",
-            xaxis=dict(backgroundcolor="black", gridcolor="rgba(255,255,255,0.1)", zerolinecolor="rgba(255,255,255,0.2)"),
-            yaxis=dict(backgroundcolor="black", gridcolor="rgba(255,255,255,0.1)", zerolinecolor="rgba(255,255,255,0.2)"),
-            zaxis=dict(backgroundcolor="black", gridcolor="rgba(255,255,255,0.1)", zerolinecolor="rgba(255,255,255,0.2)"),
+            xaxis=dict(
+                backgroundcolor="black",
+                gridcolor="rgba(255,255,255,0.1)",
+                zerolinecolor="rgba(255,255,255,0.2)",
+            ),
+            yaxis=dict(
+                backgroundcolor="black",
+                gridcolor="rgba(255,255,255,0.1)",
+                zerolinecolor="rgba(255,255,255,0.2)",
+            ),
+            zaxis=dict(
+                backgroundcolor="black",
+                gridcolor="rgba(255,255,255,0.1)",
+                zerolinecolor="rgba(255,255,255,0.2)",
+            ),
             aspectmode="data",
         ),
         margin=dict(l=0, r=0, t=40, b=0),

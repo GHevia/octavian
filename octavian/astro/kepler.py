@@ -18,7 +18,10 @@ def propagate_cartesian_rv(rv6: np.ndarray, dt_s: float, mu_m3ps2: float) -> np.
     out = ast.Astro.propagate_cartesian(rv6, float(dt_s), float(mu_m3ps2))
     return np.asarray(out, dtype=float).reshape(6)
 
-def kepler_dense_guess(*, r0_m: Vec3, v0_mps: Vec3, t0_s: float, tf_s: float, npts: int, mu_m3ps2: float) -> list[np.ndarray]:
+
+def kepler_dense_guess(
+    *, r0_m: Vec3, v0_mps: Vec3, t0_s: float, tf_s: float, npts: int, mu_m3ps2: float
+) -> list[np.ndarray]:
     """Dense guess [x(6), t] built via repeated Kepler propagation."""
     if npts < 2:
         raise ValueError("npts must be >= 2")
@@ -33,6 +36,7 @@ def kepler_dense_guess(*, r0_m: Vec3, v0_mps: Vec3, t0_s: float, tf_s: float, np
         rv = propagate_cartesian_rv(rv0, float(t - t0), float(mu_m3ps2))
         out.append(np.hstack([rv, float(t)]))
     return out
+
 
 def estimate_orbital_period_s(r_m: Vec3, v_mps: Vec3, mu_m3ps2: float) -> float | None:
     """Estimate orbital period for elliptic orbit; else None."""

@@ -38,7 +38,11 @@ def snap_maneuvers_to_traj(traj: np.ndarray, maneuvers):
     for m in maneuvers:
         mt = float(m.t_s)
         i = int(np.argmin(np.abs(t - mt)))
-        out.append(type(m)(r_m=r[i].copy(), t_s=mt, dv_mps=np.asarray(m.dv_mps, float).reshape(3), name=m.name))
+        out.append(
+            type(m)(
+                r_m=r[i].copy(), t_s=mt, dv_mps=np.asarray(m.dv_mps, float).reshape(3), name=m.name
+            )
+        )
     return out
 
 
@@ -77,10 +81,14 @@ def main() -> None:
         previous=precoast,
         link=links.impulsive(),
         tof_bounds_s=(600.0, 60_000.0),
-        constraints=[constraints.state(xf, where="Back"),
+        constraints=[
+            constraints.state(xf, where="Back"),
             constraints.min_radius(r_min_m, where="Path"),
         ],
-        variables=[variables.ImpulsiveDeltaV(where="Front"), variables.ImpulsiveDeltaV(where="Back")],
+        variables=[
+            variables.ImpulsiveDeltaV(where="Front"),
+            variables.ImpulsiveDeltaV(where="Back"),
+        ],
     )
 
     mission = Mission(
@@ -95,7 +103,9 @@ def main() -> None:
     traj = sol.result.traj
 
     out1 = "traj_plot_maneuvers_raw.html"
-    save_trajectory_html(traj, out1, maneuvers=sol.result.maneuvers, title=mission.name + " (raw maneuvers)")
+    save_trajectory_html(
+        traj, out1, maneuvers=sol.result.maneuvers, title=mission.name + " (raw maneuvers)"
+    )
 
     out2 = "traj_plot_maneuvers_snapped.html"
     snapped = snap_maneuvers_to_traj(traj, list(sol.result.maneuvers))

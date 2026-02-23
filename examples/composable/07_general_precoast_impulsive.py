@@ -73,7 +73,7 @@ transfer = Phase(
     constraints=[constraints.state(xf, where="Back")],
     variables=[
         variables.ImpulsiveDeltaV(where="Front"),  # link maneuver objective
-        variables.ImpulsiveDeltaV(where="Back"),   # terminal maneuver objective
+        variables.ImpulsiveDeltaV(where="Back"),  # terminal maneuver objective
     ],
 )
 
@@ -87,5 +87,10 @@ sol = mission.solve()
 print(sol.summary())
 
 if sol.result is not None:
-    save_trajectory_html(sol.result.traj, "traj_composable_general.html", title=mission.name, maneuvers=sol.result.maneuvers)
+    save_trajectory_html(
+        sol.result.traj,
+        "traj_composable_general.html",
+        title=mission.name,
+        maneuvers=sol.result.maneuvers,
+    )
     print("Wrote traj_composable_general.html")

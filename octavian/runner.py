@@ -51,6 +51,7 @@ class MissionRunner:
         last_error: str | None = None
 
         stages = list(self.plan.stages) or [None]
+
         def stage_name(s):
             return getattr(s, "name", "default") if s is not None else "default"
 
@@ -83,7 +84,9 @@ class MissionRunner:
                 except Exception as e:  # noqa: BLE001
                     msg = str(e)
                     last_error = msg
-                    attempts.append(AttemptLog(stage=stage_label, attempt=attempt, status="fail", message=msg))
+                    attempts.append(
+                        AttemptLog(stage=stage_label, attempt=attempt, status="fail", message=msg)
+                    )
 
                     if not self.retry.enabled or attempt >= max_attempts:
                         break
@@ -96,7 +99,9 @@ class MissionRunner:
         return sol
 
 
-def _mission_to_rendezvous_spec(mission: Mission) -> TwoImpulseFreeTimeSpec | TwoImpulsePreCoastSpec:
+def _mission_to_rendezvous_spec(
+    mission: Mission,
+) -> TwoImpulseFreeTimeSpec | TwoImpulsePreCoastSpec:
     """Map Mission phases into the currently supported rendezvous specs.
 
     Supported patterns (v0.x):
@@ -178,8 +183,8 @@ def _mission_to_rendezvous_spec(mission: Mission) -> TwoImpulseFreeTimeSpec | Tw
 
         dv_front = p0.has_impulse("front") if p0.events else False
 
-        link_kind = (p1.link.kind if p1.link is not None else "continuous")
-        dv_link = (link_kind.lower() == "impulsive")
+        link_kind = p1.link.kind if p1.link is not None else "continuous"
+        dv_link = link_kind.lower() == "impulsive"
 
         mode1 = (p1.mode or "").lower()
         dv_back = p1.has_impulse("back") if p1.events else mode1 in ("rendezvous", "transfer")
@@ -216,7 +221,9 @@ def _scale_mesh(spec: TwoImpulseFreeTimeSpec | TwoImpulsePreCoastSpec, scale: fl
     if scale <= 0:
         return spec
     if isinstance(spec, TwoImpulseFreeTimeSpec):
-        return TwoImpulseFreeTimeSpec(**{**spec.__dict__, "nsegs": max(10, int(spec.nsegs * scale))})
+        return TwoImpulseFreeTimeSpec(
+            **{**spec.__dict__, "nsegs": max(10, int(spec.nsegs * scale))}
+        )
     return TwoImpulsePreCoastSpec(
         **{
             **spec.__dict__,
@@ -252,15 +259,21 @@ def _apply_simple_retry(
             }
         )
 
-    if ("did not converge" in msg or "converge" in msg) and isinstance(spec, TwoImpulseFreeTimeSpec):
+    if ("did not converge" in msg or "converge" in msg) and isinstance(
+        spec, TwoImpulseFreeTimeSpec
+    ):
         tfmin, tfmax = spec.tf_bounds_s
         mid = 0.5 * (float(tfmin) + float(tfmax))
         guess = mid if (attempt % 2 == 1) else (0.75 * float(tfmax) + 0.25 * float(tfmin))
         return TwoImpulseFreeTimeSpec(**{**spec.__dict__, "tf_guess_s": guess})
 
     if isinstance(spec, TwoImpulseFreeTimeSpec):
-        return TwoImpulseFreeTimeSpec(**{**spec.__dict__, "lambert_grid_size": int(spec.lambert_grid_size) + 20})
-    return TwoImpulsePreCoastSpec(**{**spec.__dict__, "lambert_grid_size": int(spec.lambert_grid_size) + 20})
+        return TwoImpulseFreeTimeSpec(
+            **{**spec.__dict__, "lambert_grid_size": int(spec.lambert_grid_size) + 20}
+        )
+    return TwoImpulsePreCoastSpec(
+        **{**spec.__dict__, "lambert_grid_size": int(spec.lambert_grid_size) + 20}
+    )
 
 
 def _is_composable_mission(mission: Mission) -> bool:

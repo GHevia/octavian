@@ -43,7 +43,9 @@ class Solution:
         if self.attempts:
             lines.append("  attempts:")
             for a in self.attempts:
-                lines.append(f"    - stage={a.stage} attempt={a.attempt}: {a.status} {a.message}".rstrip())
+                lines.append(
+                    f"    - stage={a.stage} attempt={a.attempt}: {a.status} {a.message}".rstrip()
+                )
         return "\n".join(lines)
 
     @property

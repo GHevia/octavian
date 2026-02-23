@@ -15,6 +15,7 @@ class Maneuver:
         dv_mps: applied delta-v [m/s], shape (3,)
         name: label used for reporting/plots
     """
+
     r_m: np.ndarray
     t_s: float
     dv_mps: np.ndarray

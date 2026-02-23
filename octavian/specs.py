@@ -13,15 +13,19 @@ class BoundaryState:
         r_m: Position in meters, shape (3,).
         v_mps: Velocity in meters per second, shape (3,).
     """
+
     r_m: np.ndarray
     v_mps: np.ndarray
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "r_m", np.asarray(self.r_m, dtype=float).reshape(3))
         object.__setattr__(self, "v_mps", np.asarray(self.v_mps, dtype=float).reshape(3))
 
+
 @dataclass(frozen=True)
 class TwoImpulseFreeTimeSpec:
     """Problem specification for two-impulse rendezvous with free final time."""
+
     x0: BoundaryState
     xf: BoundaryState
 
@@ -67,9 +71,11 @@ class TwoImpulseFreeTimeSpec:
         """Alias for `tf_bounds_s` with a clearer name."""
         return self.tf_bounds_s
 
+
 @dataclass(frozen=True)
 class TwoImpulsePreCoastSpec:
     """Problem specification for two-impulse rendezvous with variable pre-coast."""
+
     x0: BoundaryState
     xf: BoundaryState
 
