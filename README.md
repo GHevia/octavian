@@ -9,14 +9,15 @@ This MVP includes:
 - Fast two-body initial guesses via ASSET Kepler propagation (`Astro.propagate_cartesian`)
 - Plotly HTML visualization with maneuver markers
 
-ASSET must be installed separately.
+`octavian` can be installed from PyPI, but ASSET must still be installed separately for solver-backed workflows.
 
 ## Install
 
 ```bash
-pip install -e .
-pip install "octavian[viz]"
+pip install octavian
 ```
+
+If you plan to run the optimization solvers, install `asset_asrl` separately in the same environment.
 
 ## Examples
 
@@ -28,14 +29,17 @@ python examples/quick/02_two_impulse_precoast_impulsive_link.py
 
 ## Development
 
-- Install editable with dev tools:
-
 ```bash
 pip install -e ".[dev]"
 pre-commit install
+python -m build
 pytest
 ```
 
 ## Studies
 
 Use `octavian.study.grid` to run parameter sweeps and optionally save results to disk.
+
+## Releasing
+
+Release versions are published from Git tags such as `v0.1.3` by GitHub Actions. Maintainer steps are documented in [RELEASING.md](RELEASING.md).

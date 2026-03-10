@@ -10,17 +10,44 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Octavian Contributors" }]
+keywords = ["astrodynamics", "trajectory-optimization", "orbital-mechanics", "space", "optimization"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Physics",
+]
 dependencies = [
   "numpy>=1.23",
   "plotly>=5.18.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/GHevia/octavian"
+Repository = "https://github.com/GHevia/octavian"
+Issues = "https://github.com/GHevia/octavian/issues"
+
 [project.optional-dependencies]
 dev = [
+  "build>=1.2",
   "pytest>=7.4",
   "ruff>=0.6",
   "black>=24.0",
   "pre-commit>=3.6",
+]
+
+[tool.hatch.build]
+include = [
+  "/octavian/**/*.py",
+  "/octavian/viz/data/*.jpg",
+  "/octavian/viz/data/*.png",
+  "/README.md",
+  "/LICENSE",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -41,6 +68,3 @@ ignore = ["E501"]
 [tool.black]
 line-length = 100
 target-version = ["py310"]
-
-[tool.setuptools.package-data]
-"octavian.viz.data" = ["*.jpg", "*.png"]
