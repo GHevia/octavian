@@ -76,19 +76,34 @@ class RendezvousResult:
     info: dict[str, Any] = field(default_factory=dict)
 
     def tf_s(self) -> float:
-        """Return the final time-of-flight in seconds from the trajectory."""
+        """Return the final time of flight in seconds.
+
+        Returns:
+            The last trajectory time sample in seconds, or ``nan`` if the
+            trajectory is empty.
+        """
         if self.traj.size == 0:
             return float("nan")
         return float(self.traj[-1, -1])
 
     def total_dv_mps(self) -> float:
-        """Return total delta-v magnitude sum across maneuvers [m/s]."""
+        """Return the total maneuver delta-v magnitude in meters per second.
+
+        Returns:
+            The sum of maneuver magnitudes. Returns ``0.0`` when no maneuvers
+            are stored on the result.
+        """
         if not self.maneuvers:
             return 0.0
         return float(sum(np.linalg.norm(m.dv_mps) for m in self.maneuvers))
 
     def summary(self) -> str:
-        """Return a compact, human-readable summary string."""
+        """Build a compact human-readable summary of the result.
+
+        Returns:
+            A multiline summary string containing convergence status, timing,
+            delta-v, and selected metadata.
+        """
         lines: list[str] = []
         status = "CONVERGED" if self.converged else "NOT CONVERGED"
         lines.append(f"Octavian result: {status}")
@@ -108,20 +123,14 @@ class RendezvousResult:
         return "\n".join(lines)
 
     def to_npz(self, path: str | Path) -> None:
-        """Save this result to a ``.npz`` file.
-
-        The file contains:
-            - traj: float array
-            - converged: int (0/1)
-            - last_obj: float
-            - maneuver_r_m: (M,3) float
-            - maneuver_dv_mps: (M,3) float
-            - maneuver_t_s: (M,) float
-            - maneuver_name: (M,) object array
-            - info_json: UTF-8 JSON string (object array scalar)
+        """Save this result to a compressed ``.npz`` file.
 
         Args:
             path: Output file path.
+
+        Notes:
+            The archive stores the trajectory, convergence flag, objective
+            value, maneuver fields, and JSON-serialized ``info`` metadata.
         """
         import json as _json
         from pathlib import Path as _Path
@@ -162,7 +171,14 @@ class RendezvousResult:
 
     @classmethod
     def from_npz(cls, path: str | Path) -> RendezvousResult:
-        """Load a :class:`RendezvousResult` from a ``.npz`` file."""
+        """Load a result from a compressed ``.npz`` file.
+
+        Args:
+            path: Path previously written by :meth:`to_npz`.
+
+        Returns:
+            The reconstructed result object.
+        """
         import json as _json
         from pathlib import Path as _Path
 
@@ -186,7 +202,14 @@ class RendezvousResult:
         )
 
     def to_json(self, *, indent: int | None = None) -> str:
-        """Serialize result metadata (not the full trajectory) to JSON."""
+        """Serialize summary metadata to JSON.
+
+        Args:
+            indent: Optional indentation level passed to ``json.dumps``.
+
+        Returns:
+            A JSON string containing summary fields, maneuvers, and metadata.
+        """
         import json as _json
 
         obj = {
@@ -213,7 +236,18 @@ def solve(
     *,
     options: SolverOptions | None = None,
 ) -> RendezvousResult:
-    """Dispatch to the appropriate rendezvous solver."""
+    """Solve a rendezvous specification with the matching built-in solver.
+
+    Args:
+        spec: Rendezvous problem specification.
+        options: Optional solver configuration overrides.
+
+    Returns:
+        The solver result for the provided specification.
+
+    Raises:
+        TypeError: If ``spec`` is not a supported rendezvous spec type.
+    """
     if isinstance(spec, TwoImpulseFreeTimeSpec):
         return solve_two_impulse_free_time(spec, options=options)
     if isinstance(spec, TwoImpulsePreCoastSpec):
@@ -226,7 +260,19 @@ def solve_two_impulse_free_time(
     *,
     options: SolverOptions | None = None,
 ) -> RendezvousResult:
-    """Two-impulse rendezvous with a single coast phase and bounded free final time."""
+    """Solve a two-impulse rendezvous with bounded free final time.
+
+    Args:
+        spec: Single-phase rendezvous specification.
+        options: Optional solver configuration overrides.
+
+    Returns:
+        The optimized rendezvous result.
+
+    Raises:
+        RuntimeError: If ASSET is not installed.
+        ValueError: If the time bounds are invalid.
+    """
     _require_asset()
     tfmin, tfmax = map(float, spec.tf_bounds_s)
     if not (tfmin > 0.0 and tfmax > tfmin):
@@ -360,7 +406,19 @@ def solve_two_impulse_precoast(
     *,
     options: SolverOptions | None = None,
 ) -> RendezvousResult:
-    """Two-impulse rendezvous with variable pre-coast before the first impulse."""
+    """Solve a rendezvous with a variable precoast before the transfer.
+
+    Args:
+        spec: Precoast rendezvous specification.
+        options: Optional solver configuration overrides.
+
+    Returns:
+        The optimized rendezvous result.
+
+    Raises:
+        RuntimeError: If ASSET is not installed or no feasible seed is found.
+        ValueError: If the precoast or transfer time bounds are invalid.
+    """
     _require_asset()
     t1min, t1max = map(float, spec.t1_bounds_s)
     tfmin, tfmax = map(float, spec.tf_bounds_s)

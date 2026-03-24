@@ -8,10 +8,17 @@ from .phase import Phase
 
 
 def cumulative_time_bounds(*dur_bounds: tuple[float, float]) -> list[tuple[float, float]]:
-    """Convert per-phase duration bounds into absolute Back-time bounds.
+    """Convert per-phase duration bounds into cumulative end-time bounds.
+
+    Args:
+        *dur_bounds: Per-phase duration bounds in seconds.
+
+    Returns:
+        A list of absolute back-boundary time bounds in seconds, one per phase.
 
     Example:
-        cumulative_time_bounds((0, 600), (200, 1000)) -> [(0, 600), (200, 1600)]
+        ``cumulative_time_bounds((0, 600), (200, 1000))`` returns
+        ``[(0, 600), (200, 1600)]``.
     """
     tmin = 0.0
     tmax = 0.0
@@ -24,10 +31,18 @@ def cumulative_time_bounds(*dur_bounds: tuple[float, float]) -> list[tuple[float
 
 
 def normalize_time_bounds(phases: Sequence[Phase]) -> list[tuple[float, float] | None]:
-    """Return absolute Back-time bounds for each phase.
+    """Normalize phase time bounds into absolute back-boundary times.
 
-    If a phase has tof_is_relative=True, its bounds are treated as per-phase durations
-    and accumulated from the previous phases.
+    Args:
+        phases: Mission phases in execution order.
+
+    Returns:
+        A list of absolute time bounds for each phase. Entries remain ``None``
+        for phases without time bounds.
+
+    Notes:
+        Phases with ``tof_is_relative=True`` are accumulated from prior phases.
+        Phases with absolute bounds reset the running time window.
     """
     out: list[tuple[float, float] | None] = []
     tmin = 0.0

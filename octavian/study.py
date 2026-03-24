@@ -44,8 +44,8 @@ def grid(
         List of results in the same order as ``overrides``.
 
     Notes:
-        - If ``save_dir`` is provided, the directory is created if needed.
-        - Results include the override index in ``result.info['study_index']``.
+        If ``save_dir`` is provided, the directory is created if needed and each
+        result records its override index in ``result.info["study_index"]``.
     """
     opts = options or SolverOptions()
     out_dir = Path(save_dir).expanduser().resolve() if save_dir is not None else None
@@ -90,7 +90,7 @@ def best_by(
         The best result.
 
     Raises:
-        ValueError: If no results are available after filtering.
+        ValueError: If no results remain after filtering or the key is unsupported.
     """
     candidates = [r for r in results if (r.converged or not require_converged)]
     if not candidates:

@@ -25,7 +25,16 @@ def state(
     r_m: np.ndarray | Sequence[float],
     v_mps: np.ndarray | Sequence[float],
 ) -> BoundaryState:
-    """Helper to build a :class:`~octavian.specs.BoundaryState`."""
+    """Build a boundary state from position and velocity vectors.
+
+    Args:
+        r_m: Position vector in meters.
+        v_mps: Velocity vector in meters per second.
+
+    Returns:
+        A boundary-state object that can be passed to quick builders,
+        ConOps helpers, or lower-level specs.
+    """
 
     return _state(r_m, v_mps)
 
@@ -48,7 +57,30 @@ def two_burn_rendezvous(
     constraints: Sequence[object] | None = None,
     solver_options: SolverOptions | None = None,
 ) -> Mission:
-    """Create a ready-to-solve two-impulse rendezvous mission."""
+    """Create a ready-to-solve two-burn rendezvous mission.
+
+    Args:
+        x0: Initial boundary state.
+        xf: Final boundary state.
+        mu_m3ps2: Central-body gravitational parameter in m^3/s^2.
+        tf_bounds_s: Bounds on the final rendezvous time in seconds.
+        nsegs: Number of mesh segments used by the transfer phase.
+        lambert_grid_size: Number of Lambert time-of-flight samples to try.
+        nrevs_to_try: Revolution counts to include in the Lambert seed search.
+        w_time: Weight on final time in the objective.
+        precoast: If ``True``, build a precoast-plus-transfer mission instead of a
+            single transfer phase.
+        t1_bounds_s: Bounds on precoast duration in seconds when ``precoast`` is enabled.
+        precoast_grid_size: Number of precoast candidates to test when seeding.
+        limit_precoast_to_one_period: Whether to cap the precoast seed sweep to one
+            orbital period when possible.
+        name: Human-readable mission name.
+        constraints: Additional constraints attached to the rendezvous phase.
+        solver_options: Optional solver overrides attached to the mission.
+
+    Returns:
+        A configured mission object ready for ``mission.solve()``.
+    """
 
     # Minimal, readable defaults (these are metadata for v0.x solvers)
     thruster = Thruster(name="main")

@@ -33,20 +33,27 @@ def save_trajectory_html(
     """Save a 3D Plotly HTML visualization of an ECI trajectory.
 
     Args:
-        traj: Trajectory array with columns [rx, ry, rz, vx, vy, vz, t] (meters, m/s, seconds).
+        traj: Trajectory array with columns ``[rx, ry, rz, vx, vy, vz, t]`` in
+            meters, meters per second, and seconds.
         out_html: Output HTML path.
-        x0_r_m: Optional initial position override (m). If None, taken from traj[0,0:3].
-        x0_v_mps: Optional initial velocity override (m/s). If None, taken from traj[0,3:6].
-        xf_r_m: Optional final position override (m). If None, taken from traj[-1,0:3].
-        xf_v_mps: Optional final velocity override (m/s). If None, taken from traj[-1,3:6].
+        x0_r_m: Optional initial position override in meters. If omitted, the
+            first trajectory position is used.
+        x0_v_mps: Optional initial velocity override in meters per second. If
+            omitted, the first trajectory velocity is used.
+        xf_r_m: Optional final position override in meters. If omitted, the
+            last trajectory position is used.
+        xf_v_mps: Optional final velocity override in meters per second. If
+            omitted, the last trajectory velocity is used.
         maneuvers: Optional maneuver markers.
         title: Plot title.
-        earth_radius_m: Earth radius used for the sphere (m).
-        use_earth_texture: If True, render Earth with a texture map (if available). If False, use a solid sphere.
-        earth_texture_path: Optional path to an equirectangular Earth texture image (2:1 aspect).
-            - None: uses packaged default texture in `octavian/viz/data`
-            - "": disables texture (solid sphere)
-            - non-empty: uses provided path (relative paths resolved from current working directory)
+        earth_radius_m: Earth radius used for the sphere in meters.
+        use_earth_texture: Whether to render Earth with a texture map.
+        earth_texture_path: Optional path to an equirectangular Earth texture.
+            ``None`` uses the packaged default, ``""`` disables the texture,
+            and any other value is resolved as a filesystem path.
+
+    Raises:
+        ValueError: If ``traj`` is not a 2D array with at least seven columns.
     """
     import plotly.graph_objects as go
 

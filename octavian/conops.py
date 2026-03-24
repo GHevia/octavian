@@ -32,7 +32,24 @@ def rendezvous_two_impulse(
     name: str = "Two-impulse rendezvous",
     constraints: Sequence[object] | None = None,
 ) -> Mission:
-    """Build a single-phase impulsive rendezvous mission."""
+    """Build a single-phase impulsive rendezvous mission.
+
+    Args:
+        spacecraft: Spacecraft used by the mission.
+        dynamics: Dynamics model applied to the phase.
+        initial_state: Initial state fixed at the front boundary.
+        final_state: Final state target applied at the back boundary.
+        tf_bounds_s: Bounds on total transfer time in seconds.
+        nsegs: Number of transfer mesh segments.
+        lambert_grid_size: Number of Lambert seed samples.
+        nrevs_to_try: Revolution counts included in the Lambert seed search.
+        w_time: Weight on final time in the objective.
+        name: Human-readable mission name.
+        constraints: Additional constraints for the rendezvous phase.
+
+    Returns:
+        A mission configured for the built-in two-impulse rendezvous solver.
+    """
 
     ph = Phase(
         name="rendezvous",
@@ -74,7 +91,30 @@ def rendezvous_precoast_then_transfer(
     constraints_precoast: Sequence[object] | None = None,
     constraints_rendezvous: Sequence[object] | None = None,
 ) -> Mission:
-    """Build a two-phase mission: precoast then impulsive rendezvous."""
+    """Build a two-phase mission with a precoast before rendezvous.
+
+    Args:
+        spacecraft: Spacecraft used by the mission.
+        dynamics: Dynamics model shared by both phases.
+        initial_state: Initial state fixed at the start of the precoast phase.
+        final_state: Final state target applied at the end of the transfer phase.
+        t1_bounds_s: Bounds on precoast duration in seconds.
+        tf_bounds_s: Bounds on the final mission time in seconds.
+        nsegs_precoast: Number of mesh segments for the precoast phase.
+        nsegs_transfer: Number of mesh segments for the transfer phase.
+        precoast_grid_size: Number of precoast seed candidates to evaluate.
+        limit_precoast_to_one_period: Whether to cap the seed sweep to one orbital
+            period when the initial orbit period is known.
+        lambert_grid_size: Number of Lambert seed samples per candidate.
+        nrevs_to_try: Revolution counts included in the Lambert seed search.
+        w_time: Weight on final time in the objective.
+        name: Human-readable mission name.
+        constraints_precoast: Additional constraints for the precoast phase.
+        constraints_rendezvous: Additional constraints for the transfer phase.
+
+    Returns:
+        A mission with a precoast phase followed by an impulsive rendezvous phase.
+    """
 
     p0 = Phase(
         name="precoast",
