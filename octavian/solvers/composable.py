@@ -299,6 +299,352 @@ def _build_guess_two_phase_precoast_transfer(
     return ig0, ig1
 
 
+def _build_guess_single_phase_terminal_position(
+    phase: Phase,
+    *,
+    mu: float,
+    tf_bounds: tuple[float, float],
+    nsegs: int,
+    lambert_grid_size: int,
+    nrevs_to_try: Sequence[int],
+) -> tuple[list[np.ndarray], dict[str, float | int | bool]]:
+    """Build a Lambert-seeded guess for a single transfer phase.
+
+    This mirrors the quick rendezvous solver setup:
+    the phase starts from the desired initial velocity, uses a Lambert seed to
+    reach the terminal position, and lets boundary delta-v objectives account
+    for the impulsive mismatch.
+    """
+    x0 = phase.initial_state or _state_boundary_value(_get_state_constraint(phase, "Front"))  # type: ignore[union-attr]
+    xf_state = _get_state_constraint(phase, "Back")
+    xf_pos = _get_position_constraint(phase, "Back")
+
+    if x0 is None:
+        raise ValueError(
+            "Single-phase Lambert seeding requires an initial state or State constraint at Front."
+        )
+
+    xf_state_val = _state_boundary_value(xf_state)
+    xf_pos_val = _position_boundary_value(xf_pos)
+
+    if xf_state_val is None and xf_pos_val is None and phase.final_state is None:
+        raise ValueError(
+            "Single-phase Lambert seeding requires a terminal position at Back."
+        )
+
+    rf = as_vec3(
+        xf_state_val.r_m
+        if xf_state_val is not None
+        else (phase.final_state.r_m if phase.final_state is not None else xf_pos_val)
+    )
+    vf_target = as_vec3(
+        xf_state_val.v_mps
+        if xf_state_val is not None
+        else (phase.final_state.v_mps if phase.final_state is not None else x0.v_mps)
+    )
+
+    tfmin, tfmax = map(float, tf_bounds)
+    seed = select_best_lambert_seed(
+        r0_m=as_vec3(x0.r_m),
+        rf_m=rf,
+        v0_mps=as_vec3(x0.v_mps),
+        vf_mps=vf_target,
+        mu_m3ps2=mu,
+        tmin_s=tfmin,
+        tmax_s=tfmax,
+        n_tofs=int(lambert_grid_size),
+        nrevs=tuple(int(n) for n in nrevs_to_try),
+    )
+
+    tf_guess = min(max(float(seed.tof_s), tfmin), tfmax)
+    ig = kepler_dense_guess(
+        r0_m=as_vec3(x0.r_m),
+        v0_mps=as_vec3(seed.v1_mps),
+        t0_s=0.0,
+        tf_s=tf_guess,
+        npts=nsegs + 1,
+        mu_m3ps2=mu,
+    )
+
+    return ig, {
+        "seed_tof_s": float(seed.tof_s),
+        "seed_longway": bool(seed.longway),
+        "seed_nrev": int(seed.nrev),
+        "seed_rightbranch": bool(seed.rightbranch),
+        "seed_total_dv_mps": float(seed.total_dv_mps),
+    }
+
+
+def _phase_terminal_target(phase: Phase) -> tuple[np.ndarray, np.ndarray | None] | None:
+    """Return the phase's terminal position target and optional velocity target."""
+    xf_state = _get_state_constraint(phase, "Back")
+    xf_pos = _get_position_constraint(phase, "Back")
+    xf_state_val = _state_boundary_value(xf_state)
+    xf_pos_val = _position_boundary_value(xf_pos)
+
+    if xf_state_val is not None:
+        return as_vec3(xf_state_val.r_m), as_vec3(xf_state_val.v_mps)
+    if phase.final_state is not None:
+        return as_vec3(phase.final_state.r_m), as_vec3(phase.final_state.v_mps)
+    if xf_pos_val is not None:
+        return as_vec3(xf_pos_val), None
+    return None
+
+
+def _find_downstream_terminal_anchor(
+    phases: Sequence[Phase], start_idx: int
+) -> tuple[int, np.ndarray, np.ndarray | None] | None:
+    """Find the nearest downstream phase with an explicit terminal position target."""
+    for idx in range(start_idx, len(phases)):
+        target = _phase_terminal_target(phases[idx])
+        if target is not None:
+            r_target, v_target = target
+            return idx, r_target, v_target
+    return None
+
+
+def _continuous_chain_end(phases: Sequence[Phase], start_idx: int) -> int:
+    """Return the end index of the continuous-link chain starting at ``start_idx``."""
+    end_idx = start_idx
+    for idx in range(start_idx + 1, len(phases)):
+        ph = phases[idx]
+        if ph.previous is None:
+            break
+        link_kind = (ph.link.kind if ph.link is not None else "continuous").lower()
+        if link_kind != "continuous":
+            break
+        end_idx = idx
+    return end_idx
+
+
+def _find_chain_terminal_anchor(
+    phases: Sequence[Phase], start_idx: int, end_idx: int
+) -> tuple[int, np.ndarray, np.ndarray | None] | None:
+    """Find the furthest explicit terminal target inside a continuous chain."""
+    for idx in range(end_idx, start_idx - 1, -1):
+        target = _phase_terminal_target(phases[idx])
+        if target is not None:
+            r_target, v_target = target
+            return idx, r_target, v_target
+    return None
+
+
+def _split_continuous_chain_times(
+    *,
+    start_idx: int,
+    end_idx: int,
+    abs_bounds: Sequence[tuple[float, float] | None],
+    t_start: float,
+    tf_total: float,
+) -> list[float] | None:
+    """Split a chain end time into monotone per-phase end times."""
+    nph = end_idx - start_idx + 1
+    duration = float(tf_total) - float(t_start)
+    if duration <= 0.0:
+        return None
+
+    ends: list[float] = []
+    prev = float(t_start)
+    for local_idx, phase_idx in enumerate(range(start_idx, end_idx + 1), start=1):
+        raw = float(t_start) + duration * (local_idx / nph)
+        if phase_idx == end_idx:
+            raw = float(tf_total)
+
+        bounds = abs_bounds[phase_idx]
+        lo = max(prev + 0.1, float(bounds[0])) if bounds is not None else prev + 0.1
+        hi = float(bounds[1]) if bounds is not None else float(tf_total)
+        if phase_idx == end_idx:
+            lo = max(lo, float(tf_total))
+            hi = min(hi, float(tf_total))
+
+        end_t = min(max(raw, lo), hi)
+        if end_t < lo - 1e-9 or end_t > hi + 1e-9:
+            return None
+
+        ends.append(float(end_t))
+        prev = float(end_t)
+
+    return ends
+
+
+def _build_continuous_chain_guesses(
+    *,
+    phases: Sequence[Phase],
+    start_idx: int,
+    abs_bounds: Sequence[tuple[float, float] | None],
+    t_start: float,
+    r_start_m: np.ndarray,
+    v_start_mps: np.ndarray,
+    mu_m3ps2: float,
+    nsegs0: int,
+    nsegs1: int,
+    lambert_grid_size: int,
+    nrevs_to_try: Sequence[int],
+) -> tuple[dict[int, list[np.ndarray]], dict[int, dict[str, float | int | bool | str]]]:
+    """Build one Lambert arc and split it across continuous coast phases."""
+    end_idx = _continuous_chain_end(phases, start_idx)
+    if end_idx <= start_idx:
+        return {}, {}
+
+    anchor = _find_chain_terminal_anchor(phases, start_idx, end_idx)
+    if anchor is None:
+        return {}, {}
+
+    anchor_idx, r_target, v_target = anchor
+    anchor_bounds = abs_bounds[anchor_idx]
+    if anchor_bounds is None:
+        return {}, {}
+
+    t_anchor_min, t_anchor_max = map(float, anchor_bounds)
+    remain_min = max(1.0, t_anchor_min - float(t_start))
+    remain_max = max(remain_min + 1.0, t_anchor_max - float(t_start))
+    v_lambert_target = as_vec3(v_target) if v_target is not None else as_vec3(v_start_mps)
+
+    try:
+        seed = select_best_lambert_seed(
+            r0_m=as_vec3(r_start_m),
+            rf_m=as_vec3(r_target),
+            v0_mps=as_vec3(v_start_mps),
+            vf_mps=v_lambert_target,
+            mu_m3ps2=float(mu_m3ps2),
+            tmin_s=float(remain_min),
+            tmax_s=float(remain_max),
+            n_tofs=int(lambert_grid_size),
+            nrevs=tuple(int(n) for n in nrevs_to_try),
+        )
+    except Exception:
+        return {}, {}
+
+    tf_total = float(t_start + min(max(float(seed.tof_s), remain_min), remain_max))
+    split_times = _split_continuous_chain_times(
+        start_idx=start_idx,
+        end_idx=anchor_idx,
+        abs_bounds=abs_bounds,
+        t_start=float(t_start),
+        tf_total=float(tf_total),
+    )
+    if split_times is None:
+        return {}, {}
+
+    guesses: dict[int, list[np.ndarray]] = {}
+    infos: dict[int, dict[str, float | int | bool | str]] = {}
+
+    r_curr = as_vec3(r_start_m)
+    v_curr = as_vec3(seed.v1_mps)
+    t_curr = float(t_start)
+
+    for phase_idx, t_end in zip(range(start_idx, anchor_idx + 1), split_times, strict=True):
+        nsegs = int(nsegs0 if phase_idx == 0 else nsegs1)
+        ig = kepler_dense_guess(
+            r0_m=as_vec3(r_curr),
+            v0_mps=as_vec3(v_curr),
+            t0_s=float(t_curr),
+            tf_s=float(t_end),
+            npts=nsegs + 1,
+            mu_m3ps2=float(mu_m3ps2),
+        )
+        guesses[phase_idx] = ig
+        infos[phase_idx] = {
+            "guess_kind": "lambert_continuous_chain",
+            "guess_anchor_phase_index": int(anchor_idx),
+            "guess_anchor_phase_name": phases[anchor_idx].name,
+            "guess_chain_start_index": int(start_idx),
+            "guess_chain_end_index": int(anchor_idx),
+            "guess_phase_tf_s": float(t_end),
+            "seed_tof_s": float(seed.tof_s),
+            "seed_longway": bool(seed.longway),
+            "seed_nrev": int(seed.nrev),
+            "seed_rightbranch": bool(seed.rightbranch),
+            "seed_total_dv_mps": float(seed.total_dv_mps),
+        }
+        last = np.asarray(ig[-1], dtype=float)
+        r_curr = as_vec3(last[0:3])
+        v_curr = as_vec3(last[3:6])
+        t_curr = float(last[6])
+
+    return guesses, infos
+
+
+def _build_lambert_guided_phase_guess(
+    *,
+    phase: Phase,
+    phase_idx: int,
+    phases: Sequence[Phase],
+    abs_bounds: Sequence[tuple[float, float] | None],
+    t_start: float,
+    r_start_m: np.ndarray,
+    v_start_mps: np.ndarray,
+    mu_m3ps2: float,
+    nsegs: int,
+    lambert_grid_size: int,
+    nrevs_to_try: Sequence[int],
+) -> tuple[list[np.ndarray], dict[str, float | int | bool]] | None:
+    """Build a Lambert-guided guess toward the nearest downstream terminal target.
+
+    The Lambert arc is computed to the nearest known downstream terminal target.
+    For intermediate phases, the current phase guess follows the beginning of that
+    Lambert arc for this phase's own time span.
+    """
+    anchor = _find_downstream_terminal_anchor(phases, phase_idx)
+    if anchor is None:
+        return None
+
+    anchor_idx, r_target, v_target = anchor
+    anchor_bounds = abs_bounds[anchor_idx]
+    if anchor_bounds is None:
+        return None
+
+    t_anchor_min, t_anchor_max = map(float, anchor_bounds)
+    remain_min = max(1.0, t_anchor_min - float(t_start))
+    remain_max = max(remain_min + 1.0, t_anchor_max - float(t_start))
+
+    v_lambert_target = as_vec3(v_target) if v_target is not None else as_vec3(v_start_mps)
+
+    try:
+        seed = select_best_lambert_seed(
+            r0_m=as_vec3(r_start_m),
+            rf_m=as_vec3(r_target),
+            v0_mps=as_vec3(v_start_mps),
+            vf_mps=v_lambert_target,
+            mu_m3ps2=float(mu_m3ps2),
+            tmin_s=float(remain_min),
+            tmax_s=float(remain_max),
+            n_tofs=int(lambert_grid_size),
+            nrevs=tuple(int(n) for n in nrevs_to_try),
+        )
+    except Exception:
+        return None
+
+    tf_guess = _fallback_phase_tf_guess(
+        phase=phase,
+        bounds_abs=abs_bounds[phase_idx],
+        t_start=float(t_start),
+        r_start_m=as_vec3(r_start_m),
+        v_start_mps=as_vec3(v_start_mps),
+        mu_m3ps2=float(mu_m3ps2),
+    )
+    tf_guess = max(float(tf_guess), float(t_start) + 0.1)
+
+    ig = kepler_dense_guess(
+        r0_m=as_vec3(r_start_m),
+        v0_mps=as_vec3(seed.v1_mps),
+        t0_s=float(t_start),
+        tf_s=float(tf_guess),
+        npts=int(nsegs) + 1,
+        mu_m3ps2=float(mu_m3ps2),
+    )
+    return ig, {
+        "guess_kind": "lambert_downstream",
+        "guess_anchor_phase_index": int(anchor_idx),
+        "guess_anchor_phase_name": phases[anchor_idx].name,
+        "seed_tof_s": float(seed.tof_s),
+        "seed_longway": bool(seed.longway),
+        "seed_nrev": int(seed.nrev),
+        "seed_rightbranch": bool(seed.rightbranch),
+        "seed_total_dv_mps": float(seed.total_dv_mps),
+    }
+
+
 def _boundary_velocity_target(phase: Phase, where: str) -> np.ndarray | None:
     """Return a boundary velocity target from State constraint or phase state."""
     st = _get_state_constraint(phase, where)
@@ -448,12 +794,29 @@ def solve_composable_mission(
     nsegs0 = int(getattr(mission, "mesh_nsegs_precoast", 30))
     nsegs1 = int(getattr(mission, "mesh_nsegs_transfer", 60))
 
-    guesses: dict[str, list[np.ndarray]] = {}
+    guesses: dict[int, list[np.ndarray]] = {}
+    guess_info: dict[int, dict[str, float | int | bool | str]] = {}
 
-    if (
+    if len(phases) == 1:
+        p0 = phases[0]
+        tf_bounds = abs_bounds[0] or (600.0, 7200.0)
+        ig0, info0 = _build_guess_single_phase_terminal_position(
+            p0,
+            mu=mu,
+            tf_bounds=tf_bounds,
+            nsegs=nsegs1,
+            lambert_grid_size=int(getattr(mission, "lambert_grid_size", 60)),
+            nrevs_to_try=tuple(int(x) for x in getattr(mission, "nrevs_to_try", (0, 1))),
+        )
+        guesses[0] = ig0
+        guess_info[0] = info0
+
+    elif (
         len(phases) == 2
         and (phases[0].mode or "").lower() == "coast"
         and phases[1].previous is not None
+        and (phases[1].link.kind if phases[1].link is not None else "continuous").lower()
+        != "continuous"
     ):
         p0, p1 = phases
         t1_bounds = abs_bounds[0] or (0.0, 1800.0)
@@ -473,8 +836,8 @@ def solve_composable_mission(
             lambert_grid_size=int(getattr(mission, "lambert_grid_size", 60)),
             nrevs_to_try=tuple(int(x) for x in getattr(mission, "nrevs_to_try", (0, 1))),
         )
-        guesses[p0.name] = ig0
-        guesses[p1.name] = ig1
+        guesses[0] = ig0
+        guesses[1] = ig1
 
     front_impulse_v_targets = _build_front_impulse_velocity_targets(phases)
 
@@ -484,40 +847,101 @@ def solve_composable_mission(
 
     for idx, ph in enumerate(phases):
         # determine guess
-        if ph.name in guesses:
-            ig = guesses[ph.name]
+        if idx in guesses:
+            ig = guesses[idx]
             # infer nsegs from guess length - 1
             nsegs = len(ig) - 1
         else:
             nsegs = nsegs0 if idx == 0 else nsegs1
-            # fallback midpoint guess using available initial state
             if idx == 0:
-                x0 = ph.initial_state or _state_boundary_value(_get_state_constraint(ph, "Front"))
-                if x0 is None:
+                x0_chain = ph.initial_state or _state_boundary_value(_get_state_constraint(ph, "Front"))
+                if x0_chain is None:
                     raise ValueError(
                         "First phase must have an initial_state or State constraint at Front."
                     )
-                bounds = abs_bounds[idx]
-                tf_guess = _fallback_phase_tf_guess(
+                chain_t_start = 0.0
+                chain_r_start = as_vec3(x0_chain.r_m)
+                chain_v_start = as_vec3(x0_chain.v_mps)
+            else:
+                prev_guess = guesses.get(idx - 1)
+                if prev_guess is None:
+                    prev_guess = np.asarray(built[-1].asset_phase.returnTraj(), dtype=float).tolist()  # type: ignore
+                prev_last = np.asarray(prev_guess[-1], dtype=float)
+                chain_t_start = float(prev_last[6])
+                chain_r_start = as_vec3(prev_last[0:3])
+                chain_v_start = as_vec3(prev_last[3:6])
+
+            chain_guesses, chain_info = _build_continuous_chain_guesses(
+                phases=phases,
+                start_idx=idx,
+                abs_bounds=abs_bounds,
+                t_start=chain_t_start,
+                r_start_m=chain_r_start,
+                v_start_mps=chain_v_start,
+                mu_m3ps2=mu,
+                nsegs0=nsegs0,
+                nsegs1=nsegs1,
+                lambert_grid_size=int(getattr(mission, "lambert_grid_size", 60)),
+                nrevs_to_try=tuple(int(x) for x in getattr(mission, "nrevs_to_try", (0, 1))),
+            )
+            if chain_guesses:
+                guesses.update(chain_guesses)
+                guess_info.update(chain_info)
+                ig = guesses[idx]
+                nsegs = len(ig) - 1
+                asset_phase = ode.phase(Tmodes.LGL3, ig, int(nsegs))
+                ocp.addPhase(asset_phase)
+
+                built.append(
+                    _PhaseBuild(
+                        ph=ph,
+                        asset_phase=asset_phase,
+                        t_bounds=tuple(abs_bounds[idx] or (0.0, 1.0)),
+                        index=idx,
+                    )
+                )
+                continue
+            # fallback midpoint guess using available initial state
+            if idx == 0:
+                x0 = x0_chain
+                lambert_guess = _build_lambert_guided_phase_guess(
                     phase=ph,
-                    bounds_abs=bounds,
+                    phase_idx=idx,
+                    phases=phases,
+                    abs_bounds=abs_bounds,
                     t_start=0.0,
                     r_start_m=as_vec3(x0.r_m),
                     v_start_mps=as_vec3(x0.v_mps),
                     mu_m3ps2=mu,
+                    nsegs=nsegs,
+                    lambert_grid_size=int(getattr(mission, "lambert_grid_size", 60)),
+                    nrevs_to_try=tuple(int(x) for x in getattr(mission, "nrevs_to_try", (0, 1))),
                 )
-                ig = kepler_dense_guess(
-                    r0_m=as_vec3(x0.r_m),
-                    v0_mps=as_vec3(x0.v_mps),
-                    t0_s=0.0,
-                    tf_s=tf_guess,
-                    npts=nsegs + 1,
-                    mu_m3ps2=mu,
-                )
+                if lambert_guess is not None:
+                    ig, info = lambert_guess
+                    guess_info[idx] = info
+                else:
+                    bounds = abs_bounds[idx]
+                    tf_guess = _fallback_phase_tf_guess(
+                        phase=ph,
+                        bounds_abs=bounds,
+                        t_start=0.0,
+                        r_start_m=as_vec3(x0.r_m),
+                        v_start_mps=as_vec3(x0.v_mps),
+                        mu_m3ps2=mu,
+                    )
+                    ig = kepler_dense_guess(
+                        r0_m=as_vec3(x0.r_m),
+                        v0_mps=as_vec3(x0.v_mps),
+                        t0_s=0.0,
+                        tf_s=tf_guess,
+                        npts=nsegs + 1,
+                        mu_m3ps2=mu,
+                    )
             else:
                 # start from previous guess end
                 prev = built[-1].ph
-                prev_guess = guesses.get(prev.name)
+                prev_guess = guesses.get(idx - 1)
                 if prev_guess is None:
                     prev_guess = np.asarray(built[-1].asset_phase.returnTraj(), dtype=float).tolist()  # type: ignore
                 rv_start = np.asarray(prev_guess[-1])[0:6]
@@ -534,14 +958,31 @@ def solve_composable_mission(
                 v_start_guess = as_vec3(rv_start[3:6])
                 if idx in front_impulse_v_targets:
                     v_start_guess = as_vec3(front_impulse_v_targets[idx])
-                ig = kepler_dense_guess(
-                    r0_m=as_vec3(rv_start[0:3]),
-                    v0_mps=v_start_guess,
-                    t0_s=t_start,
-                    tf_s=tf_guess,
-                    npts=nsegs + 1,
+                lambert_guess = _build_lambert_guided_phase_guess(
+                    phase=ph,
+                    phase_idx=idx,
+                    phases=phases,
+                    abs_bounds=abs_bounds,
+                    t_start=t_start,
+                    r_start_m=as_vec3(rv_start[0:3]),
+                    v_start_mps=v_start_guess,
                     mu_m3ps2=mu,
+                    nsegs=nsegs,
+                    lambert_grid_size=int(getattr(mission, "lambert_grid_size", 60)),
+                    nrevs_to_try=tuple(int(x) for x in getattr(mission, "nrevs_to_try", (0, 1))),
                 )
+                if lambert_guess is not None:
+                    ig, info = lambert_guess
+                    guess_info[idx] = info
+                else:
+                    ig = kepler_dense_guess(
+                        r0_m=as_vec3(rv_start[0:3]),
+                        v0_mps=v_start_guess,
+                        t0_s=t_start,
+                        tf_s=tf_guess,
+                        npts=nsegs + 1,
+                        mu_m3ps2=mu,
+                    )
 
         asset_phase = ode.phase(Tmodes.LGL3, ig, int(nsegs))
         ocp.addPhase(asset_phase)
@@ -813,5 +1254,7 @@ def solve_composable_mission(
             "r_unit_m": r_unit,
             "v_unit_mps": v_unit,
             "t_unit_s": t_unit,
-        },
+            "phase_guess_info": guess_info,
+        }
+        | guess_info.get(0, {}),
     )
