@@ -17,9 +17,7 @@ from octavian import (
     state,
     variables,
 )
-from octavian.runner import _mission_to_rendezvous_spec
 from octavian.solvers import SolverOptions
-from octavian.solvers.rendezvous import solve as solve_rendezvous
 
 MU = 3.986004418e14
 DEFAULT_OPTS = SolverOptions(print_level=0)

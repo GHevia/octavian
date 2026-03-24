@@ -940,7 +940,6 @@ def solve_composable_mission(
                     )
             else:
                 # start from previous guess end
-                prev = built[-1].ph
                 prev_guess = guesses.get(idx - 1)
                 if prev_guess is None:
                     prev_guess = np.asarray(built[-1].asset_phase.returnTraj(), dtype=float).tolist()  # type: ignore
