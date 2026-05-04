@@ -133,6 +133,58 @@ def _position_boundary_value(c: Constraint | None) -> np.ndarray | None:
     return np.asarray(c.value, dtype=float).reshape(3)
 
 
+def _apply_orbital_element_constraint(asset_phase: Any, c: Constraint, mu_m3ps2: float) -> None:
+    args = vf.Arguments(6)
+    rvec, vvec = args.tolist([(0, 3), (3, 3)])
+    hvec = rvec.cross(vvec)
+    r = rvec.norm()
+    v = vvec.norm()
+    eps = 0.5 * (v**2) - float(mu_m3ps2) / r
+    h2 = hvec.dot(hvec)
+
+    kind = getattr(c, "kind", "")
+    val = getattr(c, "value", {})
+    where = getattr(c, "where", "Path")
+
+    if kind == "semi_major_axis":
+        target = float(val["a_m"])
+        a_expr = -0.5 * float(mu_m3ps2) / eps
+        tol = None if val["tol_m"] is None else float(val["tol_m"])
+        if tol is None:
+            asset_phase.addEqualCon(where, vf.stack([a_expr - target]), range(0, 6))
+            return
+        asset_phase.addInequalCon(where, vf.stack([a_expr - (target + tol)]), range(0, 6))
+        asset_phase.addInequalCon(where, vf.stack([(target - tol) - a_expr]), range(0, 6))
+        return
+
+    if kind == "eccentricity":
+        target = float(val["e"])
+        e2_expr = 1.0 + (2.0 * eps * h2) / (float(mu_m3ps2) ** 2)
+        tol = None if val["tol"] is None else float(val["tol"])
+        if tol is None:
+            asset_phase.addEqualCon(where, vf.stack([e2_expr - target**2]), range(0, 6))
+            return
+        asset_phase.addInequalCon(where, vf.stack([e2_expr - (target + tol) ** 2]), range(0, 6))
+        asset_phase.addInequalCon(where, vf.stack([(target - tol) ** 2 - e2_expr]), range(0, 6))
+        return
+
+    if kind == "inclination_deg":
+        target_deg = float(val["inc_deg"])
+        hz_hat = hvec.normalized()[2]
+        target_cos = float(np.cos(np.deg2rad(target_deg)))
+        tol_deg = None if val["tol_deg"] is None else float(val["tol_deg"])
+        if tol_deg is None:
+            asset_phase.addEqualCon(where, vf.stack([hz_hat - target_cos]), range(0, 6))
+            return
+        upper_cos = float(np.cos(np.deg2rad(target_deg - tol_deg)))
+        lower_cos = float(np.cos(np.deg2rad(target_deg + tol_deg)))
+        asset_phase.addInequalCon(where, vf.stack([hz_hat - upper_cos]), range(0, 6))
+        asset_phase.addInequalCon(where, vf.stack([lower_cos - hz_hat]), range(0, 6))
+        return
+
+    raise ValueError(f"Unsupported orbital-element constraint kind: {kind!r}")
+
+
 def _objective_weights(mission: Mission) -> tuple[bool, float, bool, float]:
     # minimize_dv, w_dv, minimize_time, w_time
     minimize_dv = True
@@ -1075,10 +1127,12 @@ def solve_composable_mission(
                     "Path" if getattr(c, "where", "Path") == "Path" else getattr(c, "where", "Path")
                 )
                 # "R" is in scaled units here, so use a scaled bound with AutoScale=1.
-                ap.addLowerNormBound(loc, "R", rmin, AutoScale=1.0 / r_unit)
+                ap.addLowerNormBound(loc, "R", rmin)
                 # ap.addInequalCon(loc, rmin*rmin - vf.Arguments(3).squared_norm(), ["R"])
 
                 # breakpoint()
+            elif getattr(c, "kind", "") in {"semi_major_axis", "eccentricity", "inclination_deg"}:
+                _apply_orbital_element_constraint(ap, c, mu)
 
         # Time bounds: normalize tof_bounds_s to absolute Back-time bounds.
         bounds = abs_bounds[b.index]

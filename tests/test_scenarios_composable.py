@@ -32,6 +32,7 @@ def _fake_solution() -> Solution:
         ("examples/composable/06_precoast_impulsive_link_3burn.py", 1),
         ("examples/composable/07_general_precoast_impulsive.py", 1),
         ("examples/composable/08_rendezvous_mode_precoast.py", 1),
+        ("examples/composable/09_terminal_orbital_elements.py", 1),
     ],
 )
 def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int) -> None:
@@ -73,4 +74,9 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
     elif script_rel.endswith("08_rendezvous_mode_precoast.py"):
         assert len(missions[0].phases) == 2
         assert missions[0].phases[1].mode.lower() == "rendezvous"
-
+    elif script_rel.endswith("09_terminal_orbital_elements.py"):
+        assert len(missions[0].phases) == 1
+        kinds = [getattr(c, "kind", "") for c in missions[0].phases[0].constraints]
+        assert "semi_major_axis" in kinds
+        assert "eccentricity" in kinds
+        assert "inclination_deg" in kinds
