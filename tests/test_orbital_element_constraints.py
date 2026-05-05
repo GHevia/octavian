@@ -6,8 +6,10 @@ import numpy as np
 import pytest
 
 from octavian import constraints
-from octavian.astro import classic_to_cartesian
+from octavian.astro import classic_to_cartesian, classical_to_cartesian
+from octavian.quick import state
 from octavian.solvers import composable
+from octavian.variables import ImpulsiveDeltaV
 
 MU = 3.986004418e14
 
@@ -154,3 +156,48 @@ def test_compiler_adds_tolerance_bands_for_orbital_element_constraints(
         assert where == "Path"
         assert state_indices == (0, 1, 2, 3, 4, 5)
         assert expr <= 1e-9
+
+
+def test_classical_to_cartesian_alias_matches_classic_to_cartesian() -> None:
+    r0, v0 = classic_to_cartesian(
+        a_m=8_400e3,
+        e=0.18,
+        inc_deg=28.5,
+        raan_deg=40.0,
+        argp_deg=15.0,
+        true_anomaly_deg=55.0,
+        mu_m3ps2=MU,
+    )
+    r1, v1 = classical_to_cartesian(
+        a_m=8_400e3,
+        e=0.18,
+        inc_deg=28.5,
+        raan_deg=40.0,
+        argp_deg=15.0,
+        true_anomaly_deg=55.0,
+        mu_m3ps2=MU,
+    )
+    assert np.allclose(r0, r1)
+    assert np.allclose(v0, v1)
+
+
+def test_back_impulse_target_requires_explicit_terminal_velocity_constraint() -> None:
+    x = state(r_m=[1.0, 2.0, 3.0], v_mps=[4.0, 5.0, 6.0])
+    phase = SimpleNamespace(
+        constraints=[],
+        initial_state=None,
+        final_state=x,
+        variables=[ImpulsiveDeltaV(where="Back")],
+    )
+    assert composable._explicit_boundary_velocity_target(phase, "Back") is None
+
+
+def test_back_impulse_target_uses_state_constraint_velocity_group() -> None:
+    x = state(r_m=[1.0, 2.0, 3.0], v_mps=[4.0, 5.0, 6.0])
+    phase = SimpleNamespace(
+        constraints=[constraints.state(x, where="Back", groups=("R", "V"))],
+        initial_state=None,
+        final_state=None,
+        variables=[ImpulsiveDeltaV(where="Back")],
+    )
+    assert np.allclose(composable._explicit_boundary_velocity_target(phase, "Back"), x.v_mps)

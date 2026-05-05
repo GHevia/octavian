@@ -49,8 +49,10 @@ class ImpulsiveDeltaV(Variable):
         Δv is measured between desired initial velocity and this.Front.V.
 
     For where="Back":
-      - If a State constraint exists at Back providing a desired terminal velocity,
+      - If a State constraint exists at Back providing an explicit terminal velocity,
         Δv is measured between this.Back.V and the desired V.
+      - phase.final_state may still be used by guess builders, but it does not
+        implicitly add a terminal velocity objective.
     """
 
     kind: ClassVar[str] = "impulsive_delta_v"

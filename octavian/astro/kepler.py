@@ -65,6 +65,110 @@ def classic_to_cartesian(
     return rot @ r_pf, rot @ v_pf
 
 
+def classical_to_cartesian(
+    *,
+    a_m: float,
+    e: float,
+    inc_deg: float,
+    raan_deg: float,
+    argp_deg: float,
+    true_anomaly_deg: float,
+    mu_m3ps2: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Alias for :func:`classic_to_cartesian` using a more explicit name."""
+    return classic_to_cartesian(
+        a_m=a_m,
+        e=e,
+        inc_deg=inc_deg,
+        raan_deg=raan_deg,
+        argp_deg=argp_deg,
+        true_anomaly_deg=true_anomaly_deg,
+        mu_m3ps2=mu_m3ps2,
+    )
+
+
+def cartesian_to_classic(
+    *, r_m: Vec3, v_mps: Vec3, mu_m3ps2: float
+) -> dict[str, float]:
+    """Convert Cartesian position and velocity to classical orbital elements."""
+    r = as_vec3(r_m)
+    v = as_vec3(v_mps)
+    mu = float(mu_m3ps2)
+
+    if ast is not None:
+        rv = np.hstack([r, v]).astype(float)
+        oe = np.asarray(ast.Astro.cartesian_to_classic(rv, mu), dtype=float).reshape(6)
+        return {
+            "a_m": float(oe[0]),
+            "e": float(oe[1]),
+            "inc_deg": float(np.rad2deg(oe[2])),
+            "raan_deg": float(np.rad2deg(oe[3])),
+            "argp_deg": float(np.rad2deg(oe[4])),
+            "true_anomaly_deg": float(np.rad2deg(oe[5])),
+        }
+
+    rnorm = float(np.linalg.norm(r))
+    vnorm = float(np.linalg.norm(v))
+    if rnorm <= 0.0:
+        raise ValueError("r_m must have non-zero norm")
+
+    h = np.cross(r, v)
+    hnorm = float(np.linalg.norm(h))
+    if hnorm <= 0.0:
+        raise ValueError("r_m and v_mps must define a non-degenerate orbit")
+
+    n = np.cross(np.array([0.0, 0.0, 1.0], dtype=float), h)
+    nnorm = float(np.linalg.norm(n))
+    evec = np.cross(v, h) / mu - r / rnorm
+    e = float(np.linalg.norm(evec))
+    energy = 0.5 * vnorm**2 - mu / rnorm
+    if abs(energy) <= 1e-15:
+        raise ValueError("Parabolic orbits are not supported")
+    a_m = float(-mu / (2.0 * energy))
+
+    inc = float(np.arccos(np.clip(h[2] / hnorm, -1.0, 1.0)))
+    raan = float(np.arctan2(n[1], n[0]) % (2.0 * np.pi)) if nnorm > 0.0 else 0.0
+
+    if e > 0.0 and nnorm > 0.0:
+        argp = float(
+            np.arctan2(
+                np.dot(np.cross(n, evec), h) / (nnorm * hnorm),
+                np.dot(n, evec) / nnorm,
+            )
+            % (2.0 * np.pi)
+        )
+    else:
+        argp = 0.0
+
+    if e > 0.0:
+        nu = float(
+            np.arctan2(
+                np.dot(np.cross(evec, r), h) / (e * hnorm * rnorm),
+                np.dot(evec, r) / (e * rnorm),
+            )
+            % (2.0 * np.pi)
+        )
+    elif nnorm > 0.0:
+        nu = float(
+            np.arctan2(
+                np.dot(np.cross(n, r), h) / (nnorm * hnorm * rnorm),
+                np.dot(n, r) / (nnorm * rnorm),
+            )
+            % (2.0 * np.pi)
+        )
+    else:
+        nu = float(np.arctan2(r[1], r[0]) % (2.0 * np.pi))
+
+    return {
+        "a_m": a_m,
+        "e": e,
+        "inc_deg": float(np.rad2deg(inc)),
+        "raan_deg": float(np.rad2deg(raan)),
+        "argp_deg": float(np.rad2deg(argp)),
+        "true_anomaly_deg": float(np.rad2deg(nu)),
+    }
+
+
 def propagate_cartesian_rv(rv6: np.ndarray, dt_s: float, mu_m3ps2: float) -> np.ndarray:
     """Propagate a 6D Cartesian state under two-body dynamics using ASSET."""
     if ast is None:

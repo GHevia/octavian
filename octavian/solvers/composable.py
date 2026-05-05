@@ -711,6 +711,19 @@ def _boundary_velocity_target(phase: Phase, where: str) -> np.ndarray | None:
     return None
 
 
+def _explicit_boundary_velocity_target(phase: Phase, where: str) -> np.ndarray | None:
+    """Return an explicitly constrained boundary velocity target from State constraints."""
+    st = _get_state_constraint(phase, where)
+    if st is None:
+        return None
+    if "V" not in _state_groups(st):
+        return None
+    st_val = _state_boundary_value(st)
+    if st_val is None:
+        return None
+    return as_vec3(st_val.v_mps)
+
+
 def _build_front_impulse_velocity_targets(phases: Sequence[Phase]) -> dict[int, np.ndarray]:
     """Seed only the first front-link impulse; later front links default to zero impulse.
 
@@ -1215,18 +1228,13 @@ def solve_composable_mission(
         last_ph = built[-1].ph
         last_ap = built[-1].asset_phase
         if _has_impulsive_var(last_ph, "Back"):
-            st = _get_state_constraint(last_ph, "Back")
-            if st is None and last_ph.final_state is None:
-                raise ValueError(
-                    "ImpulsiveDeltaV at mission end requires a desired terminal velocity (State constraint or final_state)."
+            v_target = _explicit_boundary_velocity_target(last_ph, "Back")
+            if v_target is not None:
+                b0 = vf.Arguments(3)
+                dvf = vf.sqrt((v_target - b0).dot(v_target - b0))
+                last_ap.addStateObjective(
+                    "Back", float(w_dv) * dvf, [3, 4, 5], [], [], AutoScale=1.0 / float(v_unit)
                 )
-            st_val = _state_boundary_value(st)
-            v_target = as_vec3(st_val.v_mps if st_val is not None else last_ph.final_state.v_mps)  # type: ignore[union-attr]
-            b0 = vf.Arguments(3)
-            dvf = vf.sqrt((v_target - b0).dot(v_target - b0))
-            last_ap.addStateObjective(
-                "Back", float(w_dv) * dvf, [3, 4, 5], [], [], AutoScale=1.0 / float(v_unit)
-            )
 
     # Time objective: minimize final time at last phase Back
     if minimize_time and float(w_time) != 0.0:
@@ -1271,9 +1279,7 @@ def solve_composable_mission(
             continue
         prev_traj = trajs[i - 1]
         this_traj = trajs[i]
-        v_minus = prev_traj[-1, 3:6]
-        v_plus = this_traj[0, 3:6]
-        dv = v_plus - v_minus
+        dv = this_traj[0, 3:6] - prev_traj[-1, 3:6]
         maneuvers.append(
             Maneuver(
                 r_m=prev_traj[-1, 0:3],
@@ -1285,16 +1291,15 @@ def solve_composable_mission(
 
     # terminal maneuver
     if built and _has_impulsive_var(built[-1].ph, "Back"):
-        st = _get_state_constraint(built[-1].ph, "Back")
-        st_val = _state_boundary_value(st)
-        v_target = as_vec3(st_val.v_mps if st_val is not None else built[-1].ph.final_state.v_mps)  # type: ignore[union-attr]
-        v_end = trajs[-1][-1, 3:6]
-        dv = v_target - v_end
-        maneuvers.append(
-            Maneuver(
+        v_target = _explicit_boundary_velocity_target(built[-1].ph, "Back")
+        if v_target is not None:
+            v_end = trajs[-1][-1, 3:6]
+            dv = v_target - v_end
+            maneuvers.append(
+                Maneuver(
                 r_m=trajs[-1][-1, 0:3], t_s=float(trajs[-1][-1, 6]), dv_mps=dv, name="Δv (terminal)"
             )
-        )
+            )
 
     return RendezvousResult(
         converged=bool(converged),

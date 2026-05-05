@@ -6,11 +6,12 @@ terminal Cartesian state. The transfer still uses two impulsive burns: one at th
 start and one at the end.
 
 `final_state` is still supplied as a guess anchor for the Lambert-style seed search.
-It is not a boundary position constraint here, but it does provide the desired terminal
-velocity for the back-end delta-v objective.
+It is not a boundary position or velocity constraint here.
 """
 
 from __future__ import annotations
+
+import numpy as np
 
 from octavian import (
     Dynamics,
@@ -22,7 +23,7 @@ from octavian import (
     objectives,
     variables,
 )
-from octavian.astro import classic_to_cartesian
+from octavian.astro import cartesian_to_classic, classical_to_cartesian
 from octavian.quick import state
 from octavian.viz.plotly import save_trajectory_html
 
@@ -39,7 +40,7 @@ x0 = state(
 target_a_m = 8_400e3
 target_e = 0.18
 target_inc_deg = 28.5
-r_guess_m, v_guess_mps = classic_to_cartesian(
+r_guess_m, v_guess_mps = classical_to_cartesian(
     a_m=target_a_m,
     e=target_e,
     inc_deg=target_inc_deg,
@@ -78,6 +79,28 @@ mission = Mission(
 
 sol = mission.solve()
 print(sol.summary())
+
+print("Applied terminal constraints:")
+print(f"  semi_major_axis  target={target_a_m:.3f} m  tol=2000.000 m")
+print(f"  eccentricity     target={target_e:.6f}     tol=0.005000")
+print(f"  inclination_deg  target={target_inc_deg:.6f} tol=0.200000")
+rf_m = sol.result.traj[-1, 0:3]
+vf_mps = sol.result.traj[-1, 3:6]
+if float(np.linalg.norm(rf_m)) > 0.0:
+    final_oe = cartesian_to_classic(r_m=rf_m, v_mps=vf_mps, mu_m3ps2=MU)
+    print("Achieved final orbital elements:")
+    print(
+        f"  a_m              value={final_oe['a_m']:.3f} m  error={final_oe['a_m'] - target_a_m:.3f} m"
+    )
+    print(f"  e                value={final_oe['e']:.6f}     error={final_oe['e'] - target_e:.6f}")
+    print(
+        f"  inc_deg          value={final_oe['inc_deg']:.6f} error={final_oe['inc_deg'] - target_inc_deg:.6f}"
+    )
+
+    # print(xf_guess)
+    # print(sol.result.traj[-3:, 0:6])
+else:
+    print("Achieved final orbital elements: unavailable for zero-radius terminal state.")
 
 out_html = "traj_composable_terminal_orbital_elements.html"
 save_trajectory_html(sol.result.traj, out_html, maneuvers=sol.result.maneuvers, title=mission.name)
