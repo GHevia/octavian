@@ -1251,10 +1251,10 @@ def solve_composable_mission(
             v0_mps=shell_v0_guess,
             t0_s=shell_t0,
             tf_s=shell_tf,
-            npts=2,
+            npts=3,
             mu_m3ps2=mu,
         )
-        shell_asset_phase = ode.phase(Tmodes.LGL3, shell_guess, 1)
+        shell_asset_phase = ode.phase(Tmodes.LGL3, shell_guess, 2)
         ocp.addPhase(shell_asset_phase)
         built.append(
             _PhaseBuild(
