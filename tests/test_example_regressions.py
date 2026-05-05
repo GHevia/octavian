@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-pytest.importorskip("asset_asrl")
+pytest.importorskip("asset_asrl", exc_type=ImportError)
 
 from octavian import (
     Dynamics,
@@ -17,6 +17,7 @@ from octavian import (
     state,
     variables,
 )
+from octavian.astro import classical_to_cartesian
 from octavian.solvers import SolverOptions
 
 MU = 3.986004418e14
@@ -537,6 +538,55 @@ def _composable08_mission() -> Mission:
     )
 
 
+def _composable09_mission(*, use_terminal_burn: bool) -> Mission:
+    spacecraft = _demo_spacecraft()
+    dynamics = Dynamics(mu_m3ps2=MU)
+    initial_state = state(
+        r_m=[7000e3, 0.0, 0.0],
+        v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 250.0],
+    )
+    target_a_m = 8_400e3
+    target_e = 0.18
+    target_inc_deg = 28.5
+    guess_r_m, guess_v_mps = classical_to_cartesian(
+        a_m=target_a_m,
+        e=target_e,
+        inc_deg=target_inc_deg,
+        raan_deg=35.0,
+        argp_deg=20.0,
+        true_anomaly_deg=70.0,
+        mu_m3ps2=MU,
+    )
+    terminal_guess = state(r_m=guess_r_m, v_mps=guess_v_mps)
+
+    phase_variables = [variables.ImpulsiveDeltaV(where="Front")]
+    if use_terminal_burn:
+        phase_variables.append(variables.ImpulsiveDeltaV(where="Back"))
+
+    transfer = Phase(
+        name="transfer",
+        mode="coast",
+        spacecraft=spacecraft,
+        dynamics=dynamics,
+        initial_state=initial_state,
+        final_state=terminal_guess,
+        tof_bounds_s=(1_200.0, 24_000.0),
+        constraints=[
+            constraints.state(initial_state, where="Front"),
+            constraints.semi_major_axis(target_a_m, where="Back", tol_m=2.0e3),
+            constraints.eccentricity(target_e, where="Back", tol=5.0e-3),
+            constraints.inclination_deg(target_inc_deg, where="Back", tol_deg=0.2),
+        ],
+        variables=phase_variables,
+    )
+    return Mission(
+        name="Composable: terminal orbital-element constraints",
+        phases=[transfer],
+        objectives=[objectives.minimize_total_delta_v()],
+        solver_options=DEFAULT_OPTS,
+    )
+
+
 def test_example_01_quick_and_composable_match() -> None:
     quick = _solve_ok(_quick01_mission())
     composable = _solve_ok(_composable01_mission())
@@ -592,6 +642,15 @@ def test_example_05_respects_path_constraint_and_maneuvers() -> None:
 def test_example_06_has_three_maneuvers() -> None:
     res = _solve_ok(_composable06_mission())
     assert len(res.maneuvers) == 3
+
+
+def test_example_09_two_impulse_is_no_worse_than_one_impulse() -> None:
+    one_impulse = _solve_ok(_composable09_mission(use_terminal_burn=False))
+    two_impulse = _solve_ok(_composable09_mission(use_terminal_burn=True))
+
+    assert all(row["satisfied"] for row in one_impulse.info["constraint_report"])
+    assert all(row["satisfied"] for row in two_impulse.info["constraint_report"])
+    assert two_impulse.total_dv_mps() <= one_impulse.total_dv_mps() + 1e-3
 
 
 # def test_example_08_matches_direct_rendezvous_spec_solve() -> None:

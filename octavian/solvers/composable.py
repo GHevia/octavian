@@ -37,7 +37,7 @@ except Exception:  # pragma: no cover
 
 from typing import TYPE_CHECKING
 
-from ..constraints import Constraint
+from ..constraints import Constraint, OrbitalElementConstraint, Position, State
 from ..links import impulsive as impulsive_link
 from ..phase import Phase
 from ..types import Maneuver
@@ -49,7 +49,12 @@ if TYPE_CHECKING:  # pragma: no cover
     from ..mission import Mission
 import contextlib
 
-from ..astro.kepler import estimate_orbital_period_s, kepler_dense_guess, propagate_cartesian_rv
+from ..astro.kepler import (
+    cartesian_to_classic,
+    estimate_orbital_period_s,
+    kepler_dense_guess,
+    propagate_cartesian_rv,
+)
 from ..astro.lambert import select_best_lambert_seed
 from ..astro.types import as_vec3
 from ..astro.units import default_units
@@ -76,44 +81,62 @@ def _require_asset() -> None:
 
 @dataclass
 class _PhaseBuild:
+    """Bookkeeping for one compiled ASSET phase."""
+
     ph: Phase
     asset_phase: Any
     t_bounds: tuple[float, float]
-    # for maneuver bookkeeping
     index: int
     compile_phase: Phase | None = None
 
 
 def _has_impulsive_var(phase: Phase, where: str) -> bool:
+    """Return whether a phase has an impulsive delta-v at a boundary."""
     w = (where or "").strip().lower()
     loc = "Front" if w in ("front", "start", "initial", "t0") else "Back"
-    # variables
-    for v in getattr(phase, "variables", []) or []:
-        if isinstance(v, ImpulsiveDeltaV) and getattr(v, "where", "") == loc:
+    for variable in getattr(phase, "variables", []) or []:
+        if isinstance(variable, ImpulsiveDeltaV) and getattr(variable, "where", "") == loc:
             return True
-    # legacy events
-    try:
-        if phase.has_impulse(loc):
+    for event in getattr(phase, "events", []) or []:
+        if getattr(event, "kind", "") == "impulse" and getattr(event, "where", "") == loc:
             return True
-    except Exception:
-        pass
     return False
 
 
-def _get_constraint(phase: Phase, kind: str, where: str) -> Constraint | None:
+def _get_constraint_of_type(
+    phase: Phase, constraint_type: type[Constraint], where: str
+) -> Constraint | None:
+    """Return the first constraint of ``constraint_type`` at a boundary."""
     loc = "Front" if where.lower().startswith("f") else "Back"
-    for c in getattr(phase, "constraints", []) or []:
-        if getattr(c, "kind", "") == kind and getattr(c, "where", "") == loc:
-            return c
+    for constraint in getattr(phase, "constraints", []) or []:
+        if isinstance(constraint, constraint_type) and getattr(constraint, "where", "") == loc:
+            return constraint
     return None
 
 
 def _get_state_constraint(phase: Phase, where: str) -> Constraint | None:
-    return _get_constraint(phase, kind="state", where=where)
+    return _get_constraint_of_type(phase, State, where)
 
 
 def _get_position_constraint(phase: Phase, where: str) -> Constraint | None:
-    return _get_constraint(phase, kind="position", where=where)
+    return _get_constraint_of_type(phase, Position, where)
+
+
+def _orbital_element_constraints(phase: Phase, where: str | None = None) -> tuple[OrbitalElementConstraint, ...]:
+    """Return orbital-element constraints, optionally filtered by boundary."""
+    if where is None:
+        expected_where = None
+    else:
+        expected_where = "Front" if where.lower().startswith("f") else "Back" if where.lower().startswith("b") else "Path"
+
+    matches: list[OrbitalElementConstraint] = []
+    for constraint in getattr(phase, "constraints", []) or []:
+        if not isinstance(constraint, OrbitalElementConstraint):
+            continue
+        if expected_where is not None and constraint.where != expected_where:
+            continue
+        matches.append(constraint)
+    return tuple(matches)
 
 
 def _state_boundary_value(c: Constraint | None) -> Any:
@@ -135,31 +158,33 @@ def _position_boundary_value(c: Constraint | None) -> np.ndarray | None:
     return np.asarray(c.value, dtype=float).reshape(3)
 
 
-def _is_terminal_shell_constraint(c: Constraint) -> bool:
-    return getattr(c, "where", "") == "Back" and getattr(c, "kind", "") in {
-        "state",
-        "position",
-        "semi_major_axis",
-        "eccentricity",
-        "inclination_deg",
-    }
+def _has_terminal_post_burn_orbital_target(phase: Phase) -> bool:
+    """Return whether a terminal shell is needed after a back impulse."""
+    return _has_impulsive_var(phase, "Back") and bool(_orbital_element_constraints(phase, "Back"))
 
 
 def _make_terminal_shell(last_phase: Phase) -> tuple[Phase, Phase] | None:
-    if not _has_impulsive_var(last_phase, "Back"):
+    """Create an internal post-burn shell phase for terminal orbital targets.
+
+    The shell phase gives the state *after* the back impulse its own boundary so
+    orbital-element constraints can be applied without turning ``final_state``
+    into a hidden hard constraint.
+    """
+    if not _has_terminal_post_burn_orbital_target(last_phase):
         return None
 
-    moved_constraints = [c for c in (last_phase.constraints or []) if _is_terminal_shell_constraint(c)]
-    if not moved_constraints:
-        return None
-
+    moved_constraints = list(_orbital_element_constraints(last_phase, "Back"))
     compile_last = replace(
         last_phase,
-        constraints=[c for c in (last_phase.constraints or []) if c not in moved_constraints],
+        constraints=[
+            constraint
+            for constraint in (last_phase.constraints or [])
+            if constraint not in moved_constraints
+        ],
         variables=[
-            v
-            for v in (last_phase.variables or [])
-            if not (isinstance(v, ImpulsiveDeltaV) and getattr(v, "where", "") == "Back")
+            variable
+            for variable in (last_phase.variables or [])
+            if not (isinstance(variable, ImpulsiveDeltaV) and getattr(variable, "where", "") == "Back")
         ],
     )
     shell_phase = Phase(
@@ -171,62 +196,111 @@ def _make_terminal_shell(last_phase: Phase) -> tuple[Phase, Phase] | None:
         link=impulsive_link(name="post_burn"),
         tof_bounds_s=(0.1, 1.0),
         tof_is_relative=True,
-        constraints=[replace(c, where="Front") for c in moved_constraints],
+        constraints=[replace(constraint, where="Front") for constraint in moved_constraints],
         variables=[ImpulsiveDeltaV(where="Front")],
     )
     return compile_last, shell_phase
 
 
-def _apply_orbital_element_constraint(asset_phase: Any, c: Constraint, mu_m3ps2: float) -> None:
-    args = vf.Arguments(6)
-    rvec, vvec = args.tolist([(0, 3), (3, 3)])
-    hvec = rvec.cross(vvec)
-    r = rvec.norm()
-    v = vvec.norm()
-    eps = 0.5 * (v**2) - float(mu_m3ps2) / r
-    h2 = hvec.dot(hvec)
+@dataclass(frozen=True)
+class _OrbitalElementExpressions:
+    semi_major_axis_m: Any
+    eccentricity_sq: Any
+    inclination_cosine: Any
 
-    kind = getattr(c, "kind", "")
-    val = getattr(c, "value", {})
-    where = getattr(c, "where", "Path")
 
-    if kind == "semi_major_axis":
-        target = float(val["a_m"])
-        a_expr = -0.5 * float(mu_m3ps2) / eps
-        tol = None if val["tol_m"] is None else float(val["tol_m"])
-        if tol is None:
-            asset_phase.addEqualCon(where, vf.stack([a_expr - target]), range(0, 6))
+def _orbital_element_expressions(mu_m3ps2: float) -> _OrbitalElementExpressions:
+    """Build ASSET expressions for the orbital elements used by Octavian."""
+    arguments = vf.Arguments(6)
+    position_vec, velocity_vec = arguments.tolist([(0, 3), (3, 3)])
+    angular_momentum_vec = position_vec.cross(velocity_vec)
+    radius_norm = position_vec.norm()
+    speed_norm = velocity_vec.norm()
+    specific_energy = 0.5 * (speed_norm**2) - float(mu_m3ps2) / radius_norm
+    angular_momentum_sq = angular_momentum_vec.dot(angular_momentum_vec)
+    return _OrbitalElementExpressions(
+        semi_major_axis_m=-0.5 * float(mu_m3ps2) / specific_energy,
+        eccentricity_sq=1.0
+        + (2.0 * specific_energy * angular_momentum_sq) / (float(mu_m3ps2) ** 2),
+        inclination_cosine=angular_momentum_vec.normalized()[2],
+    )
+
+
+def _apply_orbital_element_constraint(
+    asset_phase: Any, constraint: OrbitalElementConstraint, mu_m3ps2: float
+) -> None:
+    """Apply one orbital-element constraint to an ASSET phase."""
+    expressions = _orbital_element_expressions(mu_m3ps2)
+    where = getattr(constraint, "where", "Path")
+    values = constraint.value
+
+    if constraint.kind == "semi_major_axis":
+        target = float(values["a_m"])
+        tolerance = values["tol_m"]
+        if tolerance is None:
+            asset_phase.addEqualCon(
+                where, vf.stack([expressions.semi_major_axis_m - target]), range(0, 6)
+            )
             return
-        asset_phase.addInequalCon(where, vf.stack([a_expr - (target + tol)]), range(0, 6))
-        asset_phase.addInequalCon(where, vf.stack([(target - tol) - a_expr]), range(0, 6))
+        tolerance = float(tolerance)
+        asset_phase.addInequalCon(
+            where,
+            vf.stack([expressions.semi_major_axis_m - (target + tolerance)]),
+            range(0, 6),
+        )
+        asset_phase.addInequalCon(
+            where,
+            vf.stack([(target - tolerance) - expressions.semi_major_axis_m]),
+            range(0, 6),
+        )
         return
 
-    if kind == "eccentricity":
-        target = float(val["e"])
-        e2_expr = 1.0 + (2.0 * eps * h2) / (float(mu_m3ps2) ** 2)
-        tol = None if val["tol"] is None else float(val["tol"])
-        if tol is None:
-            asset_phase.addEqualCon(where, vf.stack([e2_expr - target**2]), range(0, 6))
+    if constraint.kind == "eccentricity":
+        target = float(values["e"])
+        tolerance = values["tol"]
+        if tolerance is None:
+            asset_phase.addEqualCon(
+                where, vf.stack([expressions.eccentricity_sq - target**2]), range(0, 6)
+            )
             return
-        asset_phase.addInequalCon(where, vf.stack([e2_expr - (target + tol) ** 2]), range(0, 6))
-        asset_phase.addInequalCon(where, vf.stack([(target - tol) ** 2 - e2_expr]), range(0, 6))
+        tolerance = float(tolerance)
+        asset_phase.addInequalCon(
+            where,
+            vf.stack([expressions.eccentricity_sq - (target + tolerance) ** 2]),
+            range(0, 6),
+        )
+        asset_phase.addInequalCon(
+            where,
+            vf.stack([(target - tolerance) ** 2 - expressions.eccentricity_sq]),
+            range(0, 6),
+        )
         return
 
-    if kind == "inclination_deg":
-        target_deg = float(val["inc_deg"])
-        hz_hat = hvec.normalized()[2]
-        target_cos = float(np.cos(np.deg2rad(target_deg)))
-        tol_deg = None if val["tol_deg"] is None else float(val["tol_deg"])
-        if tol_deg is None:
-            asset_phase.addEqualCon(where, vf.stack([hz_hat - target_cos]), range(0, 6))
+    if constraint.kind == "inclination_deg":
+        target_deg = float(values["inc_deg"])
+        tolerance_deg = values["tol_deg"]
+        target_cosine = float(np.cos(np.deg2rad(target_deg)))
+        if tolerance_deg is None:
+            asset_phase.addEqualCon(
+                where, vf.stack([expressions.inclination_cosine - target_cosine]), range(0, 6)
+            )
             return
-        upper_cos = float(np.cos(np.deg2rad(target_deg - tol_deg)))
-        lower_cos = float(np.cos(np.deg2rad(target_deg + tol_deg)))
-        asset_phase.addInequalCon(where, vf.stack([hz_hat - upper_cos]), range(0, 6))
-        asset_phase.addInequalCon(where, vf.stack([lower_cos - hz_hat]), range(0, 6))
+        tolerance_deg = float(tolerance_deg)
+        upper_cosine = float(np.cos(np.deg2rad(target_deg - tolerance_deg)))
+        lower_cosine = float(np.cos(np.deg2rad(target_deg + tolerance_deg)))
+        asset_phase.addInequalCon(
+            where,
+            vf.stack([expressions.inclination_cosine - upper_cosine]),
+            range(0, 6),
+        )
+        asset_phase.addInequalCon(
+            where,
+            vf.stack([lower_cosine - expressions.inclination_cosine]),
+            range(0, 6),
+        )
         return
 
-    raise ValueError(f"Unsupported orbital-element constraint kind: {kind!r}")
+    raise ValueError(f"Unsupported orbital-element constraint kind: {constraint.kind!r}")
 
 
 def _objective_weights(mission: Mission) -> tuple[bool, float, bool, float]:
@@ -743,16 +817,7 @@ def _build_lambert_guided_phase_guess(
 
 def _boundary_velocity_target(phase: Phase, where: str) -> np.ndarray | None:
     """Return a boundary velocity target from State constraint or phase state."""
-    st = _get_state_constraint(phase, where)
-    if st is not None:
-        st_val = _state_boundary_value(st)
-        if st_val is not None:
-            return as_vec3(st_val.v_mps)
-    if where.lower().startswith("f") and phase.initial_state is not None:
-        return as_vec3(phase.initial_state.v_mps)
-    if where.lower().startswith("b") and phase.final_state is not None:
-        return as_vec3(phase.final_state.v_mps)
-    return None
+    return _guess_boundary_velocity_target(phase, where)
 
 
 def _explicit_boundary_velocity_target(phase: Phase, where: str) -> np.ndarray | None:
@@ -766,6 +831,68 @@ def _explicit_boundary_velocity_target(phase: Phase, where: str) -> np.ndarray |
     if st_val is None:
         return None
     return as_vec3(st_val.v_mps)
+
+
+def _guess_boundary_velocity_target(phase: Phase, where: str) -> np.ndarray | None:
+    """Return the best available boundary velocity anchor for guess construction."""
+    explicit_target = _explicit_boundary_velocity_target(phase, where)
+    if explicit_target is not None:
+        return explicit_target
+    if where.lower().startswith("f") and phase.initial_state is not None:
+        return as_vec3(phase.initial_state.v_mps)
+    if where.lower().startswith("b") and phase.final_state is not None:
+        return as_vec3(phase.final_state.v_mps)
+    return None
+
+
+def _boundary_state_from_traj(traj: np.ndarray, where: str) -> tuple[np.ndarray, np.ndarray]:
+    """Extract a Cartesian boundary state from one phase trajectory."""
+    row = np.asarray(traj[0], dtype=float) if where == "Front" else np.asarray(traj[-1], dtype=float)
+    return as_vec3(row[0:3]), as_vec3(row[3:6])
+
+
+def _orbital_constraint_report_row(
+    phase_name: str,
+    constraint: OrbitalElementConstraint,
+    phase_traj: np.ndarray,
+    mu_m3ps2: float,
+) -> dict[str, float | str | bool]:
+    """Summarize one orbital-element constraint against the solved trajectory."""
+    position_m, velocity_mps = _boundary_state_from_traj(phase_traj, constraint.where)
+    actual_elements = cartesian_to_classic(
+        r_m=position_m,
+        v_mps=velocity_mps,
+        mu_m3ps2=mu_m3ps2,
+    )
+
+    if constraint.kind == "semi_major_axis":
+        target = float(constraint.a_m)
+        tolerance = constraint.tol_m
+        actual = float(actual_elements["a_m"])
+    elif constraint.kind == "eccentricity":
+        target = float(constraint.e)
+        tolerance = constraint.tol
+        actual = float(actual_elements["e"])
+    elif constraint.kind == "inclination_deg":
+        target = float(constraint.inc_deg)
+        tolerance = constraint.tol_deg
+        actual = float(actual_elements["inc_deg"])
+    else:
+        raise ValueError(f"Unsupported orbital-element constraint kind: {constraint.kind!r}")
+
+    error = actual - target
+    satisfied = abs(error) <= (float(tolerance) if tolerance is not None else 1e-6)
+    return {
+        "phase": phase_name,
+        "where": constraint.where,
+        "family": constraint.family,
+        "constraint": constraint.kind,
+        "target": target,
+        "tolerance": float(tolerance) if tolerance is not None else 0.0,
+        "actual": actual,
+        "error": error,
+        "satisfied": satisfied,
+    }
 
 
 def _build_front_impulse_velocity_targets(phases: Sequence[Phase]) -> dict[int, np.ndarray]:
@@ -1116,9 +1243,12 @@ def solve_composable_mission(
         last_pt = np.asarray(last_guess[-1], dtype=float)
         shell_t0 = float(last_pt[6])
         shell_tf = shell_t0 + 1.0
+        shell_v0_guess = _guess_boundary_velocity_target(phases[-1], "Back")
+        if shell_v0_guess is None:
+            shell_v0_guess = as_vec3(last_pt[3:6])
         shell_guess = kepler_dense_guess(
             r0_m=as_vec3(last_pt[0:3]),
-            v0_mps=as_vec3(last_pt[3:6]),
+            v0_mps=shell_v0_guess,
             t0_s=shell_t0,
             tf_s=shell_tf,
             npts=2,
@@ -1208,20 +1338,17 @@ def solve_composable_mission(
                         ap.addBoundaryValue(loc, use_groups, np.asarray(vals, dtype=float))
 
         # Path constraints (e.g., min radius)
-        for c in getattr(ph, "constraints", []) or []:
-            if getattr(c, "kind", "") == "min_radius":
-                rmin = float(c.value)
-                # rmin_nd = rmin / float(r_unit)
-                loc = (
-                    "Path" if getattr(c, "where", "Path") == "Path" else getattr(c, "where", "Path")
+        for constraint in getattr(ph, "constraints", []) or []:
+            if getattr(constraint, "kind", "") == "min_radius":
+                minimum_radius_m = float(constraint.value)
+                location = (
+                    "Path"
+                    if getattr(constraint, "where", "Path") == "Path"
+                    else getattr(constraint, "where", "Path")
                 )
-                # "R" is in scaled units here, so use a scaled bound with AutoScale=1.
-                ap.addLowerNormBound(loc, "R", rmin)
-                # ap.addInequalCon(loc, rmin*rmin - vf.Arguments(3).squared_norm(), ["R"])
-
-                # breakpoint()
-            elif getattr(c, "kind", "") in {"semi_major_axis", "eccentricity", "inclination_deg"}:
-                _apply_orbital_element_constraint(ap, c, mu)
+                ap.addLowerNormBound(location, "R", minimum_radius_m)
+            elif isinstance(constraint, OrbitalElementConstraint):
+                _apply_orbital_element_constraint(ap, constraint, mu)
 
         # Time bounds: normalize tof_bounds_s to absolute Back-time bounds.
         bounds = b.t_bounds
@@ -1379,6 +1506,21 @@ def solve_composable_mission(
                 )
             )
 
+    constraint_report: list[dict[str, float | str | bool]] = []
+    for build, phase_traj in zip(built, trajs, strict=True):
+        constraint_phase = build.compile_phase or build.ph
+        for constraint in _orbital_element_constraints(constraint_phase):
+            if constraint.where not in {"Front", "Back"}:
+                continue
+            constraint_report.append(
+                _orbital_constraint_report_row(
+                    phase_name=constraint_phase.name,
+                    constraint=constraint,
+                    phase_traj=phase_traj,
+                    mu_m3ps2=mu,
+                )
+            )
+
     return RendezvousResult(
         converged=bool(converged),
         traj=np.asarray(traj, dtype=np.float64),
@@ -1390,6 +1532,7 @@ def solve_composable_mission(
             "r_unit_m": r_unit,
             "v_unit_mps": v_unit,
             "t_unit_s": t_unit,
+            "constraint_report": constraint_report,
             "phase_guess_info": guess_info,
         }
         | guess_info.get(0, {}),

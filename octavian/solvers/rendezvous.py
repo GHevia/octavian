@@ -116,6 +116,19 @@ class RendezvousResult:
             for m in self.maneuvers:
                 dv = float(np.linalg.norm(m.dv_mps))
                 lines.append(f"    - {m.name}: t={m.t_s:.3f} s | |dv|={dv:.6f} m/s")
+        constraint_report = self.info.get("constraint_report", [])
+        if constraint_report:
+            lines.append("  constraints:")
+            for row in constraint_report:
+                if not isinstance(row, dict):
+                    continue
+                lines.append(
+                    "    - "
+                    f"{row.get('phase', '?')} {row.get('where', '?')} {row.get('constraint', '?')}: "
+                    f"target={float(row.get('target', float('nan'))):.6g} "
+                    f"actual={float(row.get('actual', float('nan'))):.6g} "
+                    f"ok={bool(row.get('satisfied', False))}"
+                )
         # show a couple of useful info keys, without dumping everything
         for k in ("seed", "nrev", "precoast_t1_s", "study_index"):
             if k in self.info:
