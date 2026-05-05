@@ -46,7 +46,7 @@ r_guess_m, v_guess_mps = classical_to_cartesian(
     inc_deg=target_inc_deg,
     raan_deg=35.0,
     argp_deg=20.0,
-    true_anomaly_deg=50.0,
+    true_anomaly_deg=70.0,
     mu_m3ps2=MU,
 )
 xf_guess = state(r_m=r_guess_m, v_mps=v_guess_mps)
@@ -97,7 +97,15 @@ if float(np.linalg.norm(rf_m)) > 0.0:
         f"  inc_deg          value={final_oe['inc_deg']:.6f} error={final_oe['inc_deg'] - target_inc_deg:.6f}"
     )
 
-    # print(xf_guess)
+    final_oe2 = cartesian_to_classic(r_m=sol.result.traj[1, 0:3], v_mps=sol.result.traj[1, 3:6], mu_m3ps2=MU)
+    print("Achieved final orbital elements just before:")
+    print(
+        f"  a_m              value={final_oe2['a_m']:.3f}   m"
+    )
+    print(f"  e                value={final_oe2['e']:.6f}   ")
+    print(
+        f"  inc_deg          value={final_oe2['inc_deg']:.6f} "
+    )
     # print(sol.result.traj[-3:, 0:6])
 else:
     print("Achieved final orbital elements: unavailable for zero-radius terminal state.")

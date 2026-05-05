@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from octavian import constraints
+from octavian import Phase, constraints
 from octavian.astro import classic_to_cartesian, classical_to_cartesian
 from octavian.quick import state
 from octavian.solvers import composable
@@ -201,3 +201,29 @@ def test_back_impulse_target_uses_state_constraint_velocity_group() -> None:
         variables=[ImpulsiveDeltaV(where="Back")],
     )
     assert np.allclose(composable._explicit_boundary_velocity_target(phase, "Back"), x.v_mps)
+
+
+def test_terminal_shell_moves_back_constraints_to_front() -> None:
+    x0 = state(r_m=[7000e3, 0.0, 0.0], v_mps=[0.0, 7200.0, 0.0])
+    xf = state(r_m=[8000e3, 0.0, 0.0], v_mps=[0.0, 7000.0, 100.0])
+    phase = Phase(
+        name="transfer",
+        initial_state=x0,
+        final_state=xf,
+        constraints=[
+            constraints.state(x0, where="Front"),
+            constraints.semi_major_axis(8_400e3, where="Back", tol_m=2.0e3),
+            constraints.eccentricity(0.18, where="Back", tol=5.0e-3),
+        ],
+        variables=[ImpulsiveDeltaV(where="Front"), ImpulsiveDeltaV(where="Back")],
+    )
+
+    compile_last, shell = composable._make_terminal_shell(phase)  # type: ignore[misc]
+
+    assert compile_last is not None
+    assert shell is not None
+    assert not any(getattr(c, "where", "") == "Back" for c in compile_last.constraints)
+    assert all(getattr(c, "where", "") == "Front" for c in shell.constraints)
+    assert shell.previous is phase
+    assert any(isinstance(v, ImpulsiveDeltaV) and v.where == "Front" for v in shell.variables)
+    assert not any(isinstance(v, ImpulsiveDeltaV) and v.where == "Back" for v in compile_last.variables)

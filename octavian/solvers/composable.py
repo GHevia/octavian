@@ -25,7 +25,7 @@ changing the compilation model.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -38,6 +38,7 @@ except Exception:  # pragma: no cover
 from typing import TYPE_CHECKING
 
 from ..constraints import Constraint
+from ..links import impulsive as impulsive_link
 from ..phase import Phase
 from ..types import Maneuver
 from ..variables import ImpulsiveDeltaV
@@ -80,6 +81,7 @@ class _PhaseBuild:
     t_bounds: tuple[float, float]
     # for maneuver bookkeeping
     index: int
+    compile_phase: Phase | None = None
 
 
 def _has_impulsive_var(phase: Phase, where: str) -> bool:
@@ -131,6 +133,48 @@ def _position_boundary_value(c: Constraint | None) -> np.ndarray | None:
     if c is None:
         return None
     return np.asarray(c.value, dtype=float).reshape(3)
+
+
+def _is_terminal_shell_constraint(c: Constraint) -> bool:
+    return getattr(c, "where", "") == "Back" and getattr(c, "kind", "") in {
+        "state",
+        "position",
+        "semi_major_axis",
+        "eccentricity",
+        "inclination_deg",
+    }
+
+
+def _make_terminal_shell(last_phase: Phase) -> tuple[Phase, Phase] | None:
+    if not _has_impulsive_var(last_phase, "Back"):
+        return None
+
+    moved_constraints = [c for c in (last_phase.constraints or []) if _is_terminal_shell_constraint(c)]
+    if not moved_constraints:
+        return None
+
+    compile_last = replace(
+        last_phase,
+        constraints=[c for c in (last_phase.constraints or []) if c not in moved_constraints],
+        variables=[
+            v
+            for v in (last_phase.variables or [])
+            if not (isinstance(v, ImpulsiveDeltaV) and getattr(v, "where", "") == "Back")
+        ],
+    )
+    shell_phase = Phase(
+        name=f"{last_phase.name}_post_burn",
+        mode="coast",
+        spacecraft=last_phase.spacecraft,
+        dynamics=last_phase.dynamics,
+        previous=last_phase,
+        link=impulsive_link(name="post_burn"),
+        tof_bounds_s=(0.1, 1.0),
+        tof_is_relative=True,
+        constraints=[replace(c, where="Front") for c in moved_constraints],
+        variables=[ImpulsiveDeltaV(where="Front")],
+    )
+    return compile_last, shell_phase
 
 
 def _apply_orbital_element_constraint(asset_phase: Any, c: Constraint, mu_m3ps2: float) -> None:
@@ -905,6 +949,9 @@ def solve_composable_mission(
         guesses[1] = ig1
 
     front_impulse_v_targets = _build_front_impulse_velocity_targets(phases)
+    terminal_shell = _make_terminal_shell(phases[-1])
+    last_compile_phase = terminal_shell[0] if terminal_shell is not None else None
+    shell_phase = terminal_shell[1] if terminal_shell is not None else None
 
     # Compile phases
     ocp = oc.OptimalControlProblem()
@@ -963,6 +1010,7 @@ def solve_composable_mission(
                         asset_phase=asset_phase,
                         t_bounds=tuple(abs_bounds[idx] or (0.0, 1.0)),
                         index=idx,
+                        compile_phase=(last_compile_phase if ph is phases[-1] else None),
                     )
                 )
                 continue
@@ -1057,6 +1105,34 @@ def solve_composable_mission(
                 asset_phase=asset_phase,
                 t_bounds=tuple(abs_bounds[idx] or (0.0, 1.0)),
                 index=idx,
+                compile_phase=(last_compile_phase if ph is phases[-1] else None),
+            )
+        )
+
+    if shell_phase is not None:
+        last_guess = guesses.get(len(phases) - 1)
+        if last_guess is None:
+            last_guess = np.asarray(built[-1].asset_phase.returnTraj(), dtype=float).tolist()  # type: ignore[assignment]
+        last_pt = np.asarray(last_guess[-1], dtype=float)
+        shell_t0 = float(last_pt[6])
+        shell_tf = shell_t0 + 1.0
+        shell_guess = kepler_dense_guess(
+            r0_m=as_vec3(last_pt[0:3]),
+            v0_mps=as_vec3(last_pt[3:6]),
+            t0_s=shell_t0,
+            tf_s=shell_tf,
+            npts=2,
+            mu_m3ps2=mu,
+        )
+        shell_asset_phase = ode.phase(Tmodes.LGL3, shell_guess, 1)
+        ocp.addPhase(shell_asset_phase)
+        built.append(
+            _PhaseBuild(
+                ph=shell_phase,
+                asset_phase=shell_asset_phase,
+                t_bounds=(shell_t0 + 0.1, shell_tf),
+                index=len(built),
+                compile_phase=shell_phase,
             )
         )
 
@@ -1077,7 +1153,7 @@ def solve_composable_mission(
 
     # Apply constraints and time bounds per phase
     for b in built:
-        ph = b.ph
+        ph = b.compile_phase or b.ph
         ap = b.asset_phase
 
         # First phase front time fixed at 0 unless user provides otherwise
@@ -1148,7 +1224,7 @@ def solve_composable_mission(
                 _apply_orbital_element_constraint(ap, c, mu)
 
         # Time bounds: normalize tof_bounds_s to absolute Back-time bounds.
-        bounds = abs_bounds[b.index]
+        bounds = b.t_bounds
         if bounds is not None:
             tmin, tmax = map(float, bounds)
             try:
@@ -1248,7 +1324,6 @@ def solve_composable_mission(
     converged = (
         ocp.solve_optimize_solve() if hasattr(ocp, "solve_optimize_solve") else ocp.optimize_solve()
     )
-    # converged = True
 
     # Extract trajectory (stitch)
     trajs = [np.asarray(b.asset_phase.returnTraj(), dtype=float) for b in built]
@@ -1256,7 +1331,7 @@ def solve_composable_mission(
     for t in trajs[1:]:
         traj = np.vstack([traj, t[1:, :]])
 
-    # Maneuver bookkeeping: link dv and terminal dv if requested
+    # Maneuver bookkeeping: link dv and explicit terminal dv if requested
     maneuvers: list[Maneuver] = []
     # start maneuver (mission start boundary)
     if built and _has_impulsive_var(built[0].ph, "Front"):
@@ -1297,8 +1372,11 @@ def solve_composable_mission(
             dv = v_target - v_end
             maneuvers.append(
                 Maneuver(
-                r_m=trajs[-1][-1, 0:3], t_s=float(trajs[-1][-1, 6]), dv_mps=dv, name="Δv (terminal)"
-            )
+                    r_m=trajs[-1][-1, 0:3],
+                    t_s=float(trajs[-1][-1, 6]),
+                    dv_mps=dv,
+                    name="Δv (terminal)",
+                )
             )
 
     return RendezvousResult(
