@@ -70,9 +70,9 @@ def _build_mission(*, use_terminal_burn: bool) -> Mission:
         tof_bounds_s=(1_200.0, 24_000.0),
         constraints=[
             constraints.state(initial_state, where="Front"),
-            constraints.semi_major_axis(target_a_m, where="Back", tol_m=2.0e3),
-            constraints.eccentricity(target_e, where="Back", tol=5.0e-3),
-            constraints.inclination_deg(target_inc_deg, where="Back", tol_deg=0.2),
+            constraints.semi_major_axis(target_a_m, where="Back"),
+            constraints.eccentricity(target_e, where="Back"),
+            constraints.inclination_deg(target_inc_deg, where="Back"),
         ],
         variables=phase_variables,
     )
@@ -105,6 +105,8 @@ def _print_constraint_report(mission_label: str, solution) -> None:  # type: ign
 
 one_impulse = _build_mission(use_terminal_burn=False)
 two_impulse = _build_mission(use_terminal_burn=True)
+
+
 
 initial_state = one_impulse.phases[0].initial_state
 if initial_state is not None:

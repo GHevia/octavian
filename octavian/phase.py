@@ -1,15 +1,4 @@
-"""Phase definition.
-
-`Phase` is the unit of composition for a Mission.
-
-In v0.x, Octavian ships only a small set of solvers (e.g., impulsive rendezvous).
-Phase objects still matter because they:
-  - keep user scripts readable (config-like)
-  - provide a home for dynamics/scaling/constraints
-  - enable auto-linking via `previous=...`
-
-This module also hosts the small `state(...)` convenience helper.
-"""
+"""Phase definitions for mission composition."""
 
 from __future__ import annotations
 
@@ -30,8 +19,10 @@ from .specs import BoundaryState
 
 @dataclass(slots=True)
 class Phase:
+    """One phase of a mission script."""
+
     name: str = "phase"
-    mode: str = "coast"  # "coast" | "burn" | "rendezvous" (semantics layer)
+    mode: str = "coast"
     spacecraft: Spacecraft | str | None = None
     dynamics: Dynamics | None = None
 
@@ -40,64 +31,82 @@ class Phase:
 
     epoch: str | None = None
 
-    # User-facing declarations
     constraints: list[Any] = field(default_factory=list)
     events: list[BoundaryEvent] = field(default_factory=list)
-
-    # Decision variables / structure (composable missions)
     variables: list[Any] = field(default_factory=list)
 
-    # Linking to a previous phase
     previous: Phase | None = None
     link: Link | None = None
 
-    # Time-of-flight bounds; interpreted as absolute Back-time bounds by default.
-    # Set tof_is_relative=True to treat bounds as per-phase durations.
     tof_bounds_s: tuple[float, float] | None = None
     tof_is_relative: bool = False
     info: dict[str, Any] = field(default_factory=dict)
 
     def inherit_defaults(self) -> None:
+        """Inherit spacecraft, dynamics, and default link from the previous phase."""
         if self.previous is None:
             return
+
         if self.spacecraft is None:
             self.spacecraft = self.previous.spacecraft
         if self.dynamics is None:
             self.dynamics = self.previous.dynamics
 
-        # Default link choice: keep scripts simple.
         if self.link is None:
-            if (self.mode or "").lower() in ("rendezvous", "transfer"):
-                self.link = impulsive_link()
-            else:
-                self.link = continuous_link()
+            normalized_mode = (self.mode or "").lower()
+            self.link = impulsive_link() if normalized_mode in ("rendezvous", "transfer") else continuous_link()
 
     def has_impulse(self, where: str) -> bool:
-        w = (where or "").strip().lower()
-        loc = (
+        """Return whether the phase declares an impulse at a boundary.
+
+        Args:
+            where: Boundary name such as ``"Front"`` or ``"Back"``.
+
+        Returns:
+            ``True`` if the phase has an impulse event at that boundary.
+        """
+        normalized_where = (where or "").strip().lower()
+        boundary = (
             "Front"
-            if w in ("front", "start", "initial", "t0")
-            else "Back" if w in ("back", "end", "final", "tf") else None
+            if normalized_where in ("front", "start", "initial", "t0")
+            else "Back" if normalized_where in ("back", "end", "final", "tf") else None
         )
-        if loc is None:
-            raise ValueError("where must be 'front' or 'back'")
+        if boundary is None:
+            raise ValueError("where must be 'front' or 'back'.")
         return any(
-            getattr(ev, "kind", "") == "impulse" and getattr(ev, "where", "") == loc
-            for ev in self.events
+            getattr(event, "kind", "") == "impulse" and getattr(event, "where", "") == boundary
+            for event in self.events
         )
 
     def validate(self) -> None:
+        """Validate that the phase has the required data to solve.
+
+        Raises:
+            ValueError: If the phase is missing dynamics, spacecraft, or valid
+                time-of-flight bounds.
+        """
         self.inherit_defaults()
         if self.dynamics is None:
-            raise ValueError(f"Phase {self.name!r} is missing dynamics")
+            raise ValueError(f"Phase {self.name!r} is missing dynamics.")
         if self.spacecraft is None:
-            raise ValueError(f"Phase {self.name!r} is missing spacecraft")
+            raise ValueError(f"Phase {self.name!r} is missing spacecraft.")
         if self.tof_bounds_s is not None:
-            a, b = map(float, self.tof_bounds_s)
-            if not (b > a >= 0.0):
-                raise ValueError(f"Phase {self.name!r} has invalid tof_bounds_s")
+            t_min_s, t_max_s = map(float, self.tof_bounds_s)
+            if not (t_max_s > t_min_s >= 0.0):
+                raise ValueError(f"Phase {self.name!r} has invalid tof_bounds_s.")
 
 
 def state(r_m: Sequence[float], v_mps: Sequence[float]) -> BoundaryState:
-    """Small helper to build a `BoundaryState`."""
-    return BoundaryState(np.asarray(r_m, float).reshape(3), np.asarray(v_mps, float).reshape(3))
+    """Create a boundary state from position and velocity vectors.
+
+    Args:
+        r_m: Position vector in meters.
+        v_mps: Velocity vector in meters per second.
+
+    Returns:
+        A boundary-state object with reshaped ``(3,)`` vectors.
+    """
+    return BoundaryState(
+        np.asarray(r_m, dtype=float).reshape(3),
+        np.asarray(v_mps, dtype=float).reshape(3),
+    )

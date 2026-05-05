@@ -1,11 +1,4 @@
-"""Mission composition.
-
-The `Mission` object is Octavian's main user-facing API. It is intentionally
-"config-like": you compose phases, spacecraft, and dynamics in plain Python.
-
-Advanced behavior (continuation plans, retries, solve options) is available via
-defaults so simple scripts stay simple.
-"""
+"""Mission composition primitives."""
 
 from __future__ import annotations
 
@@ -22,19 +15,19 @@ from .spacecraft import Spacecraft
 
 @dataclass(slots=True)
 class Mission:
+    """Top-level user-facing mission container."""
+
     phases: list[Phase] = field(default_factory=list)
     spacecraft: dict[str, Spacecraft] = field(default_factory=dict)
     name: str = "Mission"
 
     objectives: list[Objective] = field(default_factory=lambda: [minimize_total_delta_v()])
 
-    # solving defaults
     plan: RunPlan = field(default_factory=RunPlan.default)
     retry: RetryPolicy = field(default_factory=RetryPolicy.default)
     solve_config: SolveConfig = field(default_factory=SolveConfig)
     solver_options: SolverOptions = field(default_factory=SolverOptions)
 
-    # v0.x rendezvous mapping defaults
     mesh_nsegs_transfer: int = 60
     mesh_nsegs_precoast: int = 30
     lambert_grid_size: int = 60
@@ -47,13 +40,23 @@ class Mission:
         self.phases = list(self.phases)
 
     def add_phase(self, phase: Phase) -> None:
+        """Append a phase to the mission.
+
+        Args:
+            phase: Phase to append.
+        """
         self.phases.append(phase)
 
     def validate(self) -> None:
+        """Validate mission structure before solving.
+
+        Raises:
+            ValueError: If the mission has no phases or a phase is invalid.
+        """
         if not self.phases:
-            raise ValueError("Mission has no phases")
-        for ph in self.phases:
-            ph.validate()
+            raise ValueError("Mission has no phases.")
+        for phase in self.phases:
+            phase.validate()
 
     def solve(
         self,
@@ -63,10 +66,21 @@ class Mission:
         solve_config: SolveConfig | None = None,
         solver_options: SolverOptions | None = None,
     ) -> Solution:
-        runner = MissionRunner(
+        """Solve the mission using the configured runner.
+
+        Args:
+            plan: Optional continuation or staging plan override.
+            retry: Optional retry-policy override.
+            solve_config: Optional solve-configuration override.
+            solver_options: Optional backend solver-options override.
+
+        Returns:
+            The mission solution wrapper.
+        """
+        mission_runner = MissionRunner(
             solve_options=solver_options or self.solver_options,
             solve_config=solve_config or self.solve_config,
             plan=plan or self.plan,
             retry=retry or self.retry,
         )
-        return runner.solve(self)
+        return mission_runner.solve(self)

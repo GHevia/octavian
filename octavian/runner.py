@@ -1,14 +1,4 @@
-"""Mission runner.
-
-The runner owns *how* we solve:
-  - pattern-map a Mission (phases) to a supported backend solve
-  - apply a (possibly empty) continuation plan
-  - catch common errors and retry with alternate settings/guesses
-
-v0.x focuses on impulsive rendezvous. The runner is intentionally conservative
-so it does not hide real issues, but it can automatically handle common
-"transcription"/mesh mismatches and initial-guess sensitivity.
-"""
+"""Mission runner and backend mapping logic."""
 
 from __future__ import annotations
 
@@ -27,187 +17,220 @@ if TYPE_CHECKING:
 
 
 class MissionBuildError(ValueError):
-    """Raised when a Mission cannot be mapped to a supported solver."""
+    """Raised when a mission cannot be mapped to a supported solver."""
 
 
 @dataclass(slots=True)
 class MissionRunner:
+    """Coordinate mission validation, backend selection, and retry behavior."""
+
     solve_options: SolverOptions
     solve_config: SolveConfig = field(default_factory=SolveConfig)
     plan: RunPlan = field(default_factory=RunPlan.default)
     retry: RetryPolicy = field(default_factory=RetryPolicy.default)
 
     def solve(self, mission: Mission) -> Solution:
-        # deferred import to avoid cycles
+        """Solve a mission through the configured backend-selection pipeline.
+
+        Args:
+            mission: Mission to validate, map, and solve.
+
+        Returns:
+            A solution wrapper containing the backend result and attempt log.
+        """
         from .mission import Mission
 
         if not isinstance(mission, Mission):
-            raise TypeError("MissionRunner.solve expects a Mission")
+            raise TypeError("MissionRunner.solve expects a Mission.")
 
-        # Validate phases and inherit defaults
         mission.validate()
 
-        attempts = []
+        attempt_logs: list[AttemptLog] = []
         last_error: str | None = None
+        plan_stages = list(self.plan.stages) or [None]
+        use_composable_backend = _is_composable_mission(mission)
 
-        stages = list(self.plan.stages) or [None]
+        def _stage_name(stage_config) -> str:
+            return getattr(stage_config, "name", "default") if stage_config is not None else "default"
 
-        def stage_name(s):
-            return getattr(s, "name", "default") if s is not None else "default"
+        for stage_index, stage_config in enumerate(plan_stages):
+            stage_label = _stage_name(stage_config)
+            rendezvous_spec = None
 
-        for sidx, stage in enumerate(stages):
-            stage_label = stage_name(stage)
-            spec = None
-            if not _is_composable_mission(mission):
+            if not use_composable_backend:
                 try:
-                    spec = _mission_to_rendezvous_spec(mission)
-                except Exception as e:  # noqa: BLE001
-                    raise MissionBuildError(str(e)) from e
+                    rendezvous_spec = _mission_to_rendezvous_spec(mission)
+                except Exception as exc:  # noqa: BLE001
+                    raise MissionBuildError(str(exc)) from exc
 
-            # Stage-level adjustment hook (minimal)
-            if spec is not None and stage is not None and getattr(stage, "nsegs_scale", None):
-                spec = _scale_mesh(spec, float(stage.nsegs_scale))
+            if (
+                rendezvous_spec is not None
+                and stage_config is not None
+                and getattr(stage_config, "nsegs_scale", None)
+            ):
+                rendezvous_spec = _scale_mesh(
+                    rendezvous_spec, float(stage_config.nsegs_scale)
+                )
 
             max_attempts = max(1, int(self.solve_config.max_attempts))
-            for attempt in range(1, max_attempts + 1):
+            for attempt_index in range(1, max_attempts + 1):
                 try:
-                    if _is_composable_mission(mission):
-                        res = solve_composable_mission(mission, options=self.solve_options)
+                    if use_composable_backend:
+                        result = solve_composable_mission(mission, options=self.solve_options)
                     else:
-                        res = solve_rendezvous(spec, options=self.solve_options)
-                    attempts.append(AttemptLog(stage=stage_label, attempt=attempt, status="ok"))
-                    sol = Solution(ok=bool(res.converged), result=res, attempts=attempts)
-                    sol.info.update({"stage": stage_label, "stage_index": sidx})
-                    if res.converged or not self.solve_config.raise_on_fail:
-                        return sol
+                        result = solve_rendezvous(rendezvous_spec, options=self.solve_options)
+
+                    attempt_logs.append(
+                        AttemptLog(stage=stage_label, attempt=attempt_index, status="ok")
+                    )
+                    solution = Solution(
+                        ok=bool(result.converged),
+                        result=result,
+                        attempts=attempt_logs,
+                    )
+                    solution.info.update(
+                        {"stage": stage_label, "stage_index": stage_index}
+                    )
+                    if result.converged or not self.solve_config.raise_on_fail:
+                        return solution
                     raise RuntimeError("Solver did not converge")
-                except Exception as e:  # noqa: BLE001
-                    msg = str(e)
-                    last_error = msg
-                    attempts.append(
-                        AttemptLog(stage=stage_label, attempt=attempt, status="fail", message=msg)
+                except Exception as exc:  # noqa: BLE001
+                    error_message = str(exc)
+                    last_error = error_message
+                    attempt_logs.append(
+                        AttemptLog(
+                            stage=stage_label,
+                            attempt=attempt_index,
+                            status="fail",
+                            message=error_message,
+                        )
                     )
 
-                    if not self.retry.enabled or attempt >= max_attempts:
+                    if not self.retry.enabled or attempt_index >= max_attempts:
                         break
-                    if spec is not None:
-                        spec = _apply_simple_retry(spec, attempt, msg)
+                    if rendezvous_spec is not None:
+                        rendezvous_spec = _apply_simple_retry(
+                            rendezvous_spec,
+                            attempt_index,
+                            error_message,
+                        )
 
-        sol = Solution(ok=False, result=None, attempts=attempts, last_error=last_error)
+        solution = Solution(
+            ok=False,
+            result=None,
+            attempts=attempt_logs,
+            last_error=last_error,
+        )
         if self.solve_config.raise_on_fail:
-            raise RuntimeError(sol.summary())
-        return sol
+            raise RuntimeError(solution.summary())
+        return solution
 
 
 def _mission_to_rendezvous_spec(
     mission: Mission,
 ) -> TwoImpulseFreeTimeSpec | TwoImpulsePreCoastSpec:
-    """Map Mission phases into the currently supported rendezvous specs.
-
-    Supported patterns (v0.x):
-      1) Single phase (mode in {"rendezvous","transfer"}) with initial_state + final_state.
-      2) Two phases: (mode="coast"), then (mode in {"rendezvous","transfer"}).
-
-    Notes
-    -----
-    v0.x solvers are *impulsive* formulations:
-      - boundary velocities may be free and penalized via Δv objectives
-      - between-phase impulses are expressed via link continuity choices
-    """
-
+    """Map a mission into one of the built-in impulsive rendezvous specs."""
     phases = list(mission.phases)
 
-    # --- objectives (explicit)
-    minimize_dv = True
-    dv_weight = 1.0
+    minimize_delta_v = True
+    delta_v_weight = 1.0
     minimize_time = False
-    w_time = float(getattr(mission, "w_time", 0.0) or 0.0)
+    time_weight = float(getattr(mission, "w_time", 0.0) or 0.0)
 
-    try:
-        objs = list(getattr(mission, "objectives", []) or [])
-        if objs:
-            minimize_dv = any(getattr(o, "kind", "") == "delta_v" for o in objs)
-            for o in objs:
-                if getattr(o, "kind", "") == "delta_v":
-                    dv_weight = float(getattr(o, "weight", 1.0))
-                    break
-            for o in objs:
-                if getattr(o, "kind", "") == "time":
-                    minimize_time = True
-                    w_time = float(getattr(o, "weight", w_time or 1.0))
-                    break
-    except Exception:
-        pass
+    mission_objectives = list(getattr(mission, "objectives", []) or [])
+    if mission_objectives:
+        minimize_delta_v = any(
+            getattr(objective, "kind", "") == "delta_v"
+            for objective in mission_objectives
+        )
+        for objective in mission_objectives:
+            if getattr(objective, "kind", "") == "delta_v":
+                delta_v_weight = float(getattr(objective, "weight", 1.0))
+                break
+        for objective in mission_objectives:
+            if getattr(objective, "kind", "") == "time":
+                minimize_time = True
+                time_weight = float(getattr(objective, "weight", time_weight or 1.0))
+                break
 
     if len(phases) == 1:
-        ph = phases[0]
-        if ph.initial_state is None or ph.final_state is None:
-            raise MissionBuildError("Single-phase mission requires initial_state and final_state")
-        tf_bounds = ph.tof_bounds_s or (600.0, 7200.0)
+        phase = phases[0]
+        if phase.initial_state is None or phase.final_state is None:
+            raise MissionBuildError(
+                "Single-phase mission requires initial_state and final_state."
+            )
+        final_time_bounds_s = phase.tof_bounds_s or (600.0, 7200.0)
 
-        mode = (ph.mode or "").lower()
-        if ph.events:
-            dv_front = ph.has_impulse("front")
-            dv_back = ph.has_impulse("back")
+        normalized_mode = (phase.mode or "").lower()
+        if phase.events:
+            has_front_impulse = phase.has_impulse("front")
+            has_back_impulse = phase.has_impulse("back")
         else:
-            dv_front = mode in ("rendezvous", "transfer")
-            dv_back = mode in ("rendezvous", "transfer")
+            has_front_impulse = normalized_mode in ("rendezvous", "transfer")
+            has_back_impulse = normalized_mode in ("rendezvous", "transfer")
 
         return TwoImpulseFreeTimeSpec(
-            x0=ph.initial_state,
-            xf=ph.final_state,
-            tf_bounds_s=tf_bounds,
-            mu_m3ps2=float(ph.dynamics.mu_m3ps2),
+            x0=phase.initial_state,
+            xf=phase.final_state,
+            tf_bounds_s=final_time_bounds_s,
+            mu_m3ps2=float(phase.dynamics.mu_m3ps2),
             nsegs=int(mission.mesh_nsegs_transfer),
-            w_time=float(w_time),
+            w_time=float(time_weight),
             lambert_grid_size=int(mission.lambert_grid_size),
-            nrevs_to_try=tuple(int(x) for x in mission.nrevs_to_try),
-            minimize_dv=bool(minimize_dv),
-            dv_weight=float(dv_weight),
+            nrevs_to_try=tuple(int(revolution_count) for revolution_count in mission.nrevs_to_try),
+            minimize_dv=bool(minimize_delta_v),
+            dv_weight=float(delta_v_weight),
             minimize_time=bool(minimize_time),
-            dv_front=bool(dv_front),
-            dv_back=bool(dv_back),
+            dv_front=bool(has_front_impulse),
+            dv_back=bool(has_back_impulse),
         )
 
     if len(phases) == 2:
-        p0, p1 = phases
-        if p0.mode.lower() != "coast":
-            raise MissionBuildError("Two-phase missions must start with a 'coast' phase")
-        if p0.initial_state is None:
-            raise MissionBuildError("Precoast phase requires initial_state")
-        if p1.final_state is None:
-            raise MissionBuildError("Rendezvous/transfer phase requires final_state")
+        precoast_phase, transfer_phase = phases
+        if precoast_phase.mode.lower() != "coast":
+            raise MissionBuildError("Two-phase missions must start with a 'coast' phase.")
+        if precoast_phase.initial_state is None:
+            raise MissionBuildError("Precoast phase requires initial_state.")
+        if transfer_phase.final_state is None:
+            raise MissionBuildError("Rendezvous/transfer phase requires final_state.")
 
-        t1_bounds = p0.tof_bounds_s or (0.0, 1800.0)
-        tf_bounds = p1.tof_bounds_s or (600.0, 7200.0)
+        precoast_bounds_s = precoast_phase.tof_bounds_s or (0.0, 1800.0)
+        transfer_bounds_s = transfer_phase.tof_bounds_s or (600.0, 7200.0)
+        has_precoast_front_impulse = (
+            precoast_phase.has_impulse("front") if precoast_phase.events else False
+        )
 
-        dv_front = p0.has_impulse("front") if p0.events else False
+        link_kind = (
+            transfer_phase.link.kind if transfer_phase.link is not None else "continuous"
+        )
+        has_impulsive_link = link_kind.lower() == "impulsive"
 
-        link_kind = p1.link.kind if p1.link is not None else "continuous"
-        dv_link = link_kind.lower() == "impulsive"
-
-        mode1 = (p1.mode or "").lower()
-        dv_back = p1.has_impulse("back") if p1.events else mode1 in ("rendezvous", "transfer")
+        normalized_transfer_mode = (transfer_phase.mode or "").lower()
+        has_terminal_impulse = (
+            transfer_phase.has_impulse("back")
+            if transfer_phase.events
+            else normalized_transfer_mode in ("rendezvous", "transfer")
+        )
 
         return TwoImpulsePreCoastSpec(
-            x0=p0.initial_state,
-            xf=p1.final_state,
-            t1_bounds_s=t1_bounds,
-            tf_bounds_s=tf_bounds,
-            mu_m3ps2=float(p1.dynamics.mu_m3ps2),
+            x0=precoast_phase.initial_state,
+            xf=transfer_phase.final_state,
+            t1_bounds_s=precoast_bounds_s,
+            tf_bounds_s=transfer_bounds_s,
+            mu_m3ps2=float(transfer_phase.dynamics.mu_m3ps2),
             nsegs_precoast=int(mission.mesh_nsegs_precoast),
             nsegs_transfer=int(mission.mesh_nsegs_transfer),
-            w_time=float(w_time),
+            w_time=float(time_weight),
             precoast_grid_size=int(mission.precoast_grid_size),
             limit_precoast_to_one_period=bool(mission.limit_precoast_to_one_period),
             lambert_grid_size=int(mission.lambert_grid_size),
-            nrevs_to_try=tuple(int(x) for x in mission.nrevs_to_try),
-            minimize_dv=bool(minimize_dv),
-            dv_weight=float(dv_weight),
+            nrevs_to_try=tuple(int(revolution_count) for revolution_count in mission.nrevs_to_try),
+            minimize_dv=bool(minimize_delta_v),
+            dv_weight=float(delta_v_weight),
             minimize_time=bool(minimize_time),
-            dv_front=bool(dv_front),
-            dv_link=bool(dv_link),
-            dv_back=bool(dv_back),
+            dv_front=bool(has_precoast_front_impulse),
+            dv_link=bool(has_impulsive_link),
+            dv_back=bool(has_terminal_impulse),
             link_kind=str(link_kind),
         )
 
@@ -217,7 +240,11 @@ def _mission_to_rendezvous_spec(
     )
 
 
-def _scale_mesh(spec: TwoImpulseFreeTimeSpec | TwoImpulsePreCoastSpec, scale: float):
+def _scale_mesh(
+    spec: TwoImpulseFreeTimeSpec | TwoImpulsePreCoastSpec,
+    scale: float,
+) -> TwoImpulseFreeTimeSpec | TwoImpulsePreCoastSpec:
+    """Scale mesh counts for a rendezvous specification."""
     if scale <= 0:
         return spec
     if isinstance(spec, TwoImpulseFreeTimeSpec):
@@ -238,19 +265,14 @@ def _apply_simple_retry(
     attempt: int,
     message: str,
 ) -> TwoImpulseFreeTimeSpec | TwoImpulsePreCoastSpec:
-    """Conservative retry strategy.
+    """Apply a conservative retry update to a rendezvous spec."""
+    error_message = (message or "").lower()
 
-    Order:
-      1) If a mesh/transcription mismatch is detected: reduce mesh density.
-      2) If convergence issues: tweak tf guess (free-time only).
-      3) Otherwise: increase Lambert grid density (seed search).
-    """
-
-    msg = (message or "").lower()
-
-    if "mesh" in msg and "inconsistent" in msg:
+    if "mesh" in error_message and "inconsistent" in error_message:
         if isinstance(spec, TwoImpulseFreeTimeSpec):
-            return TwoImpulseFreeTimeSpec(**{**spec.__dict__, "nsegs": max(20, spec.nsegs // 2)})
+            return TwoImpulseFreeTimeSpec(
+                **{**spec.__dict__, "nsegs": max(20, spec.nsegs // 2)}
+            )
         return TwoImpulsePreCoastSpec(
             **{
                 **spec.__dict__,
@@ -259,13 +281,17 @@ def _apply_simple_retry(
             }
         )
 
-    if ("did not converge" in msg or "converge" in msg) and isinstance(
+    if ("did not converge" in error_message or "converge" in error_message) and isinstance(
         spec, TwoImpulseFreeTimeSpec
     ):
-        tfmin, tfmax = spec.tf_bounds_s
-        mid = 0.5 * (float(tfmin) + float(tfmax))
-        guess = mid if (attempt % 2 == 1) else (0.75 * float(tfmax) + 0.25 * float(tfmin))
-        return TwoImpulseFreeTimeSpec(**{**spec.__dict__, "tf_guess_s": guess})
+        tf_min_s, tf_max_s = spec.tf_bounds_s
+        midpoint_time_s = 0.5 * (float(tf_min_s) + float(tf_max_s))
+        tf_guess_s = (
+            midpoint_time_s
+            if (attempt % 2 == 1)
+            else (0.75 * float(tf_max_s) + 0.25 * float(tf_min_s))
+        )
+        return TwoImpulseFreeTimeSpec(**{**spec.__dict__, "tf_guess_s": tf_guess_s})
 
     if isinstance(spec, TwoImpulseFreeTimeSpec):
         return TwoImpulseFreeTimeSpec(
@@ -277,16 +303,11 @@ def _apply_simple_retry(
 
 
 def _is_composable_mission(mission: Mission) -> bool:
-    """Detect whether a mission should use the composable compiler backend.
-
-    Heuristic (v0.1):
-      - any Phase.variables is non-empty, OR
-      - any Phase.constraints contains a composable State/Position constraint.
-    """
-    for ph in getattr(mission, "phases", []) or []:
-        if getattr(ph, "variables", None) and len(list(ph.variables or [])) > 0:
+    """Return whether a mission should use the composable backend."""
+    for phase in getattr(mission, "phases", []) or []:
+        if getattr(phase, "variables", None) and len(list(phase.variables or [])) > 0:
             return True
-        for c in getattr(ph, "constraints", []) or []:
-            if getattr(c, "kind", "") in ("state", "position"):
+        for constraint in getattr(phase, "constraints", []) or []:
+            if getattr(constraint, "kind", "") in ("state", "position"):
                 return True
     return False
