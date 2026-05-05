@@ -1,4 +1,7 @@
 from .kepler import (
+    classic_to_cartesian as classic_to_cartesian,
+)
+from .kepler import (
     estimate_orbital_period_s as estimate_orbital_period_s,
 )
 from .kepler import (
@@ -17,6 +20,7 @@ __all__ = [
     "LambertSeed",
     "Vec3",
     "as_vec3",
+    "classic_to_cartesian",
     "default_units",
     "estimate_orbital_period_s",
     "kepler_dense_guess",

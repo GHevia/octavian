@@ -10,6 +10,61 @@ except Exception:  # pragma: no cover
 from .types import Vec3, as_vec3
 
 
+def classic_to_cartesian(
+    *,
+    a_m: float,
+    e: float,
+    inc_deg: float,
+    raan_deg: float,
+    argp_deg: float,
+    true_anomaly_deg: float,
+    mu_m3ps2: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Convert classical orbital elements to Cartesian position and velocity."""
+    if ast is not None:
+        oe = np.array(
+            [
+                float(a_m),
+                float(e),
+                float(np.deg2rad(inc_deg)),
+                float(np.deg2rad(raan_deg)),
+                float(np.deg2rad(argp_deg)),
+                float(np.deg2rad(true_anomaly_deg)),
+            ],
+            dtype=float,
+        )
+        rv = np.asarray(ast.Astro.classic_to_cartesian(oe, float(mu_m3ps2)), dtype=float).reshape(6)
+        return rv[0:3], rv[3:6]
+
+    inc = np.deg2rad(float(inc_deg))
+    raan = np.deg2rad(float(raan_deg))
+    argp = np.deg2rad(float(argp_deg))
+    nu = np.deg2rad(float(true_anomaly_deg))
+
+    p = float(a_m) * (1.0 - float(e) ** 2)
+    r_pf = (p / (1.0 + float(e) * np.cos(nu))) * np.array([np.cos(nu), np.sin(nu), 0.0], dtype=float)
+    v_pf = np.sqrt(float(mu_m3ps2) / p) * np.array(
+        [-np.sin(nu), float(e) + np.cos(nu), 0.0],
+        dtype=float,
+    )
+
+    c_omega = np.cos(raan)
+    s_omega = np.sin(raan)
+    c_inc = np.cos(inc)
+    s_inc = np.sin(inc)
+    c_argp = np.cos(argp)
+    s_argp = np.sin(argp)
+    rot = np.array(
+        [
+            [c_omega * c_argp - s_omega * s_argp * c_inc, -c_omega * s_argp - s_omega * c_argp * c_inc, s_omega * s_inc],
+            [s_omega * c_argp + c_omega * s_argp * c_inc, -s_omega * s_argp + c_omega * c_argp * c_inc, -c_omega * s_inc],
+            [s_argp * s_inc, c_argp * s_inc, c_inc],
+        ],
+        dtype=float,
+    )
+    return rot @ r_pf, rot @ v_pf
+
+
 def propagate_cartesian_rv(rv6: np.ndarray, dt_s: float, mu_m3ps2: float) -> np.ndarray:
     """Propagate a 6D Cartesian state under two-body dynamics using ASSET."""
     if ast is None:

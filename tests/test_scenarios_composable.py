@@ -80,3 +80,4 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
         assert "semi_major_axis" in kinds
         assert "eccentricity" in kinds
         assert "inclination_deg" in kinds
+        assert len(missions[0].phases[0].variables) == 2

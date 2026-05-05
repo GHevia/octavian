@@ -6,61 +6,26 @@ import numpy as np
 import pytest
 
 from octavian import constraints
+from octavian.astro import classic_to_cartesian
 from octavian.solvers import composable
 
 MU = 3.986004418e14
-
-
-def _classical_to_cartesian(
-    *,
-    a_m: float,
-    e: float,
-    inc_deg: float,
-    raan_deg: float,
-    argp_deg: float,
-    true_anomaly_deg: float,
-    mu_m3ps2: float,
-) -> tuple[np.ndarray, np.ndarray]:
-    inc = np.deg2rad(inc_deg)
-    raan = np.deg2rad(raan_deg)
-    argp = np.deg2rad(argp_deg)
-    nu = np.deg2rad(true_anomaly_deg)
-
-    p = a_m * (1.0 - e**2)
-    r_pf = (p / (1.0 + e * np.cos(nu))) * np.array([np.cos(nu), np.sin(nu), 0.0], dtype=float)
-    v_pf = np.sqrt(mu_m3ps2 / p) * np.array([-np.sin(nu), e + np.cos(nu), 0.0], dtype=float)
-
-    cO = np.cos(raan)
-    sO = np.sin(raan)
-    ci = np.cos(inc)
-    si = np.sin(inc)
-    cw = np.cos(argp)
-    sw = np.sin(argp)
-    rot = np.array(
-        [
-            [cO * cw - sO * sw * ci, -cO * sw - sO * cw * ci, sO * si],
-            [sO * cw + cO * sw * ci, -sO * sw + cO * cw * ci, -cO * si],
-            [sw * si, cw * si, ci],
-        ],
-        dtype=float,
-    )
-    return rot @ r_pf, rot @ v_pf
 
 
 class _FakeVector:
     def __init__(self, values: np.ndarray) -> None:
         self.values = np.asarray(values, dtype=float).reshape(3)
 
-    def cross(self, other: "_FakeVector") -> "_FakeVector":
+    def cross(self, other: _FakeVector) -> _FakeVector:
         return _FakeVector(np.cross(self.values, other.values))
 
-    def dot(self, other: "_FakeVector") -> float:
+    def dot(self, other: _FakeVector) -> float:
         return float(np.dot(self.values, other.values))
 
     def norm(self) -> float:
         return float(np.linalg.norm(self.values))
 
-    def normalized(self) -> "_FakeVector":
+    def normalized(self) -> _FakeVector:
         return _FakeVector(self.values / self.norm())
 
     def __getitem__(self, idx: int) -> float:
@@ -118,7 +83,7 @@ def test_orbital_constraint_factories_reject_invalid_usage(factory, kwargs, mess
 
 
 def test_compiler_adds_exact_orbital_element_constraints(monkeypatch: pytest.MonkeyPatch) -> None:
-    r_m, v_mps = _classical_to_cartesian(
+    r_m, v_mps = classic_to_cartesian(
         a_m=8_400e3,
         e=0.18,
         inc_deg=28.5,
@@ -150,7 +115,7 @@ def test_compiler_adds_exact_orbital_element_constraints(monkeypatch: pytest.Mon
 def test_compiler_adds_tolerance_bands_for_orbital_element_constraints(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    r_m, v_mps = _classical_to_cartesian(
+    r_m, v_mps = classic_to_cartesian(
         a_m=8_900e3,
         e=0.22,
         inc_deg=32.0,
