@@ -27,6 +27,7 @@ def save_trajectory_html(
     xf_r_m: np.ndarray | None = None,
     xf_v_mps: np.ndarray | None = None,
     maneuvers: Sequence[Maneuver] | None = None,
+    phase_segments: Sequence[dict[str, object]] | None = None,
     title: str = "octavian trajectory",
     earth_radius_m: float = EARTH_RADIUS_M,
     use_earth_texture: bool = True,
@@ -43,6 +44,8 @@ def save_trajectory_html(
         xf_r_m: Optional final position override in meters.
         xf_v_mps: Optional final velocity override in meters per second.
         maneuvers: Optional maneuver markers.
+        phase_segments: Optional phase interval dictionaries with ``name``,
+            ``t_start_s``, ``t_end_s``, and optional ``color`` keys.
         title: Plot title.
         earth_radius_m: Earth radius used for the sphere in meters.
         use_earth_texture: Whether to render Earth with a texture map.
@@ -158,9 +161,30 @@ def save_trajectory_html(
         y=position_history_m[:, 1],
         z=position_history_m[:, 2],
         mode="lines",
-        name="Trajectory",
-        line=dict(width=6, color="white"),
+        name="Trajectory outline",
+        line=dict(width=3, color="rgba(255,255,255,0.35)"),
     )
+
+    phase_traces = []
+    for phase_index, segment in enumerate(phase_segments or (), start=1):
+        t_start_s = float(segment["t_start_s"])
+        t_end_s = float(segment["t_end_s"])
+        phase_mask = (time_history_s >= t_start_s - 1.0e-9) & (time_history_s <= t_end_s + 1.0e-9)
+        if int(np.count_nonzero(phase_mask)) < 2:
+            continue
+        phase_positions_m = position_history_m[phase_mask]
+        phase_name = str(segment.get("name", f"phase {phase_index}"))
+        phase_color = str(segment.get("color", "white"))
+        phase_traces.append(
+            go.Scatter3d(
+                x=phase_positions_m[:, 0],
+                y=phase_positions_m[:, 1],
+                z=phase_positions_m[:, 2],
+                mode="lines",
+                name=phase_name,
+                line=dict(width=7, color=phase_color),
+            )
+        )
 
     start_hover_text = (
         f"<b>Start</b><br>"
@@ -225,7 +249,7 @@ def save_trajectory_html(
         )
 
     figure = go.Figure(
-        data=[earth_trace, trajectory_trace, start_trace, end_trace, *maneuver_traces]
+        data=[earth_trace, trajectory_trace, *phase_traces, start_trace, end_trace, *maneuver_traces]
     )
     figure.update_layout(
         title=dict(text=title, x=0.5),

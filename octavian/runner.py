@@ -305,6 +305,12 @@ def _apply_simple_retry(
 def _is_composable_mission(mission: Mission) -> bool:
     """Return whether a mission should use the composable backend."""
     for phase in getattr(mission, "phases", []) or []:
+        normalized_mode = (getattr(phase, "mode", "") or "").lower().replace("-", "_")
+        if normalized_mode in ("burn", "chemical_burn", "finite_burn"):
+            return True
+        dynamics = getattr(phase, "dynamics", None)
+        if dynamics is not None and dynamics.active_perturbations().j2:
+            return True
         if getattr(phase, "variables", None) and len(list(phase.variables or [])) > 0:
             return True
         for constraint in getattr(phase, "constraints", []) or []:

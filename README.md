@@ -5,6 +5,8 @@ Octavian is a Python-first astrodynamics / trajectory-optimization toolkit built
 This MVP includes:
 - Two-impulse rendezvous with bounded free final time (single coast phase)
 - Two-impulse rendezvous with bounded **variable pre-coast** (two phases + link Δv objective)
+- Finite chemical-burn phases with mass depletion and three thrust-direction controls
+- J2 perturbation support in the composable ASSET backend
 - Lambert-izzo seed sweeps across TOF / longway / multi-rev (ASSET's `Astro.lambert_izzo`)
 - Fast two-body initial guesses via ASSET Kepler propagation (`Astro.propagate_cartesian`)
 - Plotly HTML visualization with maneuver markers
@@ -24,6 +26,7 @@ If you plan to run the optimization solvers, install `asset_asrl` separately in 
 ```bash
 python examples/quick/01_two_impulse_free_time.py
 python examples/quick/02_two_impulse_precoast_impulsive_link.py
+python examples/composable/10_chemical_burn_j2.py
 ```
 
 
