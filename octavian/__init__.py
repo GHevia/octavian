@@ -6,7 +6,7 @@ from .conops import rendezvous_precoast_then_transfer, rendezvous_two_impulse
 from .events import BoundaryEvent
 from .links import Link
 from .mission import Mission
-from .models import Dynamics, RetryPolicy, RunPlan, SolveConfig
+from .models import Dynamics, Perturbations, RetryPolicy, RunPlan, SolveConfig
 from .objectives import Objective
 from .phase import Phase
 from .quick import state, two_burn_rendezvous
@@ -30,6 +30,7 @@ __all__ = [
     "Thruster",
     "Spacecraft",
     "Dynamics",
+    "Perturbations",
     "SolveConfig",
     "RunPlan",
     "RetryPolicy",
