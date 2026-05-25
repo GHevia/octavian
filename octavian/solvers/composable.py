@@ -4,7 +4,7 @@ This module compiles a Mission made of Phase objects into a single ASSET
 OptimalControlProblem.
 
 Scope (v0.1):
-  - Two-body coast dynamics (TwoBodyECI)
+  - Two-body, J2-perturbed, and finite chemical-burn dynamics
   - Phase boundary constraints:
       * State (R,V) at Front/Back
       * Position (R) at Front/Back
@@ -13,6 +13,7 @@ Scope (v0.1):
       * impulsive: (R,t)
   - Variables:
       * ImpulsiveDeltaV at Front / Back
+      * Chemical-burn phase controls via ``mode="chemical_burn"``
   - Objectives:
       * Minimize total Δv (default via Mission.objectives)
       * Optional Minimize time (via Mission.objectives)
@@ -25,7 +26,7 @@ changing the compilation model.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -37,7 +38,8 @@ except Exception:  # pragma: no cover
 
 from typing import TYPE_CHECKING
 
-from ..constraints import Constraint
+from ..constraints import Constraint, OrbitalElementConstraint, Position, State
+from ..links import impulsive as impulsive_link
 from ..phase import Phase
 from ..types import Maneuver
 from ..variables import ImpulsiveDeltaV
@@ -48,11 +50,16 @@ if TYPE_CHECKING:  # pragma: no cover
     from ..mission import Mission
 import contextlib
 
-from ..astro.kepler import estimate_orbital_period_s, kepler_dense_guess, propagate_cartesian_rv
+from ..astro.kepler import (
+    cartesian_to_classic,
+    estimate_orbital_period_s,
+    kepler_dense_guess,
+    propagate_cartesian_rv,
+)
 from ..astro.lambert import select_best_lambert_seed
 from ..astro.types import as_vec3
 from ..astro.units import default_units
-from ..dynamics import TwoBodyECI
+from ..dynamics import ChemicalBurnECI, MassCoastECI, PerturbedECI, TwoBodyECI
 from ..time import normalize_time_bounds
 
 if ast is not None:  # pragma: no cover
@@ -75,43 +82,249 @@ def _require_asset() -> None:
 
 @dataclass
 class _PhaseBuild:
+    """Bookkeeping for one compiled ASSET phase."""
+
     ph: Phase
     asset_phase: Any
     t_bounds: tuple[float, float]
-    # for maneuver bookkeeping
     index: int
+    compile_phase: Phase | None = None
+    state_dim: int = 6
+    control_dim: int = 0
+    is_chemical_burn: bool = False
 
 
 def _has_impulsive_var(phase: Phase, where: str) -> bool:
+    """Return whether a phase has an impulsive delta-v at a boundary."""
     w = (where or "").strip().lower()
     loc = "Front" if w in ("front", "start", "initial", "t0") else "Back"
-    # variables
-    for v in getattr(phase, "variables", []) or []:
-        if isinstance(v, ImpulsiveDeltaV) and getattr(v, "where", "") == loc:
+    for variable in getattr(phase, "variables", []) or []:
+        if isinstance(variable, ImpulsiveDeltaV) and getattr(variable, "where", "") == loc:
             return True
-    # legacy events
-    try:
-        if phase.has_impulse(loc):
+    for event in getattr(phase, "events", []) or []:
+        if getattr(event, "kind", "") == "impulse" and getattr(event, "where", "") == loc:
             return True
-    except Exception:
-        pass
     return False
 
 
-def _get_constraint(phase: Phase, kind: str, where: str) -> Constraint | None:
+def _phase_is_chemical_burn(phase: Phase) -> bool:
+    """Return whether a phase should compile to finite chemical-burn dynamics."""
+    normalized_mode = (getattr(phase, "mode", "") or "").strip().lower().replace("-", "_")
+    return normalized_mode in ("burn", "chemical_burn", "finite_burn")
+
+
+def _is_coast_like(phase: Phase) -> bool:
+    normalized_mode = (getattr(phase, "mode", "") or "").strip().lower().replace("-", "_")
+    return normalized_mode in ("coast", "transfer", "rendezvous")
+
+
+def _mass_state_phase_indices(phases: Sequence[Phase]) -> set[int]:
+    """Return phases that should carry mass for finite-burn transfers."""
+    burn_indices = [idx for idx, phase in enumerate(phases) if _phase_is_chemical_burn(phase)]
+    if not burn_indices:
+        return set()
+
+    out = set(burn_indices)
+    first_burn = burn_indices[0]
+    last_burn = burn_indices[-1]
+    for idx in range(first_burn + 1, last_burn):
+        if _is_coast_like(phases[idx]):
+            out.add(idx)
+    return out
+
+
+def _validate_chemical_burn_transfer(phases: Sequence[Phase]) -> None:
+    """Validate the burn-coast-burn shape required for finite chemical transfers."""
+    burn_indices = [idx for idx, phase in enumerate(phases) if _phase_is_chemical_burn(phase)]
+    if not burn_indices:
+        return
+    if len(phases) < 3 or len(burn_indices) < 2:
+        raise ValueError(
+            "Chemical burn transfers require at least three phases: "
+            "a departure burn, a coast, and an arrival burn."
+        )
+    first_burn = burn_indices[0]
+    last_burn = burn_indices[-1]
+    if first_burn != 0 or last_burn != len(phases) - 1:
+        raise ValueError(
+            "Chemical burn transfers must start with a burn phase and end with a burn phase."
+        )
+    if not any(_is_coast_like(phases[idx]) for idx in range(first_burn + 1, last_burn)):
+        raise ValueError("Chemical burn transfers require a coast phase between the burns.")
+
+
+def _first_thruster(phase: Phase):
+    """Return the thruster configured for a chemical burn phase."""
+    spacecraft = getattr(phase, "spacecraft", None)
+    if isinstance(spacecraft, str) or spacecraft is None:
+        raise ValueError(f"Chemical burn phase {phase.name!r} requires a Spacecraft object.")
+    thruster_name = str(getattr(phase, "info", {}).get("thruster", "main"))
+    try:
+        return spacecraft.thruster(thruster_name)
+    except KeyError:
+        if len(spacecraft.thrusters) == 1:
+            return spacecraft.thrusters[0]
+        raise
+
+
+def _phase_perturbations(phase: Phase):
+    dynamics = getattr(phase, "dynamics", None)
+    if dynamics is None:
+        raise ValueError(f"Phase {phase.name!r} is missing dynamics.")
+    perturbations = dynamics.active_perturbations()
+    unsupported = []
+    if perturbations.srp:
+        unsupported.append("srp")
+    if perturbations.drag:
+        unsupported.append("drag")
+    if perturbations.third_bodies:
+        unsupported.append("third_bodies")
+    if unsupported:
+        raise NotImplementedError(
+            "Composable solver currently implements J2 perturbations only; "
+            f"unsupported perturbation flags: {', '.join(unsupported)}."
+        )
+    return perturbations
+
+
+def _ode_for_phase(phase: Phase, *, carries_mass: bool = False):
+    """Build the ASSET ODE for one phase."""
+    dynamics = phase.dynamics
+    if dynamics is None:
+        raise ValueError(f"Phase {phase.name!r} is missing dynamics.")
+    perturbations = _phase_perturbations(phase)
+    if _phase_is_chemical_burn(phase):
+        thruster = _first_thruster(phase)
+        return ChemicalBurnECI(
+            mu_m3ps2=float(dynamics.mu_m3ps2),
+            thrust_N=float(thruster.thrust_N),
+            isp_s=float(thruster.isp_s),
+            j2=bool(perturbations.j2),
+            central_body_radius_m=float(dynamics.central_body_radius_m),
+            j2_coefficient=float(dynamics.j2_coefficient),
+        )
+    if carries_mass:
+        return MassCoastECI(
+            mu_m3ps2=float(dynamics.mu_m3ps2),
+            j2=bool(perturbations.j2),
+            central_body_radius_m=float(dynamics.central_body_radius_m),
+            j2_coefficient=float(dynamics.j2_coefficient),
+        )
+    if perturbations.j2:
+        return PerturbedECI(
+            mu_m3ps2=float(dynamics.mu_m3ps2),
+            j2=True,
+            central_body_radius_m=float(dynamics.central_body_radius_m),
+            j2_coefficient=float(dynamics.j2_coefficient),
+        )
+    return TwoBodyECI(mu_m3ps2=float(dynamics.mu_m3ps2))
+
+
+def _phase_dimensions(phase: Phase) -> tuple[int, int, bool]:
+    if _phase_is_chemical_burn(phase):
+        return 7, 3, True
+    return 6, 0, False
+
+
+def _compile_phase_dimensions(phase: Phase, *, carries_mass: bool = False) -> tuple[int, int, bool]:
+    if _phase_is_chemical_burn(phase):
+        return 7, 3, True
+    if carries_mass:
+        return 7, 0, False
+    return 6, 0, False
+
+
+def _trajectory_rvt(raw_traj: np.ndarray, state_dim: int) -> np.ndarray:
+    """Return the public ``[R, V, t]`` view of an ASSET trajectory."""
+    raw = np.asarray(raw_traj, dtype=float)
+    time_col = int(state_dim)
+    if raw.shape[1] <= time_col:
+        raise ValueError("ASSET trajectory is missing the phase time column.")
+    return raw[:, [0, 1, 2, 3, 4, 5, time_col]]
+
+
+def _augment_guess_for_chemical_burn(
+    base_guess: Sequence[np.ndarray],
+    *,
+    phase: Phase,
+    mass0_kg: float,
+    thrust_N: float,
+    isp_s: float,
+) -> list[np.ndarray]:
+    """Convert an impulsive-style ``[R,V,t]`` guess into burn state/control rows."""
+    rows = [np.asarray(row, dtype=float).reshape(-1) for row in base_guess]
+    if not rows:
+        return []
+
+    dv_vec = as_vec3(rows[-1][3:6] - rows[0][3:6])
+    dv_mag = float(np.linalg.norm(dv_vec))
+    direction = dv_vec / dv_mag if dv_mag > 0.0 else np.zeros(3, dtype=float)
+
+    duration_s = max(float(rows[-1][6] - rows[0][6]), 1.0)
+    mass_flow_kgps = float(thrust_N) / (float(isp_s) * 9.80665)
+    accel_mps2 = float(thrust_N) / max(float(mass0_kg), 1.0)
+    impulsive_burn_time_s = dv_mag / max(accel_mps2, 1e-12)
+    throttle = min(1.0, max(0.0, impulsive_burn_time_s / duration_s))
+    control = throttle * direction
+
+    augmented: list[np.ndarray] = []
+    mass_start_kg = float(getattr(phase, "info", {}).get("_mass_guess_start_kg", mass0_kg))
+    for idx, row in enumerate(rows):
+        frac = idx / max(len(rows) - 1, 1)
+        mass = max(mass_start_kg - mass_flow_kgps * throttle * duration_s * frac, 1.0)
+        augmented.append(np.hstack([row[0:6], mass, row[6], control]))
+    return augmented
+
+
+def _augment_guess_for_mass_coast(
+    base_guess: Sequence[np.ndarray],
+    *,
+    phase: Phase,
+    mass0_kg: float,
+) -> list[np.ndarray]:
+    """Add a constant mass state to a coast guess."""
+    mass_start_kg = float(getattr(phase, "info", {}).get("_mass_guess_start_kg", mass0_kg))
+    augmented: list[np.ndarray] = []
+    for row in base_guess:
+        rvt = np.asarray(row, dtype=float).reshape(-1)
+        augmented.append(np.hstack([rvt[0:6], mass_start_kg, rvt[6]]))
+    return augmented
+
+
+def _get_constraint_of_type(
+    phase: Phase, constraint_type: type[Constraint], where: str
+) -> Constraint | None:
+    """Return the first constraint of ``constraint_type`` at a boundary."""
     loc = "Front" if where.lower().startswith("f") else "Back"
-    for c in getattr(phase, "constraints", []) or []:
-        if getattr(c, "kind", "") == kind and getattr(c, "where", "") == loc:
-            return c
+    for constraint in getattr(phase, "constraints", []) or []:
+        if isinstance(constraint, constraint_type) and getattr(constraint, "where", "") == loc:
+            return constraint
     return None
 
 
 def _get_state_constraint(phase: Phase, where: str) -> Constraint | None:
-    return _get_constraint(phase, kind="state", where=where)
+    return _get_constraint_of_type(phase, State, where)
 
 
 def _get_position_constraint(phase: Phase, where: str) -> Constraint | None:
-    return _get_constraint(phase, kind="position", where=where)
+    return _get_constraint_of_type(phase, Position, where)
+
+
+def _orbital_element_constraints(phase: Phase, where: str | None = None) -> tuple[OrbitalElementConstraint, ...]:
+    """Return orbital-element constraints, optionally filtered by boundary."""
+    if where is None:
+        expected_where = None
+    else:
+        expected_where = "Front" if where.lower().startswith("f") else "Back" if where.lower().startswith("b") else "Path"
+
+    matches: list[OrbitalElementConstraint] = []
+    for constraint in getattr(phase, "constraints", []) or []:
+        if not isinstance(constraint, OrbitalElementConstraint):
+            continue
+        if expected_where is not None and constraint.where != expected_where:
+            continue
+        matches.append(constraint)
+    return tuple(matches)
 
 
 def _state_boundary_value(c: Constraint | None) -> Any:
@@ -133,6 +346,151 @@ def _position_boundary_value(c: Constraint | None) -> np.ndarray | None:
     return np.asarray(c.value, dtype=float).reshape(3)
 
 
+def _has_terminal_post_burn_orbital_target(phase: Phase) -> bool:
+    """Return whether a terminal shell is needed after a back impulse."""
+    return _has_impulsive_var(phase, "Back") and bool(_orbital_element_constraints(phase, "Back"))
+
+
+def _make_terminal_shell(last_phase: Phase) -> tuple[Phase, Phase] | None:
+    """Create an internal post-burn shell phase for terminal orbital targets.
+
+    The shell phase gives the state *after* the back impulse its own boundary so
+    orbital-element constraints can be applied without turning ``final_state``
+    into a hidden hard constraint.
+    """
+    if not _has_terminal_post_burn_orbital_target(last_phase):
+        return None
+
+    moved_constraints = list(_orbital_element_constraints(last_phase, "Back"))
+    compile_last = replace(
+        last_phase,
+        constraints=[
+            constraint
+            for constraint in (last_phase.constraints or [])
+            if constraint not in moved_constraints
+        ],
+        variables=[
+            variable
+            for variable in (last_phase.variables or [])
+            if not (isinstance(variable, ImpulsiveDeltaV) and getattr(variable, "where", "") == "Back")
+        ],
+    )
+    shell_phase = Phase(
+        name=f"{last_phase.name}_post_burn",
+        mode="coast",
+        spacecraft=last_phase.spacecraft,
+        dynamics=last_phase.dynamics,
+        previous=last_phase,
+        link=impulsive_link(name="post_burn"),
+        tof_bounds_s=(0.1, 1.0),
+        tof_is_relative=True,
+        constraints=[replace(constraint, where="Front") for constraint in moved_constraints],
+        variables=[ImpulsiveDeltaV(where="Front")],
+    )
+    return compile_last, shell_phase
+
+
+@dataclass(frozen=True)
+class _OrbitalElementExpressions:
+    semi_major_axis_m: Any
+    eccentricity_sq: Any
+    inclination_cosine: Any
+
+
+def _orbital_element_expressions(mu_m3ps2: float) -> _OrbitalElementExpressions:
+    """Build ASSET expressions for the orbital elements used by Octavian."""
+    arguments = vf.Arguments(6)
+    position_vec, velocity_vec = arguments.tolist([(0, 3), (3, 3)])
+    angular_momentum_vec = position_vec.cross(velocity_vec)
+    radius_norm = position_vec.norm()
+    speed_norm = velocity_vec.norm()
+    specific_energy = 0.5 * (speed_norm**2) - float(mu_m3ps2) / radius_norm
+    angular_momentum_sq = angular_momentum_vec.dot(angular_momentum_vec)
+    return _OrbitalElementExpressions(
+        semi_major_axis_m=-0.5 * float(mu_m3ps2) / specific_energy,
+        eccentricity_sq=1.0
+        + (2.0 * specific_energy * angular_momentum_sq) / (float(mu_m3ps2) ** 2),
+        inclination_cosine=angular_momentum_vec.normalized()[2],
+    )
+
+
+def _apply_orbital_element_constraint(
+    asset_phase: Any, constraint: OrbitalElementConstraint, mu_m3ps2: float
+) -> None:
+    """Apply one orbital-element constraint to an ASSET phase."""
+    expressions = _orbital_element_expressions(mu_m3ps2)
+    where = getattr(constraint, "where", "Path")
+    values = constraint.value
+
+    if constraint.kind == "semi_major_axis":
+        target = float(values["a_m"])
+        tolerance = values["tol_m"]
+        if tolerance is None:
+            asset_phase.addEqualCon(
+                where, vf.stack([expressions.semi_major_axis_m - target]), range(0, 6)
+            )
+            return
+        tolerance = float(tolerance)
+        asset_phase.addInequalCon(
+            where,
+            vf.stack([expressions.semi_major_axis_m - (target + tolerance)]),
+            range(0, 6),
+        )
+        asset_phase.addInequalCon(
+            where,
+            vf.stack([(target - tolerance) - expressions.semi_major_axis_m]),
+            range(0, 6),
+        )
+        return
+
+    if constraint.kind == "eccentricity":
+        target = float(values["e"])
+        tolerance = values["tol"]
+        if tolerance is None:
+            asset_phase.addEqualCon(
+                where, vf.stack([expressions.eccentricity_sq - target**2]), range(0, 6)
+            )
+            return
+        tolerance = float(tolerance)
+        asset_phase.addInequalCon(
+            where,
+            vf.stack([expressions.eccentricity_sq - (target + tolerance) ** 2]),
+            range(0, 6),
+        )
+        asset_phase.addInequalCon(
+            where,
+            vf.stack([(target - tolerance) ** 2 - expressions.eccentricity_sq]),
+            range(0, 6),
+        )
+        return
+
+    if constraint.kind == "inclination_deg":
+        target_deg = float(values["inc_deg"])
+        tolerance_deg = values["tol_deg"]
+        target_cosine = float(np.cos(np.deg2rad(target_deg)))
+        if tolerance_deg is None:
+            asset_phase.addEqualCon(
+                where, vf.stack([expressions.inclination_cosine - target_cosine]), range(0, 6)
+            )
+            return
+        tolerance_deg = float(tolerance_deg)
+        upper_cosine = float(np.cos(np.deg2rad(target_deg - tolerance_deg)))
+        lower_cosine = float(np.cos(np.deg2rad(target_deg + tolerance_deg)))
+        asset_phase.addInequalCon(
+            where,
+            vf.stack([expressions.inclination_cosine - upper_cosine]),
+            range(0, 6),
+        )
+        asset_phase.addInequalCon(
+            where,
+            vf.stack([lower_cosine - expressions.inclination_cosine]),
+            range(0, 6),
+        )
+        return
+
+    raise ValueError(f"Unsupported orbital-element constraint kind: {constraint.kind!r}")
+
+
 def _objective_weights(mission: Mission) -> tuple[bool, float, bool, float]:
     # minimize_dv, w_dv, minimize_time, w_time
     minimize_dv = True
@@ -144,7 +502,7 @@ def _objective_weights(mission: Mission) -> tuple[bool, float, bool, float]:
         minimize_dv = any(getattr(o, "kind", "") == "delta_v" for o in objs)
         for o in objs:
             if getattr(o, "kind", "") == "delta_v":
-                w_dv = float(getattr(o, "weight", 1.0) or 1.0)
+                w_dv = float(getattr(o, "weight", 1.0))
                 break
         for o in objs:
             if getattr(o, "kind", "") == "time":
@@ -647,16 +1005,240 @@ def _build_lambert_guided_phase_guess(
 
 def _boundary_velocity_target(phase: Phase, where: str) -> np.ndarray | None:
     """Return a boundary velocity target from State constraint or phase state."""
+    return _guess_boundary_velocity_target(phase, where)
+
+
+def _explicit_boundary_velocity_target(phase: Phase, where: str) -> np.ndarray | None:
+    """Return an explicitly constrained boundary velocity target from State constraints."""
     st = _get_state_constraint(phase, where)
-    if st is not None:
-        st_val = _state_boundary_value(st)
-        if st_val is not None:
-            return as_vec3(st_val.v_mps)
+    if st is None:
+        return None
+    if "V" not in _state_groups(st):
+        return None
+    st_val = _state_boundary_value(st)
+    if st_val is None:
+        return None
+    return as_vec3(st_val.v_mps)
+
+
+def _guess_boundary_velocity_target(phase: Phase, where: str) -> np.ndarray | None:
+    """Return the best available boundary velocity anchor for guess construction."""
+    explicit_target = _explicit_boundary_velocity_target(phase, where)
+    if explicit_target is not None:
+        return explicit_target
     if where.lower().startswith("f") and phase.initial_state is not None:
         return as_vec3(phase.initial_state.v_mps)
     if where.lower().startswith("b") and phase.final_state is not None:
         return as_vec3(phase.final_state.v_mps)
     return None
+
+
+def _boundary_state_from_traj(traj: np.ndarray, where: str) -> tuple[np.ndarray, np.ndarray]:
+    """Extract a Cartesian boundary state from one phase trajectory."""
+    row = np.asarray(traj[0], dtype=float) if where == "Front" else np.asarray(traj[-1], dtype=float)
+    return as_vec3(row[0:3]), as_vec3(row[3:6])
+
+
+def _orbital_constraint_report_row(
+    phase_name: str,
+    constraint: OrbitalElementConstraint,
+    phase_traj: np.ndarray,
+    mu_m3ps2: float,
+) -> dict[str, float | str | bool]:
+    """Summarize one orbital-element constraint against the solved trajectory."""
+    position_m, velocity_mps = _boundary_state_from_traj(phase_traj, constraint.where)
+    actual_elements = cartesian_to_classic(
+        r_m=position_m,
+        v_mps=velocity_mps,
+        mu_m3ps2=mu_m3ps2,
+    )
+
+    if constraint.kind == "semi_major_axis":
+        target = float(constraint.a_m)
+        tolerance = constraint.tol_m
+        actual = float(actual_elements["a_m"])
+    elif constraint.kind == "eccentricity":
+        target = float(constraint.e)
+        tolerance = constraint.tol
+        actual = float(actual_elements["e"])
+    elif constraint.kind == "inclination_deg":
+        target = float(constraint.inc_deg)
+        tolerance = constraint.tol_deg
+        actual = float(actual_elements["inc_deg"])
+    else:
+        raise ValueError(f"Unsupported orbital-element constraint kind: {constraint.kind!r}")
+
+    error = actual - target
+    base_tolerance = float(tolerance) if tolerance is not None else 1e-6
+    report_tolerance = base_tolerance + max(1e-9, 1e-7 * max(1.0, abs(target)))
+    satisfied = abs(error) <= report_tolerance
+    return {
+        "phase": phase_name,
+        "where": constraint.where,
+        "family": constraint.family,
+        "constraint": constraint.kind,
+        "target": target,
+        "tolerance": base_tolerance,
+        "actual": actual,
+        "error": error,
+        "satisfied": satisfied,
+    }
+
+
+def _midpoint(bounds: tuple[float, float] | None, fallback: float) -> float:
+    if bounds is None:
+        return float(fallback)
+    lo, hi = map(float, bounds)
+    return 0.5 * (lo + hi)
+
+
+def _linear_rvt_guess(
+    *,
+    r0_m: np.ndarray,
+    v0_mps: np.ndarray,
+    rf_m: np.ndarray,
+    vf_mps: np.ndarray,
+    t0_s: float,
+    tf_s: float,
+    npts: int,
+) -> list[np.ndarray]:
+    """Build a simple Cartesian interpolation guess for short burn arcs."""
+    rows: list[np.ndarray] = []
+    for frac in np.linspace(0.0, 1.0, max(int(npts), 2)):
+        r = (1.0 - frac) * as_vec3(r0_m) + frac * as_vec3(rf_m)
+        v = (1.0 - frac) * as_vec3(v0_mps) + frac * as_vec3(vf_mps)
+        t = (1.0 - frac) * float(t0_s) + frac * float(tf_s)
+        rows.append(np.hstack([r, v, t]))
+    return rows
+
+
+def _rocket_mass_after_impulse(
+    *,
+    mass0_kg: float,
+    dv_mps: float,
+    isp_s: float,
+) -> float:
+    if float(isp_s) <= 0.0:
+        return float(mass0_kg)
+    return float(mass0_kg) * float(np.exp(-max(float(dv_mps), 0.0) / (float(isp_s) * 9.80665)))
+
+
+def _build_guess_three_phase_chemical_transfer(
+    phases: Sequence[Phase],
+    *,
+    mu: float,
+    abs_bounds: Sequence[tuple[float, float] | None],
+    nsegs_burn: int,
+    nsegs_coast: int,
+    lambert_grid_size: int,
+    nrevs_to_try: Sequence[int],
+) -> tuple[dict[int, list[np.ndarray]], dict[int, dict[str, float | int | bool | str]]]:
+    """Seed burn-coast-burn from the equivalent two-impulse Lambert transfer."""
+    if len(phases) != 3:
+        return {}, {}
+
+    burn0, coast, burn1 = phases
+    if not (_phase_is_chemical_burn(burn0) and _is_coast_like(coast) and _phase_is_chemical_burn(burn1)):
+        return {}, {}
+
+    x0 = burn0.initial_state or _state_boundary_value(_get_state_constraint(burn0, "Front"))
+    terminal = _phase_terminal_target(burn1)
+    if x0 is None or terminal is None:
+        return {}, {}
+
+    rf, vf_target = terminal
+    if vf_target is None:
+        vf_target = as_vec3(x0.v_mps)
+
+    t1 = _midpoint(abs_bounds[0], 120.0)
+    t2_fallback = max(t1 + 600.0, _midpoint(abs_bounds[1], t1 + 3600.0))
+    t2 = t2_fallback
+    t3 = max(t2 + 120.0, _midpoint(abs_bounds[2], t2 + 120.0))
+
+    coast_bounds = abs_bounds[1]
+    if coast_bounds is not None:
+        coast_min = max(1.0, float(coast_bounds[0]) - t1)
+        coast_max = max(coast_min + 1.0, float(coast_bounds[1]) - t1)
+    else:
+        coast_min = max(1.0, t2 - t1)
+        coast_max = max(coast_min + 1.0, coast_min * 1.25)
+
+    seed_info: dict[str, float | int | bool | str]
+    try:
+        seed = select_best_lambert_seed(
+            r0_m=as_vec3(x0.r_m),
+            rf_m=as_vec3(rf),
+            v0_mps=as_vec3(x0.v_mps),
+            vf_mps=as_vec3(vf_target),
+            mu_m3ps2=float(mu),
+            tmin_s=float(coast_min),
+            tmax_s=float(coast_max),
+            n_tofs=int(lambert_grid_size),
+            nrevs=tuple(int(n) for n in nrevs_to_try),
+        )
+        v_depart = as_vec3(seed.v1_mps)
+        v_arrive = as_vec3(seed.v2_mps)
+        t2 = float(t1 + seed.tof_s)
+        seed_info = {
+            "guess_kind": "chemical_burn_two_impulse_equivalent",
+            "seed_tof_s": float(seed.tof_s),
+            "seed_longway": bool(seed.longway),
+            "seed_nrev": int(seed.nrev),
+            "seed_rightbranch": bool(seed.rightbranch),
+            "seed_total_dv_mps": float(seed.total_dv_mps),
+        }
+    except Exception:
+        v_depart = as_vec3(x0.v_mps)
+        v_arrive = as_vec3(vf_target)
+        seed_info = {"guess_kind": "chemical_burn_linear_fallback"}
+
+    if abs_bounds[2] is not None:
+        t3_min, t3_max = map(float, abs_bounds[2])
+        t3 = min(max(t3, max(t3_min, t2 + 1.0)), t3_max)
+
+    burn0_guess = _linear_rvt_guess(
+        r0_m=as_vec3(x0.r_m),
+        v0_mps=as_vec3(x0.v_mps),
+        rf_m=as_vec3(x0.r_m),
+        vf_mps=v_depart,
+        t0_s=0.0,
+        tf_s=t1,
+        npts=int(nsegs_burn) + 1,
+    )
+    coast_guess = kepler_dense_guess(
+        r0_m=as_vec3(burn0_guess[-1][0:3]),
+        v0_mps=v_depart,
+        t0_s=t1,
+        tf_s=t2,
+        npts=int(nsegs_coast) + 1,
+        mu_m3ps2=float(mu),
+    )
+    burn1_guess = _linear_rvt_guess(
+        r0_m=as_vec3(coast_guess[-1][0:3]),
+        v0_mps=v_arrive,
+        rf_m=as_vec3(rf),
+        vf_mps=as_vec3(vf_target),
+        t0_s=t2,
+        tf_s=t3,
+        npts=int(nsegs_burn) + 1,
+    )
+
+    spacecraft = burn0.spacecraft
+    if not isinstance(spacecraft, str) and spacecraft is not None:
+        thruster = _first_thruster(burn0)
+        m0 = float(spacecraft.initial_mass_kg)
+        m1 = _rocket_mass_after_impulse(
+            mass0_kg=m0,
+            dv_mps=float(np.linalg.norm(v_depart - as_vec3(x0.v_mps))),
+            isp_s=float(thruster.isp_s),
+        )
+        burn0.info["_mass_guess_start_kg"] = m0
+        coast.info["_mass_guess_start_kg"] = m1
+        burn1.info["_mass_guess_start_kg"] = m1
+
+    guesses = {0: burn0_guess, 1: coast_guess, 2: burn1_guess}
+    infos = {idx: dict(seed_info, guess_phase_index=idx, guess_phase_name=phases[idx].name) for idx in guesses}
+    return guesses, infos
 
 
 def _build_front_impulse_velocity_targets(phases: Sequence[Phase]) -> dict[int, np.ndarray]:
@@ -728,6 +1310,66 @@ def _fallback_phase_tf_guess(
     return float(tf_guess)
 
 
+def _prepare_phase_guess(
+    phase: Phase,
+    guess: Sequence[np.ndarray],
+    *,
+    carries_mass: bool = False,
+) -> tuple[list[np.ndarray], int, int, bool]:
+    """Return a guess with the row shape required by the phase dynamics."""
+    state_dim, control_dim, is_burn = _compile_phase_dimensions(phase, carries_mass=carries_mass)
+    if not carries_mass:
+        return [np.asarray(row, dtype=float) for row in guess], state_dim, control_dim, is_burn
+
+    spacecraft = phase.spacecraft
+    if isinstance(spacecraft, str) or spacecraft is None:
+        raise ValueError(f"Mass-carrying phase {phase.name!r} requires a Spacecraft object.")
+    if not is_burn:
+        return (
+            _augment_guess_for_mass_coast(
+                guess,
+                phase=phase,
+                mass0_kg=float(spacecraft.initial_mass_kg),
+            ),
+            state_dim,
+            control_dim,
+            is_burn,
+        )
+
+    thruster = _first_thruster(phase)
+    if float(thruster.thrust_N) <= 0.0 or float(thruster.isp_s) <= 0.0:
+        raise ValueError(f"Chemical burn phase {phase.name!r} requires thrust_N > 0 and isp_s > 0.")
+    return (
+        _augment_guess_for_chemical_burn(
+            guess,
+            phase=phase,
+            mass0_kg=float(spacecraft.initial_mass_kg),
+            thrust_N=float(thruster.thrust_N),
+            isp_s=float(thruster.isp_s),
+        ),
+        state_dim,
+        control_dim,
+        is_burn,
+    )
+
+
+def _make_asset_phase(
+    phase: Phase,
+    guess: Sequence[np.ndarray],
+    nsegs: int,
+    *,
+    carries_mass: bool = False,
+):
+    """Create an ASSET phase and return dimensional metadata."""
+    prepared_guess, state_dim, control_dim, is_burn = _prepare_phase_guess(
+        phase,
+        guess,
+        carries_mass=carries_mass,
+    )
+    ode = _ode_for_phase(phase, carries_mass=carries_mass)
+    return ode.phase(Tmodes.LGL3, prepared_guess, int(nsegs)), state_dim, control_dim, is_burn
+
+
 def solve_composable_mission(
     mission: Mission,
     *,
@@ -740,11 +1382,15 @@ def solve_composable_mission(
     if not phases:
         raise ValueError("Mission has no phases")
 
-    # Currently: only coast phases supported
+    _validate_chemical_burn_transfer(phases)
+    mass_state_indices = _mass_state_phase_indices(phases)
+
     for ph in phases:
-        if (ph.mode or "").lower() not in ("coast", "transfer", "rendezvous"):
+        normalized_mode = (ph.mode or "").lower().replace("-", "_")
+        if normalized_mode not in ("coast", "transfer", "rendezvous", "burn", "chemical_burn", "finite_burn"):
             raise NotImplementedError(
-                f"Composable solver currently supports only coast-like phases. Got mode={ph.mode!r}"
+                "Composable solver supports coast-like and chemical-burn phases. "
+                f"Got mode={ph.mode!r}"
             )
 
     minimize_dv, w_dv, minimize_time, w_time = _objective_weights(mission)
@@ -788,8 +1434,6 @@ def solve_composable_mission(
 
     r_unit, v_unit, t_unit = default_units(_UnitSpec(x0_for_units, xf_for_units, mu))
 
-    ode = TwoBodyECI(mu_m3ps2=mu)
-
     # Build guesses: handle common 2-phase precoast+transfer case for better robustness
     nsegs0 = int(getattr(mission, "mesh_nsegs_precoast", 30))
     nsegs1 = int(getattr(mission, "mesh_nsegs_transfer", 60))
@@ -797,7 +1441,20 @@ def solve_composable_mission(
     guesses: dict[int, list[np.ndarray]] = {}
     guess_info: dict[int, dict[str, float | int | bool | str]] = {}
 
-    if len(phases) == 1:
+    if mass_state_indices and len(phases) == 3:
+        chemical_guesses, chemical_info = _build_guess_three_phase_chemical_transfer(
+            phases,
+            mu=mu,
+            abs_bounds=abs_bounds,
+            nsegs_burn=max(4, int(nsegs0 // 2)),
+            nsegs_coast=nsegs1,
+            lambert_grid_size=int(getattr(mission, "lambert_grid_size", 60)),
+            nrevs_to_try=tuple(int(x) for x in getattr(mission, "nrevs_to_try", (0, 1))),
+        )
+        guesses.update(chemical_guesses)
+        guess_info.update(chemical_info)
+
+    elif len(phases) == 1:
         p0 = phases[0]
         tf_bounds = abs_bounds[0] or (600.0, 7200.0)
         ig0, info0 = _build_guess_single_phase_terminal_position(
@@ -840,6 +1497,9 @@ def solve_composable_mission(
         guesses[1] = ig1
 
     front_impulse_v_targets = _build_front_impulse_velocity_targets(phases)
+    terminal_shell = _make_terminal_shell(phases[-1])
+    last_compile_phase = terminal_shell[0] if terminal_shell is not None else None
+    shell_phase = terminal_shell[1] if terminal_shell is not None else None
 
     # Compile phases
     ocp = oc.OptimalControlProblem()
@@ -865,7 +1525,10 @@ def solve_composable_mission(
             else:
                 prev_guess = guesses.get(idx - 1)
                 if prev_guess is None:
-                    prev_guess = np.asarray(built[-1].asset_phase.returnTraj(), dtype=float).tolist()  # type: ignore
+                    prev_guess = _trajectory_rvt(
+                        np.asarray(built[-1].asset_phase.returnTraj(), dtype=float),
+                        built[-1].state_dim,
+                    ).tolist()
                 prev_last = np.asarray(prev_guess[-1], dtype=float)
                 chain_t_start = float(prev_last[6])
                 chain_r_start = as_vec3(prev_last[0:3])
@@ -889,7 +1552,12 @@ def solve_composable_mission(
                 guess_info.update(chain_info)
                 ig = guesses[idx]
                 nsegs = len(ig) - 1
-                asset_phase = ode.phase(Tmodes.LGL3, ig, int(nsegs))
+                asset_phase, state_dim, control_dim, is_burn = _make_asset_phase(
+                    ph,
+                    ig,
+                    int(nsegs),
+                    carries_mass=idx in mass_state_indices,
+                )
                 ocp.addPhase(asset_phase)
 
                 built.append(
@@ -898,6 +1566,10 @@ def solve_composable_mission(
                         asset_phase=asset_phase,
                         t_bounds=tuple(abs_bounds[idx] or (0.0, 1.0)),
                         index=idx,
+                        compile_phase=(last_compile_phase if ph is phases[-1] else None),
+                        state_dim=state_dim,
+                        control_dim=control_dim,
+                        is_chemical_burn=is_burn,
                     )
                 )
                 continue
@@ -942,7 +1614,10 @@ def solve_composable_mission(
                 # start from previous guess end
                 prev_guess = guesses.get(idx - 1)
                 if prev_guess is None:
-                    prev_guess = np.asarray(built[-1].asset_phase.returnTraj(), dtype=float).tolist()  # type: ignore
+                    prev_guess = _trajectory_rvt(
+                        np.asarray(built[-1].asset_phase.returnTraj(), dtype=float),
+                        built[-1].state_dim,
+                    ).tolist()
                 rv_start = np.asarray(prev_guess[-1])[0:6]
                 t_start = float(np.asarray(prev_guess[-1])[6])
                 bounds = abs_bounds[idx]
@@ -983,7 +1658,12 @@ def solve_composable_mission(
                         mu_m3ps2=mu,
                     )
 
-        asset_phase = ode.phase(Tmodes.LGL3, ig, int(nsegs))
+        asset_phase, state_dim, control_dim, is_burn = _make_asset_phase(
+            ph,
+            ig,
+            int(nsegs),
+            carries_mass=idx in mass_state_indices,
+        )
         ocp.addPhase(asset_phase)
 
         built.append(
@@ -992,6 +1672,46 @@ def solve_composable_mission(
                 asset_phase=asset_phase,
                 t_bounds=tuple(abs_bounds[idx] or (0.0, 1.0)),
                 index=idx,
+                compile_phase=(last_compile_phase if ph is phases[-1] else None),
+                state_dim=state_dim,
+                control_dim=control_dim,
+                is_chemical_burn=is_burn,
+            )
+        )
+
+    if shell_phase is not None:
+        last_guess = guesses.get(len(phases) - 1)
+        if last_guess is None:
+            last_guess = _trajectory_rvt(
+                np.asarray(built[-1].asset_phase.returnTraj(), dtype=float),
+                built[-1].state_dim,
+            ).tolist()
+        last_pt = np.asarray(last_guess[-1], dtype=float)
+        shell_t0 = float(last_pt[6])
+        shell_tf = shell_t0 + 1.0
+        shell_v0_guess = _guess_boundary_velocity_target(phases[-1], "Back")
+        if shell_v0_guess is None:
+            shell_v0_guess = as_vec3(last_pt[3:6])
+        shell_guess = kepler_dense_guess(
+            r0_m=as_vec3(last_pt[0:3]),
+            v0_mps=shell_v0_guess,
+            t0_s=shell_t0,
+            tf_s=shell_tf,
+            npts=3,
+            mu_m3ps2=mu,
+        )
+        shell_asset_phase, state_dim, control_dim, is_burn = _make_asset_phase(shell_phase, shell_guess, 2)
+        ocp.addPhase(shell_asset_phase)
+        built.append(
+            _PhaseBuild(
+                ph=shell_phase,
+                asset_phase=shell_asset_phase,
+                t_bounds=(shell_t0 + 0.1, shell_tf),
+                index=len(built),
+                compile_phase=shell_phase,
+                state_dim=state_dim,
+                control_dim=control_dim,
+                is_chemical_burn=is_burn,
             )
         )
 
@@ -1012,13 +1732,33 @@ def solve_composable_mission(
 
     # Apply constraints and time bounds per phase
     for b in built:
-        ph = b.ph
+        ph = b.compile_phase or b.ph
         ap = b.asset_phase
 
         # First phase front time fixed at 0 unless user provides otherwise
         if b.index == 0:
             with contextlib.suppress(Exception):
                 ap.addBoundaryValue("Front", ["t"], np.asarray([0.0], dtype=float))
+
+        if b.state_dim == 7:
+            spacecraft = ph.spacecraft
+            if isinstance(spacecraft, str) or spacecraft is None:
+                raise ValueError(f"Mass-carrying phase {ph.name!r} requires a Spacecraft object.")
+            has_mass_predecessor = any(
+                previous_build.ph is ph.previous and previous_build.state_dim == 7
+                for previous_build in built
+            )
+            if not has_mass_predecessor:
+                ap.addBoundaryValue(
+                    "Front",
+                    ["M"],
+                    np.asarray([float(spacecraft.initial_mass_kg)], dtype=float),
+                )
+            dry_mass_kg = float(spacecraft.dry_mass_kg)
+            if dry_mass_kg > 0.0:
+                ap.addLUVarBound("Back", "M", dry_mass_kg, float(spacecraft.initial_mass_kg))
+            if b.is_chemical_burn:
+                ap.addUpperNormBound("Path", "U", 1.0)
 
         # Apply State/Position boundary constraints with impulsive-variable override logic
         for loc in ("Front", "Back"):
@@ -1067,27 +1807,26 @@ def solve_composable_mission(
                         ap.addBoundaryValue(loc, use_groups, np.asarray(vals, dtype=float))
 
         # Path constraints (e.g., min radius)
-        for c in getattr(ph, "constraints", []) or []:
-            if getattr(c, "kind", "") == "min_radius":
-                rmin = float(c.value)
-                # rmin_nd = rmin / float(r_unit)
-                loc = (
-                    "Path" if getattr(c, "where", "Path") == "Path" else getattr(c, "where", "Path")
+        for constraint in getattr(ph, "constraints", []) or []:
+            if getattr(constraint, "kind", "") == "min_radius":
+                minimum_radius_m = float(constraint.value)
+                location = (
+                    "Path"
+                    if getattr(constraint, "where", "Path") == "Path"
+                    else getattr(constraint, "where", "Path")
                 )
-                # "R" is in scaled units here, so use a scaled bound with AutoScale=1.
-                ap.addLowerNormBound(loc, "R", rmin, AutoScale=1.0 / r_unit)
-                # ap.addInequalCon(loc, rmin*rmin - vf.Arguments(3).squared_norm(), ["R"])
-
-                # breakpoint()
+                ap.addLowerNormBound(location, "R", minimum_radius_m)
+            elif isinstance(constraint, OrbitalElementConstraint):
+                _apply_orbital_element_constraint(ap, constraint, mu)
 
         # Time bounds: normalize tof_bounds_s to absolute Back-time bounds.
-        bounds = abs_bounds[b.index]
+        bounds = b.t_bounds
         if bounds is not None:
             tmin, tmax = map(float, bounds)
             try:
                 ap.addLUVarBound("Back", "time", tmin, tmax)
             except Exception:
-                ap.addLUVarBound("Back", 6, tmin, tmax)
+                ap.addLUVarBound("Back", b.state_dim, tmin, tmax)
             ap.addLowerDeltaTimeBound(0.1)
 
     # Apply links and link objectives
@@ -1098,10 +1837,12 @@ def solve_composable_mission(
 
         # Find previous compiled phase
         prev_idx = None
+        prev_build = None
         for bb in built:
             if bb.ph is ph.previous:
                 prev_idx = bb.index
                 prev_ap = bb.asset_phase
+                prev_build = bb
                 break
         if prev_idx is None:
             raise ValueError(f"Phase {ph.name!r} references previous phase not in mission.")
@@ -1110,7 +1851,10 @@ def solve_composable_mission(
         link_kind = (ph.link.kind if ph.link is not None else "continuous").lower()
 
         if link_kind == "continuous":
-            ocp.addForwardLinkEqualCon(prev_ap, ap, ["R", "V", "t"])
+            link_groups = ["R", "V", "t"]
+            if prev_build is not None and prev_build.state_dim == 7 and b.state_dim == 7:
+                link_groups = ["R", "V", "M", "t"]
+            ocp.addForwardLinkEqualCon(prev_ap, ap, link_groups)
         else:
             ocp.addForwardLinkEqualCon(prev_ap, ap, ["R", "t"])
 
@@ -1140,6 +1884,22 @@ def solve_composable_mission(
 
     # Boundary Δv objectives (mission start and terminal)
     if minimize_dv:
+        for b in built:
+            if not b.is_chemical_burn:
+                continue
+            spacecraft = b.ph.spacecraft
+            if isinstance(spacecraft, str) or spacecraft is None:
+                continue
+            mass_argument = vf.Arguments(1).tolist()[0]
+            b.asset_phase.addStateObjective(
+                "Back",
+                -float(w_dv) * mass_argument,
+                [6],
+                [],
+                [],
+                AutoScale=1.0 / max(float(spacecraft.initial_mass_kg), 1.0),
+            )
+
         # Start: if first phase has impulsive Δv at Front, penalize relative to desired initial velocity
         first_ph = built[0].ph
         first_ap = built[0].asset_phase
@@ -1161,40 +1921,41 @@ def solve_composable_mission(
         last_ph = built[-1].ph
         last_ap = built[-1].asset_phase
         if _has_impulsive_var(last_ph, "Back"):
-            st = _get_state_constraint(last_ph, "Back")
-            if st is None and last_ph.final_state is None:
-                raise ValueError(
-                    "ImpulsiveDeltaV at mission end requires a desired terminal velocity (State constraint or final_state)."
+            v_target = _explicit_boundary_velocity_target(last_ph, "Back")
+            if v_target is not None:
+                b0 = vf.Arguments(3)
+                dvf = vf.sqrt((v_target - b0).dot(v_target - b0))
+                last_ap.addStateObjective(
+                    "Back", float(w_dv) * dvf, [3, 4, 5], [], [], AutoScale=1.0 / float(v_unit)
                 )
-            st_val = _state_boundary_value(st)
-            v_target = as_vec3(st_val.v_mps if st_val is not None else last_ph.final_state.v_mps)  # type: ignore[union-attr]
-            b0 = vf.Arguments(3)
-            dvf = vf.sqrt((v_target - b0).dot(v_target - b0))
-            last_ap.addStateObjective(
-                "Back", float(w_dv) * dvf, [3, 4, 5], [], [], AutoScale=1.0 / float(v_unit)
-            )
 
     # Time objective: minimize final time at last phase Back
     if minimize_time and float(w_time) != 0.0:
-        last_ap = built[-1].asset_phase
+        last_build = built[-1]
+        last_ap = last_build.asset_phase
         at = vf.Arguments(1).tolist()[0]
         last_ap.addStateObjective(
-            "Back", float(w_time) * at, [6], [], [], AutoScale=1.0 / float(t_unit)
+            "Back",
+            float(w_time) * at,
+            [last_build.state_dim],
+            [],
+            [],
+            AutoScale=1.0 / float(t_unit),
         )
 
     # Solve
     converged = (
         ocp.solve_optimize_solve() if hasattr(ocp, "solve_optimize_solve") else ocp.optimize_solve()
     )
-    # converged = True
 
     # Extract trajectory (stitch)
-    trajs = [np.asarray(b.asset_phase.returnTraj(), dtype=float) for b in built]
+    raw_trajs = [np.asarray(b.asset_phase.returnTraj(), dtype=float) for b in built]
+    trajs = [_trajectory_rvt(raw_traj, b.state_dim) for raw_traj, b in zip(raw_trajs, built, strict=True)]
     traj = trajs[0]
     for t in trajs[1:]:
         traj = np.vstack([traj, t[1:, :]])
 
-    # Maneuver bookkeeping: link dv and terminal dv if requested
+    # Maneuver bookkeeping: link dv and explicit terminal dv if requested
     maneuvers: list[Maneuver] = []
     # start maneuver (mission start boundary)
     if built and _has_impulsive_var(built[0].ph, "Front"):
@@ -1217,9 +1978,7 @@ def solve_composable_mission(
             continue
         prev_traj = trajs[i - 1]
         this_traj = trajs[i]
-        v_minus = prev_traj[-1, 3:6]
-        v_plus = this_traj[0, 3:6]
-        dv = v_plus - v_minus
+        dv = this_traj[0, 3:6] - prev_traj[-1, 3:6]
         maneuvers.append(
             Maneuver(
                 r_m=prev_traj[-1, 0:3],
@@ -1231,15 +1990,70 @@ def solve_composable_mission(
 
     # terminal maneuver
     if built and _has_impulsive_var(built[-1].ph, "Back"):
-        st = _get_state_constraint(built[-1].ph, "Back")
-        st_val = _state_boundary_value(st)
-        v_target = as_vec3(st_val.v_mps if st_val is not None else built[-1].ph.final_state.v_mps)  # type: ignore[union-attr]
-        v_end = trajs[-1][-1, 3:6]
-        dv = v_target - v_end
-        maneuvers.append(
-            Maneuver(
-                r_m=trajs[-1][-1, 0:3], t_s=float(trajs[-1][-1, 6]), dv_mps=dv, name="Δv (terminal)"
+        v_target = _explicit_boundary_velocity_target(built[-1].ph, "Back")
+        if v_target is not None:
+            v_end = trajs[-1][-1, 3:6]
+            dv = v_target - v_end
+            maneuvers.append(
+                Maneuver(
+                    r_m=trajs[-1][-1, 0:3],
+                    t_s=float(trajs[-1][-1, 6]),
+                    dv_mps=dv,
+                    name="Δv (terminal)",
+                )
             )
+
+    constraint_report: list[dict[str, float | str | bool]] = []
+    for build, phase_traj in zip(built, trajs, strict=True):
+        constraint_phase = build.compile_phase or build.ph
+        for constraint in _orbital_element_constraints(constraint_phase):
+            if constraint.where not in {"Front", "Back"}:
+                continue
+            constraint_report.append(
+                _orbital_constraint_report_row(
+                    phase_name=constraint_phase.name,
+                    constraint=constraint,
+                    phase_traj=phase_traj,
+                    mu_m3ps2=mu,
+                )
+            )
+
+    chemical_burns: list[dict[str, float | str]] = []
+    phase_segments: list[dict[str, float | str]] = []
+    for build, phase_traj in zip(built, trajs, strict=True):
+        is_burn = bool(build.is_chemical_burn)
+        phase_segments.append(
+            {
+                "name": build.ph.name,
+                "mode": "chemical_burn" if is_burn else "coast",
+                "t_start_s": float(phase_traj[0, 6]),
+                "t_end_s": float(phase_traj[-1, 6]),
+                "color": "red" if is_burn else "blue",
+            }
+        )
+        if not build.is_chemical_burn:
+            continue
+        raw_traj = raw_trajs[build.index]
+        mass_initial_kg = float(raw_traj[0, 6])
+        mass_final_kg = float(raw_traj[-1, 6])
+        propellant_used_kg = max(0.0, mass_initial_kg - mass_final_kg)
+        equivalent_dv_mps = 0.0
+        spacecraft = build.ph.spacecraft
+        if not isinstance(spacecraft, str) and spacecraft is not None and mass_final_kg > 0.0:
+            thruster = _first_thruster(build.ph)
+            equivalent_dv_mps = float(thruster.isp_s) * 9.80665 * float(
+                np.log(max(mass_initial_kg, mass_final_kg) / mass_final_kg)
+            )
+        chemical_burns.append(
+            {
+                "phase": build.ph.name,
+                "t_start_s": float(phase_traj[0, 6]),
+                "t_end_s": float(phase_traj[-1, 6]),
+                "mass_initial_kg": mass_initial_kg,
+                "mass_final_kg": mass_final_kg,
+                "propellant_used_kg": propellant_used_kg,
+                "equivalent_dv_mps": equivalent_dv_mps,
+            }
         )
 
     return RendezvousResult(
@@ -1253,6 +2067,9 @@ def solve_composable_mission(
             "r_unit_m": r_unit,
             "v_unit_mps": v_unit,
             "t_unit_s": t_unit,
+            "constraint_report": constraint_report,
+            "chemical_burns": chemical_burns,
+            "phase_segments": phase_segments,
             "phase_guess_info": guess_info,
         }
         | guess_info.get(0, {}),

@@ -1,11 +1,4 @@
-"""Study utilities (parameter sweeps).
-
-Octavian encourages a workflow where a mission script is a *configuration file*
-and experiments are repeatable.
-
-This module provides small helpers to sweep specs, run solvers, and persist
-results in a consistent layout.
-"""
+"""Study helpers for repeatable parameter sweeps."""
 
 from __future__ import annotations
 
@@ -32,40 +25,34 @@ def grid(
     """Run a grid study by applying overrides to a base spec.
 
     Args:
-        base_spec: The baseline problem specification.
-        overrides: A list of dictionaries. Each dictionary is passed to
-            ``dataclasses.replace(base_spec, **override)`` to create a new spec.
+        base_spec: Baseline problem specification.
+        overrides: Override dictionaries passed to
+            ``dataclasses.replace(base_spec, **override)``.
         options: Shared solver options. If omitted, defaults are used.
-        save_dir: If provided, each result is saved as ``.npz`` and a small
-            metadata JSON in this directory.
+        save_dir: Optional directory where each result is saved as ``.npz`` and
+            companion JSON.
         save_prefix: Prefix for output filenames.
 
     Returns:
-        List of results in the same order as ``overrides``.
-
-    Notes:
-        If ``save_dir`` is provided, the directory is created if needed and each
-        result records its override index in ``result.info["study_index"]``.
+        Results in the same order as ``overrides``.
     """
-    opts = options or SolverOptions()
-    out_dir = Path(save_dir).expanduser().resolve() if save_dir is not None else None
-    if out_dir is not None:
-        out_dir.mkdir(parents=True, exist_ok=True)
+    solver_options = options or SolverOptions()
+    output_dir = Path(save_dir).expanduser().resolve() if save_dir is not None else None
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     results: list[RendezvousResult] = []
-    for i, ov in enumerate(overrides):
-        spec_i = replace(base_spec, **ov)
-        res = solve(spec_i, options=opts)
-        res.info.setdefault("study_index", i)
-        res.info.setdefault("overrides", dict(ov))
-        results.append(res)
+    for override_index, override_values in enumerate(overrides):
+        sweep_spec = replace(base_spec, **override_values)
+        result = solve(sweep_spec, options=solver_options)
+        result.info.setdefault("study_index", override_index)
+        result.info.setdefault("overrides", dict(override_values))
+        results.append(result)
 
-        if out_dir is not None:
-            stem = f"{save_prefix}_{i:04d}"
-            npz_path = out_dir / f"{stem}.npz"
-            json_path = out_dir / f"{stem}.json"
-            res.to_npz(npz_path)
-            json_path.write_text(res.to_json(indent=2))
+        if output_dir is not None:
+            stem = f"{save_prefix}_{override_index:04d}"
+            result.to_npz(output_dir / f"{stem}.npz")
+            (output_dir / f"{stem}.json").write_text(result.to_json(indent=2))
 
     return results
 
@@ -79,26 +66,28 @@ def best_by(
     """Select the best result in a study by a named metric.
 
     Args:
-        results: Iterable of results.
-        key: Metric name. Supported:
-            - ``"total_dv_mps"``: total delta-v magnitude sum.
-            - ``"tf_s"``: final time in seconds (from trajectory).
-            - ``"last_obj"``: last objective value.
-        require_converged: If True, ignore non-converged results.
+        results: Results to compare.
+        key: Metric name. Supported values are ``"total_dv_mps"``, ``"tf_s"``,
+            and ``"last_obj"``.
+        require_converged: Whether to discard non-converged results before
+            ranking.
 
     Returns:
-        The best result.
+        The best result under the requested metric.
 
     Raises:
-        ValueError: If no results remain after filtering or the key is unsupported.
+        ValueError: If no results remain after filtering or the metric name is
+            unsupported.
     """
-    candidates = [r for r in results if (r.converged or not require_converged)]
-    if not candidates:
+    candidate_results = [
+        result for result in results if (result.converged or not require_converged)
+    ]
+    if not candidate_results:
         raise ValueError("No results available after filtering.")
     if key == "total_dv_mps":
-        return min(candidates, key=lambda r: r.total_dv_mps())
+        return min(candidate_results, key=lambda result: result.total_dv_mps())
     if key == "tf_s":
-        return min(candidates, key=lambda r: r.tf_s())
+        return min(candidate_results, key=lambda result: result.tf_s())
     if key == "last_obj":
-        return min(candidates, key=lambda r: float(r.last_obj))
-    raise ValueError(f"Unsupported key: {key!r}")
+        return min(candidate_results, key=lambda result: float(result.last_obj))
+    raise ValueError(f"Unsupported key: {key!r}.")

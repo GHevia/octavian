@@ -11,21 +11,45 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
-@dataclass(slots=True)
-class Dynamics:
-    """Environment and dynamics configuration.
+@dataclass(frozen=True, slots=True)
+class Perturbations:
+    """Perturbation flags for translational dynamics.
 
-    v0.x note:
-      - Only `mu_m3ps2` is actively used by the current rendezvous solvers.
-      - Other fields exist to stabilize the API and guide expansion.
+    J2 is the first perturbation implemented by the composable ASSET backend.
+    The remaining flags are kept as explicit configuration hooks so mission
+    scripts have a stable place to opt into future perturbation models.
     """
 
+    j2: bool = False
+    srp: bool = False
+    drag: bool = False
+    third_bodies: tuple[str, ...] = ()
+
+
+@dataclass(slots=True)
+class Dynamics:
+    """Environment and dynamics configuration."""
+
     mu_m3ps2: float = 3.986004418e14
+    central_body_radius_m: float = 6_378_136.3
+    j2_coefficient: float = 1.08262668e-3
     third_bodies: tuple[str, ...] = ()
     j2: bool = False
     srp: bool = False
     drag: bool = False
+    perturbations: Perturbations | None = None
     info: dict[str, Any] = field(default_factory=dict)
+
+    def active_perturbations(self) -> Perturbations:
+        """Return normalized perturbation flags for solver compilation."""
+        if self.perturbations is not None:
+            return self.perturbations
+        return Perturbations(
+            j2=bool(self.j2),
+            srp=bool(self.srp),
+            drag=bool(self.drag),
+            third_bodies=tuple(str(body) for body in self.third_bodies),
+        )
 
 
 @dataclass(slots=True)

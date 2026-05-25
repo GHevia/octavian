@@ -1,11 +1,4 @@
-"""ConOps (Concept of Operations) builders.
-
-ConOps is the "middle" layer between `quick` templates and fully custom
-missions. It returns a normal `Mission` object that users can modify before
-solving.
-
-v0.x ships ConOps helpers for the built-in impulsive rendezvous solver.
-"""
+"""Concept-of-operations mission builders."""
 
 from __future__ import annotations
 
@@ -50,8 +43,7 @@ def rendezvous_two_impulse(
     Returns:
         A mission configured for the built-in two-impulse rendezvous solver.
     """
-
-    ph = Phase(
+    rendezvous_phase = Phase(
         name="rendezvous",
         mode="rendezvous",
         spacecraft=spacecraft,
@@ -63,11 +55,11 @@ def rendezvous_two_impulse(
     )
 
     return Mission(
-        phases=[ph],
+        phases=[rendezvous_phase],
         name=name,
         mesh_nsegs_transfer=int(nsegs),
         lambert_grid_size=int(lambert_grid_size),
-        nrevs_to_try=tuple(int(x) for x in nrevs_to_try),
+        nrevs_to_try=tuple(int(revolution_count) for revolution_count in nrevs_to_try),
         w_time=float(w_time),
     )
 
@@ -103,8 +95,8 @@ def rendezvous_precoast_then_transfer(
         nsegs_precoast: Number of mesh segments for the precoast phase.
         nsegs_transfer: Number of mesh segments for the transfer phase.
         precoast_grid_size: Number of precoast seed candidates to evaluate.
-        limit_precoast_to_one_period: Whether to cap the seed sweep to one orbital
-            period when the initial orbit period is known.
+        limit_precoast_to_one_period: Whether to cap the seed sweep to one
+            orbital period when the initial orbit period is known.
         lambert_grid_size: Number of Lambert seed samples per candidate.
         nrevs_to_try: Revolution counts included in the Lambert seed search.
         w_time: Weight on final time in the objective.
@@ -115,8 +107,7 @@ def rendezvous_precoast_then_transfer(
     Returns:
         A mission with a precoast phase followed by an impulsive rendezvous phase.
     """
-
-    p0 = Phase(
+    precoast_phase = Phase(
         name="precoast",
         mode="coast",
         spacecraft=spacecraft,
@@ -126,10 +117,10 @@ def rendezvous_precoast_then_transfer(
         constraints=list(constraints_precoast or []),
     )
 
-    p1 = Phase(
+    transfer_phase = Phase(
         name="rendezvous",
         mode="rendezvous",
-        previous=p0,
+        previous=precoast_phase,
         dynamics=dynamics,
         spacecraft=spacecraft,
         final_state=final_state,
@@ -138,13 +129,13 @@ def rendezvous_precoast_then_transfer(
     )
 
     return Mission(
-        phases=[p0, p1],
+        phases=[precoast_phase, transfer_phase],
         name=name,
         mesh_nsegs_precoast=int(nsegs_precoast),
         mesh_nsegs_transfer=int(nsegs_transfer),
         precoast_grid_size=int(precoast_grid_size),
         limit_precoast_to_one_period=bool(limit_precoast_to_one_period),
         lambert_grid_size=int(lambert_grid_size),
-        nrevs_to_try=tuple(int(x) for x in nrevs_to_try),
+        nrevs_to_try=tuple(int(revolution_count) for revolution_count in nrevs_to_try),
         w_time=float(w_time),
     )

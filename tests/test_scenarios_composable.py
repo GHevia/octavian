@@ -17,7 +17,25 @@ def _fake_solution() -> Solution:
     traj = np.zeros((3, 7), dtype=float)
     traj[:, 6] = [0.0, 100.0, 200.0]
     maneuvers = [Maneuver(r_m=[0.0, 0.0, 0.0], t_s=100.0, dv_mps=[2.0, 0.0, 0.0], name="dv")]
-    res = RendezvousResult(converged=True, traj=traj, maneuvers=maneuvers, last_obj=2.0, info={})
+    res = RendezvousResult(
+        converged=True,
+        traj=traj,
+        maneuvers=maneuvers,
+        last_obj=2.0,
+        info={
+            "chemical_burns": [
+                {
+                    "phase": "burn",
+                    "propellant_used_kg": 1.0,
+                    "equivalent_dv_mps": 143.98885710585398,
+                }
+            ],
+            "phase_segments": [
+                {"name": "burn", "t_start_s": 0.0, "t_end_s": 100.0, "color": "red"},
+                {"name": "coast", "t_start_s": 100.0, "t_end_s": 200.0, "color": "blue"},
+            ],
+        },
+    )
     return Solution(ok=True, result=res)
 
 
@@ -32,6 +50,9 @@ def _fake_solution() -> Solution:
         ("examples/composable/06_precoast_impulsive_link_3burn.py", 1),
         ("examples/composable/07_general_precoast_impulsive.py", 1),
         ("examples/composable/08_rendezvous_mode_precoast.py", 1),
+        ("examples/composable/09_terminal_orbital_elements.py", 2),
+        ("examples/composable/10_chemical_burn_j2.py", 1),
+        ("examples/composable/11_impulse_vs_chemical_burn.py", 1),
     ],
 )
 def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int) -> None:
@@ -73,4 +94,24 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
     elif script_rel.endswith("08_rendezvous_mode_precoast.py"):
         assert len(missions[0].phases) == 2
         assert missions[0].phases[1].mode.lower() == "rendezvous"
-
+    elif script_rel.endswith("09_terminal_orbital_elements.py"):
+        assert len(missions) == 2
+        assert all(len(mission.phases) == 1 for mission in missions)
+        assert len(missions[0].phases[0].variables) == 1
+        assert len(missions[1].phases[0].variables) == 2
+    elif script_rel.endswith("10_chemical_burn_j2.py"):
+        assert [phase.mode for phase in missions[0].phases] == ["chemical_burn", "coast", "chemical_burn"]
+        assert plotted == ["traj_composable_chemical_burn_j2.html"]
+    elif script_rel.endswith("11_impulse_vs_chemical_burn.py"):
+        assert [phase.mode for phase in missions[0].phases] == ["chemical_burn", "coast", "chemical_burn"]
+        assert plotted == [
+            "traj_composable_impulse_reference.html",
+            "traj_composable_chemical_reference.html",
+        ]
+    elif script_rel.endswith("09_terminal_orbital_elements.py"):
+        assert len(missions[0].phases) == 1
+        kinds = [getattr(c, "kind", "") for c in missions[0].phases[0].constraints]
+        assert "semi_major_axis" in kinds
+        assert "eccentricity" in kinds
+        assert "inclination_deg" in kinds
+        assert len(missions[0].phases[0].variables) == 2
