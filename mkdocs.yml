@@ -1,0 +1,21 @@
+site_name: Octavian
+site_description: Trajectory optimization and astrodynamics in Python.
+repo_url: https://github.com/GHevia/octavian
+
+theme:
+  name: mkdocs
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: numpy
+            show_source: true
+            show_root_heading: true
+            show_signature_annotations: true
+
+nav:
+  - Home: index.md
+  - API Reference: api.md

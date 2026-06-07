@@ -39,6 +39,8 @@ dev = [
   "ruff>=0.6",
   "black>=24.0",
   "pre-commit>=3.6",
+  "mkdocs>=1.6",
+  "mkdocstrings[python]>=0.25",
 ]
 
 [tool.hatch.build]

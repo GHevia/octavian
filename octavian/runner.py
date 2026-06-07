@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from .models import RetryPolicy, RunPlan, SolveConfig
@@ -30,90 +30,67 @@ class MissionRunner:
     retry: RetryPolicy = field(default_factory=RetryPolicy.default)
 
     def solve(self, mission: Mission) -> Solution:
-        """Solve a mission through the configured backend-selection pipeline.
+        """Solve a mission through validation, staging, backend dispatch, and retry.
 
-        Args:
-            mission: Mission to validate, map, and solve.
+        Parameters
+        ----------
+        mission
+            Mission to validate, compile, and solve.
 
-        Returns:
-            A solution wrapper containing the backend result and attempt log.
+        Returns
+        -------
+        Solution
+            Solver result plus an attempt log describing each stage and retry.
         """
-        from .mission import Mission
-
-        if not isinstance(mission, Mission):
-            raise TypeError("MissionRunner.solve expects a Mission.")
-
-        mission.validate()
-
+        self._validate_mission(mission)
+        backend = _select_backend(mission)
         attempt_logs: list[AttemptLog] = []
         last_error: str | None = None
-        plan_stages = list(self.plan.stages) or [None]
-        use_composable_backend = _is_composable_mission(mission)
 
-        def _stage_name(stage_config) -> str:
-            return getattr(stage_config, "name", "default") if stage_config is not None else "default"
+        for stage_index, stage in enumerate(_runner_stages(self.plan)):
+            stage_label = _stage_label(stage)
+            stage_problem = _build_stage_problem(mission, backend, stage)
 
-        for stage_index, stage_config in enumerate(plan_stages):
-            stage_label = _stage_name(stage_config)
-            rendezvous_spec = None
-
-            if not use_composable_backend:
+            for attempt_index in range(1, self._max_attempts() + 1):
+                result = None
                 try:
-                    rendezvous_spec = _mission_to_rendezvous_spec(mission)
+                    result = _solve_stage_problem(stage_problem, self.solve_options)
                 except Exception as exc:  # noqa: BLE001
-                    raise MissionBuildError(str(exc)) from exc
-
-            if (
-                rendezvous_spec is not None
-                and stage_config is not None
-                and getattr(stage_config, "nsegs_scale", None)
-            ):
-                rendezvous_spec = _scale_mesh(
-                    rendezvous_spec, float(stage_config.nsegs_scale)
-                )
-
-            max_attempts = max(1, int(self.solve_config.max_attempts))
-            for attempt_index in range(1, max_attempts + 1):
-                try:
-                    if use_composable_backend:
-                        result = solve_composable_mission(mission, options=self.solve_options)
-                    else:
-                        result = solve_rendezvous(rendezvous_spec, options=self.solve_options)
-
-                    attempt_logs.append(
-                        AttemptLog(stage=stage_label, attempt=attempt_index, status="ok")
-                    )
-                    solution = Solution(
-                        ok=bool(result.converged),
-                        result=result,
-                        attempts=attempt_logs,
-                    )
-                    solution.info.update(
-                        {"stage": stage_label, "stage_index": stage_index}
-                    )
-                    if result.converged or not self.solve_config.raise_on_fail:
-                        return solution
-                    raise RuntimeError("Solver did not converge")
-                except Exception as exc:  # noqa: BLE001
-                    error_message = str(exc)
-                    last_error = error_message
+                    last_error = str(exc)
                     attempt_logs.append(
                         AttemptLog(
                             stage=stage_label,
                             attempt=attempt_index,
                             status="fail",
-                            message=error_message,
+                            message=last_error,
                         )
                     )
-
-                    if not self.retry.enabled or attempt_index >= max_attempts:
+                    if not self._should_retry(attempt_index):
                         break
-                    if rendezvous_spec is not None:
-                        rendezvous_spec = _apply_simple_retry(
-                            rendezvous_spec,
-                            attempt_index,
-                            error_message,
-                        )
+                    stage_problem = _retry_stage_problem(
+                        stage_problem,
+                        attempt_index,
+                        last_error,
+                    )
+                    continue
+
+                attempt_logs.append(AttemptLog(stage=stage_label, attempt=attempt_index, status="ok"))
+                solution = Solution(ok=bool(result.converged), result=result, attempts=attempt_logs)
+                solution.info.update({"stage": stage_label, "stage_index": stage_index})
+                if result.converged or not self.solve_config.raise_on_fail:
+                    return solution
+                last_error = "Solver did not converge"
+                attempt_logs.append(
+                    AttemptLog(
+                        stage=stage_label,
+                        attempt=attempt_index,
+                        status="fail",
+                        message=last_error,
+                    )
+                )
+                if not self._should_retry(attempt_index):
+                    break
+                stage_problem = _retry_stage_problem(stage_problem, attempt_index, last_error)
 
         solution = Solution(
             ok=False,
@@ -124,6 +101,186 @@ class MissionRunner:
         if self.solve_config.raise_on_fail:
             raise RuntimeError(solution.summary())
         return solution
+
+    def _validate_mission(self, mission: Mission) -> None:
+        """Validate the mission object before backend selection.
+
+        Parameters
+        ----------
+        mission
+            Candidate mission object.
+
+        Raises
+        ------
+        TypeError
+            If ``mission`` is not an Octavian ``Mission``.
+        ValueError
+            If mission-level validation fails.
+        """
+        from .mission import Mission
+
+        if not isinstance(mission, Mission):
+            raise TypeError("MissionRunner.solve expects a Mission.")
+        mission.validate()
+
+    def _max_attempts(self) -> int:
+        """Return the configured maximum attempt count.
+
+        Returns
+        -------
+        int
+            At least one attempt.
+        """
+        configured_attempts = max(1, int(self.solve_config.max_attempts))
+        if not self.retry.enabled:
+            return configured_attempts
+        retry_limited_attempts = max(1, 1 + int(self.retry.max_retries))
+        return min(configured_attempts, retry_limited_attempts)
+
+    def _should_retry(self, attempt_index: int) -> bool:
+        """Return whether another attempt should be made.
+
+        Parameters
+        ----------
+        attempt_index
+            One-based attempt index that just finished.
+
+        Returns
+        -------
+        bool
+            Whether retry policy and solve config allow another attempt.
+        """
+        return bool(self.retry.enabled) and attempt_index < self._max_attempts()
+
+
+@dataclass(frozen=True, slots=True)
+class _StageProblem:
+    """Backend input for one runner stage."""
+
+    backend: str
+    mission: Mission
+    rendezvous_spec: TwoImpulseFreeTimeSpec | TwoImpulsePreCoastSpec | None = None
+
+
+def _select_backend(mission: Mission) -> str:
+    """Choose the solver backend for a mission.
+
+    Parameters
+    ----------
+    mission
+        Validated mission.
+
+    Returns
+    -------
+    str
+        ``"composable"`` or ``"rendezvous"``.
+    """
+    return "composable" if _is_composable_mission(mission) else "rendezvous"
+
+
+def _runner_stages(plan: RunPlan):
+    """Yield configured stages or a single default stage.
+
+    Parameters
+    ----------
+    plan
+        Runner plan.
+
+    Returns
+    -------
+    list
+        Stage objects, or ``[None]`` when no stages are configured.
+    """
+    return list(plan.stages) or [None]
+
+
+def _stage_label(stage) -> str:
+    """Return a human-readable stage label.
+
+    Parameters
+    ----------
+    stage
+        Stage object or ``None``.
+
+    Returns
+    -------
+    str
+        Stage name for attempt logs.
+    """
+    return getattr(stage, "name", "default") if stage is not None else "default"
+
+
+def _build_stage_problem(mission: Mission, backend: str, stage) -> _StageProblem:
+    """Build the solver input for one stage.
+
+    Parameters
+    ----------
+    mission
+        Validated mission.
+    backend
+        Selected backend name.
+    stage
+        Stage configuration or ``None``.
+
+    Returns
+    -------
+    _StageProblem
+        Backend input for a single stage.
+    """
+    if backend == "composable":
+        return _StageProblem(backend=backend, mission=mission)
+
+    rendezvous_spec = _mission_to_rendezvous_spec(mission)
+    if stage is not None and getattr(stage, "nsegs_scale", None):
+        rendezvous_spec = _scale_mesh(rendezvous_spec, float(stage.nsegs_scale))
+    return _StageProblem(backend=backend, mission=mission, rendezvous_spec=rendezvous_spec)
+
+
+def _solve_stage_problem(problem: _StageProblem, options: SolverOptions):
+    """Run the selected backend for one stage.
+
+    Parameters
+    ----------
+    problem
+        Stage-specific backend input.
+    options
+        Solver options.
+
+    Returns
+    -------
+    RendezvousResult
+        Backend result object.
+    """
+    if problem.backend == "composable":
+        return solve_composable_mission(problem.mission, options=options)
+    if problem.rendezvous_spec is None:
+        raise MissionBuildError("Rendezvous backend requires a rendezvous specification.")
+    return solve_rendezvous(problem.rendezvous_spec, options=options)
+
+
+def _retry_stage_problem(problem: _StageProblem, attempt_index: int, message: str) -> _StageProblem:
+    """Return adjusted stage input for the next retry.
+
+    Parameters
+    ----------
+    problem
+        Previous stage problem.
+    attempt_index
+        One-based failed attempt index.
+    message
+        Failure message from the previous attempt.
+
+    Returns
+    -------
+    _StageProblem
+        Updated problem for the next attempt.
+    """
+    if problem.rendezvous_spec is None:
+        return problem
+    return replace(
+        problem,
+        rendezvous_spec=_apply_simple_retry(problem.rendezvous_spec, attempt_index, message),
+    )
 
 
 def _mission_to_rendezvous_spec(
@@ -248,15 +405,11 @@ def _scale_mesh(
     if scale <= 0:
         return spec
     if isinstance(spec, TwoImpulseFreeTimeSpec):
-        return TwoImpulseFreeTimeSpec(
-            **{**spec.__dict__, "nsegs": max(10, int(spec.nsegs * scale))}
-        )
-    return TwoImpulsePreCoastSpec(
-        **{
-            **spec.__dict__,
-            "nsegs_transfer": max(10, int(spec.nsegs_transfer * scale)),
-            "nsegs_precoast": max(10, int(spec.nsegs_precoast * scale)),
-        }
+        return replace(spec, nsegs=max(10, int(spec.nsegs * scale)))
+    return replace(
+        spec,
+        nsegs_transfer=max(10, int(spec.nsegs_transfer * scale)),
+        nsegs_precoast=max(10, int(spec.nsegs_precoast * scale)),
     )
 
 
@@ -270,15 +423,11 @@ def _apply_simple_retry(
 
     if "mesh" in error_message and "inconsistent" in error_message:
         if isinstance(spec, TwoImpulseFreeTimeSpec):
-            return TwoImpulseFreeTimeSpec(
-                **{**spec.__dict__, "nsegs": max(20, spec.nsegs // 2)}
-            )
-        return TwoImpulsePreCoastSpec(
-            **{
-                **spec.__dict__,
-                "nsegs_transfer": max(20, spec.nsegs_transfer // 2),
-                "nsegs_precoast": max(10, spec.nsegs_precoast // 2),
-            }
+            return replace(spec, nsegs=max(20, spec.nsegs // 2))
+        return replace(
+            spec,
+            nsegs_transfer=max(20, spec.nsegs_transfer // 2),
+            nsegs_precoast=max(10, spec.nsegs_precoast // 2),
         )
 
     if ("did not converge" in error_message or "converge" in error_message) and isinstance(
@@ -291,15 +440,11 @@ def _apply_simple_retry(
             if (attempt % 2 == 1)
             else (0.75 * float(tf_max_s) + 0.25 * float(tf_min_s))
         )
-        return TwoImpulseFreeTimeSpec(**{**spec.__dict__, "tf_guess_s": tf_guess_s})
+        return replace(spec, tf_guess_s=tf_guess_s)
 
     if isinstance(spec, TwoImpulseFreeTimeSpec):
-        return TwoImpulseFreeTimeSpec(
-            **{**spec.__dict__, "lambert_grid_size": int(spec.lambert_grid_size) + 20}
-        )
-    return TwoImpulsePreCoastSpec(
-        **{**spec.__dict__, "lambert_grid_size": int(spec.lambert_grid_size) + 20}
-    )
+        return replace(spec, lambert_grid_size=int(spec.lambert_grid_size) + 20)
+    return replace(spec, lambert_grid_size=int(spec.lambert_grid_size) + 20)
 
 
 def _is_composable_mission(mission: Mission) -> bool:

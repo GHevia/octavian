@@ -18,11 +18,14 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-try:
-    import asset_asrl as ast  # type: ignore
-except Exception:  # pragma: no cover
-    ast = None  # type: ignore
-
+from .._asset import (
+    Tmodes,
+    add_back_time_bound,
+    oc,
+    require_asset,
+    solve_with_standard_sequence,
+    vf,
+)
 from ..astro.kepler import estimate_orbital_period_s, kepler_dense_guess, propagate_cartesian_rv
 from ..astro.lambert import LambertSeed, select_best_lambert_seed
 from ..astro.types import as_vec3
@@ -32,25 +35,12 @@ from ..specs import TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec
 from ..types import Maneuver
 from .options import SolverOptions
 
-if ast is not None:  # pragma: no cover
-    vf = ast.VectorFunctions
-    oc = ast.OptimalControl
-    Tmodes = oc.TranscriptionModes
-else:  # pragma: no cover
-    vf = None  # type: ignore
-    oc = None  # type: ignore
-    Tmodes = None  # type: ignore
-
 TrajArray = NDArray[np.float64]
 
 
 def _require_asset() -> None:
     """Raise a clear error if ASSET is not installed."""
-    if ast is None:
-        raise RuntimeError(
-            "asset_asrl is required for optimization solves. Install it (and its compiled dependencies) "
-            "in your environment before calling octavian.solvers.*"
-        )
+    require_asset("optimization solves")
 
 
 @dataclass
@@ -328,7 +318,7 @@ def solve_two_impulse_free_time(
     phase.addBoundaryValue("Back", ["R"], as_vec3(spec.xf.r_m))
 
     # Back time bound
-    phase.addLUVarBound("Back", "time", tfmin, tfmax)
+    add_back_time_bound(phase, 6, tfmin, tfmax)
 
     # Optional: if boundary impulses are disabled, fix boundary velocity to the provided boundary state.
     if not bool(getattr(spec, "dv_front", True)):
@@ -380,7 +370,7 @@ def solve_two_impulse_free_time(
     ocp.setAdaptiveMesh(True)
     ocp.PrintMeshInfo = False
 
-    converged = ocp.solve_optimize_solve()
+    converged = solve_with_standard_sequence(ocp)
 
     traj = np.asarray(phase.returnTraj(), dtype=np.float64)
     # traj columns for XVars=6,UVars=0 typically: [x0..x5, t]
@@ -538,10 +528,7 @@ def solve_two_impulse_precoast(
             ["R", "V", "t"],
             np.hstack([as_vec3(spec.x0.r_m), as_vec3(spec.x0.v_mps), [t0]]),
         )
-    try:
-        phase0.addLUVarBound("Back", "time", t1min, t1max)
-    except Exception:
-        phase0.addLUVarBound("Back", 6, t1min, t1max)
+    add_back_time_bound(phase0, 6, t1min, t1max)
     phase0.addLowerDeltaTimeBound(float(spec.min_dt_precoast_s))
 
     # Phase 1 boundary: fix final position, bound tf
@@ -549,7 +536,7 @@ def solve_two_impulse_precoast(
     # Optional: if terminal impulse is disabled, fix final velocity.
     if not bool(getattr(spec, "dv_back", True)):
         phase1.addBoundaryValue("Back", ["V"], as_vec3(spec.xf.v_mps))
-    phase1.addLUVarBound("Back", "time", tfmin, tfmax)
+    add_back_time_bound(phase1, 6, tfmin, tfmax)
     phase1.addLowerDeltaTimeBound(float(spec.min_dt_transfer_s))
 
     # phase0
@@ -641,8 +628,7 @@ def solve_two_impulse_precoast(
     ocp.setAdaptiveMesh(True)
     ocp.PrintMeshInfo = False
 
-    converged = ocp.solve()
-    converged = ocp.optimize_solve()
+    converged = solve_with_standard_sequence(ocp)
 
     traj0 = np.asarray(phase0.returnTraj(), dtype=np.float64)
     traj1 = np.asarray(phase1.returnTraj(), dtype=np.float64)
