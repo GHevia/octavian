@@ -84,3 +84,10 @@ report:
 - constraint reports.
 
 Plotly helpers turn the trajectory and maneuvers into inspectable HTML files.
+
+## Documentation Contract
+
+Octavian treats docs and examples as part of the product surface. If a new
+capability changes how users configure, solve, or inspect missions, the same PR
+should update the relevant tutorial, example guide, and API docstrings. A
+feature that exists only in code is not complete enough for users to rely on.
