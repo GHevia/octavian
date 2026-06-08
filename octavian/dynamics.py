@@ -22,6 +22,33 @@ def _point_mass_acceleration(position_vec, mu_m3ps2: float):
     return (-float(mu_m3ps2)) * position_vec.normalized_power3()
 
 
+def j2_acceleration_components(
+    position_m,
+    *,
+    mu_m3ps2: float,
+    radius_m: float = 6_378_136.3,
+    j2: float = 1.08262668e-3,
+):
+    """Return the Cartesian J2 acceleration components for an ECI position.
+
+    This follows the standard oblate-body acceleration model used by the ASSET
+    vector-function implementation below, and is intentionally numpy-free so it
+    can be used in lightweight validation tests.
+    """
+    x, y, z = [float(component) for component in position_m]
+    radius_sq = x * x + y * y + z * z
+    radius = radius_sq**0.5
+    z_sq_over_r_sq = (z * z) / radius_sq
+    scale = 1.5 * float(j2) * float(mu_m3ps2) * (float(radius_m) ** 2) / (radius**5)
+    common_xy = 5.0 * z_sq_over_r_sq - 1.0
+    z_term = 5.0 * z_sq_over_r_sq - 3.0
+    return (
+        scale * x * common_xy,
+        scale * y * common_xy,
+        scale * z * z_term,
+    )
+
+
 def _j2_acceleration(position_vec, *, mu_m3ps2: float, radius_m: float, j2: float):
     radius_sq = position_vec.dot(position_vec)
     radius = position_vec.norm()

@@ -72,6 +72,7 @@ Do not blur these layers without a strong reason.
 ## Repo Workflow Expectations
 
 - Assume the default branch is `dev`.
+- Treat each Codex request as its own branch and pull request unless the user explicitly asks to work on an existing branch.
 - Keep changes focused on the task at hand.
 - Do not revert unrelated user changes.
 - Prefer small, reviewable patches over broad rewrites.
@@ -93,7 +94,7 @@ ASSET-backed solver commands should run inside the local conda environment:
 
 ```bash
 conda run -n asset_env python -m pytest tests/test_example_regressions.py -q
-conda run -n asset_env python examples/composable/10_chemical_burn_j2.py
+conda run -n asset_env python examples/composable/08_chemical_burn_j2.py
 ```
 
 Notes:

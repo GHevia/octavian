@@ -30,18 +30,20 @@ from octavian.viz.plotly import save_trajectory_html
 
 MU = 3.986004418e14
 R_EARTH_M = 6378.1363e3
+R_INITIAL_M = 7_000e3
+R_FINAL_M = 12_000e3
 
 spacecraft = Spacecraft(name="DemoSat", dry_mass_kg=150.0, thrusters=[Thruster(name="main")])
 dynamics = Dynamics(mu_m3ps2=MU)
 
 x0 = state(
-    r_m=[7000e3, 0.0, 0.0],
-    v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 0.0],
+    r_m=[R_INITIAL_M, 0.0, 0.0],
+    v_mps=[0.0, float(np.sqrt(MU / R_INITIAL_M)), 0.0],
 )
 
 xf = state(
-    r_m=[6100e3, 5000e3, 0.0],
-    v_mps=[-1500.0, 4500.0, 0.0],
+    r_m=[-R_FINAL_M, 0.0, 0.0],
+    v_mps=[0.0, -float(np.sqrt(MU / R_FINAL_M)), 0.0],
 )
 
 # Per-phase duration bounds (s). Set tof_is_relative=True so these are treated as durations.

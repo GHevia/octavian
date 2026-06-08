@@ -25,6 +25,8 @@ from octavian.quick import state
 from octavian.viz.plotly import save_trajectory_html
 
 MU = 3.986004418e14
+R_INITIAL_M = 7_000e3
+R_FINAL_M = 12_000e3
 
 
 def snap_maneuvers_to_traj(traj: np.ndarray, maneuvers):
@@ -58,13 +60,13 @@ min_altitude_m = 60e3
 r_min_m = R_EARTH_M + min_altitude_m
 
 x0 = state(
-    r_m=[7000e3, 0.0, 0.0],
-    v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 0.0],
+    r_m=[R_INITIAL_M, 0.0, 0.0],
+    v_mps=[0.0, float(np.sqrt(MU / R_INITIAL_M)), 0.0],
 )
 
 xf = state(
-    r_m=[6100e3, 5000e3, 0.0],
-    v_mps=[-1500.0, 4500.0, 0.0],
+    r_m=[-R_FINAL_M, 0.0, 0.0],
+    v_mps=[0.0, -float(np.sqrt(MU / R_FINAL_M)), 0.0],
 )
 
 precoast = Phase(

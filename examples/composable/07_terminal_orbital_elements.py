@@ -1,11 +1,11 @@
-"""Composable example 09: terminal orbital-element constraints.
+"""Composable example 07: terminal orbital-element constraints.
 
 This example targets only semi-major axis, eccentricity, and inclination at the
 end of the transfer. The terminal Cartesian state is provided only as a guess
 anchor for seeding the solve.
 
 Run:
-  python examples/composable/09_terminal_orbital_elements.py
+  python examples/composable/07_terminal_orbital_elements.py
 """
 
 from __future__ import annotations

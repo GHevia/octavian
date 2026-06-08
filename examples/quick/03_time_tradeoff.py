@@ -20,14 +20,21 @@ MU = 3.986004418e14
 
 
 def build_x0_xf():
+    r_initial_m = 7_000e3
+    r_final_m = 10_000e3
+    theta = np.deg2rad(120.0)
     x0 = state(
-        r_m=[7000e3, 0.0, 0.0],
-        v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 0.0],
+        r_m=[r_initial_m, 0.0, 0.0],
+        v_mps=[0.0, float(np.sqrt(MU / r_initial_m)), 0.0],
     )
 
     xf = state(
-        r_m=[6500e3, 2200e3, 0.0],
-        v_mps=[-900.0, 7200.0, 0.0],
+        r_m=[r_final_m * float(np.cos(theta)), r_final_m * float(np.sin(theta)), 0.0],
+        v_mps=[
+            -float(np.sqrt(MU / r_final_m)) * float(np.sin(theta)),
+            float(np.sqrt(MU / r_final_m)) * float(np.cos(theta)),
+            0.0,
+        ],
     )
     return x0, xf
 

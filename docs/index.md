@@ -10,4 +10,5 @@ The API reference is generated from numpy-style docstrings with mkdocstrings.
 ```bash
 pip install -e ".[dev]"
 mkdocs serve
+mkdocs build
 ```
