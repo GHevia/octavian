@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Dynamics models.
 
 Octavian's primary optimal-control backend is ASSET. To keep the rest of the
@@ -10,26 +8,14 @@ If ASSET is not installed, constructing ASSET-backed dynamics will raise a
 clear error, but importing this module will still succeed.
 """
 
+from __future__ import annotations
 
-try:
-    import asset_asrl as ast  # type: ignore
-except Exception:  # pragma: no cover
-    ast = None  # type: ignore
-
-if ast is not None:  # pragma: no cover
-    vf = ast.VectorFunctions
-    oc = ast.OptimalControl
-else:  # pragma: no cover
-    vf = None  # type: ignore
-    oc = None  # type: ignore
+from ._asset import oc, require_asset, vf
 
 
 def _require_asset() -> None:
-    if ast is None:
-        raise RuntimeError(
-            "asset_asrl is required to construct ASSET-backed dynamics. "
-            "Install it (and its compiled dependencies) before calling solvers."
-        )
+    """Require ASSET before constructing a backend ODE."""
+    require_asset("ASSET-backed dynamics")
 
 
 def _point_mass_acceleration(position_vec, mu_m3ps2: float):

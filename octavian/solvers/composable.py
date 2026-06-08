@@ -27,17 +27,19 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-try:
-    import asset_asrl as ast  # type: ignore
-except Exception:  # pragma: no cover
-    ast = None  # type: ignore
-
-from typing import TYPE_CHECKING
-
+from .._asset import (
+    Tmodes,
+    add_back_time_bound,
+    fix_front_time,
+    oc,
+    require_asset,
+    solve_with_standard_sequence,
+    vf,
+)
 from ..constraints import Constraint, OrbitalElementConstraint, Position, State
 from ..links import impulsive as impulsive_link
 from ..phase import Phase
@@ -48,7 +50,6 @@ from .rendezvous import RendezvousResult  # reuse stable result type
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..mission import Mission
-import contextlib
 
 from ..astro.kepler import (
     cartesian_to_classic,
@@ -62,22 +63,10 @@ from ..astro.units import default_units
 from ..dynamics import ChemicalBurnECI, MassCoastECI, PerturbedECI, TwoBodyECI
 from ..time import normalize_time_bounds
 
-if ast is not None:  # pragma: no cover
-    vf = ast.VectorFunctions
-    oc = ast.OptimalControl
-    Tmodes = oc.TranscriptionModes
-else:  # pragma: no cover
-    vf = None  # type: ignore
-    oc = None  # type: ignore
-    Tmodes = None  # type: ignore
-
 
 def _require_asset() -> None:
-    if ast is None:
-        raise RuntimeError(
-            "asset_asrl is required for composable optimization solves. "
-            "Install it (and its compiled dependencies) in your environment."
-        )
+    """Require ASSET before compiling a composable mission."""
+    require_asset("composable optimization solves")
 
 
 @dataclass
@@ -159,12 +148,12 @@ def _first_thruster(phase: Phase):
     if isinstance(spacecraft, str) or spacecraft is None:
         raise ValueError(f"Chemical burn phase {phase.name!r} requires a Spacecraft object.")
     thruster_name = str(getattr(phase, "info", {}).get("thruster", "main"))
-    try:
-        return spacecraft.thruster(thruster_name)
-    except KeyError:
-        if len(spacecraft.thrusters) == 1:
-            return spacecraft.thrusters[0]
-        raise
+    thruster = spacecraft.get_thruster(thruster_name)
+    if thruster is not None:
+        return thruster
+    if len(spacecraft.thrusters) == 1:
+        return spacecraft.thrusters[0]
+    raise KeyError(f"No thruster named {thruster_name!r} on spacecraft {spacecraft.name!r}")
 
 
 def _phase_perturbations(phase: Phase):
@@ -1737,8 +1726,7 @@ def solve_composable_mission(
 
         # First phase front time fixed at 0 unless user provides otherwise
         if b.index == 0:
-            with contextlib.suppress(Exception):
-                ap.addBoundaryValue("Front", ["t"], np.asarray([0.0], dtype=float))
+            fix_front_time(ap, 0.0)
 
         if b.state_dim == 7:
             spacecraft = ph.spacecraft
@@ -1823,10 +1811,7 @@ def solve_composable_mission(
         bounds = b.t_bounds
         if bounds is not None:
             tmin, tmax = map(float, bounds)
-            try:
-                ap.addLUVarBound("Back", "time", tmin, tmax)
-            except Exception:
-                ap.addLUVarBound("Back", b.state_dim, tmin, tmax)
+            add_back_time_bound(ap, b.state_dim, tmin, tmax)
             ap.addLowerDeltaTimeBound(0.1)
 
     # Apply links and link objectives
@@ -1944,9 +1929,7 @@ def solve_composable_mission(
         )
 
     # Solve
-    converged = (
-        ocp.solve_optimize_solve() if hasattr(ocp, "solve_optimize_solve") else ocp.optimize_solve()
-    )
+    converged = solve_with_standard_sequence(ocp)
 
     # Extract trajectory (stitch)
     raw_trajs = [np.asarray(b.asset_phase.returnTraj(), dtype=float) for b in built]

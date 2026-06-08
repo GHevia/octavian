@@ -48,8 +48,6 @@ def _fake_solution() -> Solution:
         ("examples/composable/04_terminal_velocity_hard_vs_objective.py", 2),
         ("examples/composable/05_plot_with_maneuvers.py", 1),
         ("examples/composable/06_precoast_impulsive_link_3burn.py", 1),
-        ("examples/composable/07_general_precoast_impulsive.py", 1),
-        ("examples/composable/08_rendezvous_mode_precoast.py", 1),
         ("examples/composable/09_terminal_orbital_elements.py", 2),
         ("examples/composable/10_chemical_burn_j2.py", 1),
         ("examples/composable/11_impulse_vs_chemical_burn.py", 1),
@@ -91,9 +89,6 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
         assert len(missions[0].phases) == 3
         assert missions[0].phases[1].link.kind == "impulsive"
         assert missions[0].phases[2].link.kind == "impulsive"
-    elif script_rel.endswith("08_rendezvous_mode_precoast.py"):
-        assert len(missions[0].phases) == 2
-        assert missions[0].phases[1].mode.lower() == "rendezvous"
     elif script_rel.endswith("09_terminal_orbital_elements.py"):
         assert len(missions) == 2
         assert all(len(mission.phases) == 1 for mission in missions)

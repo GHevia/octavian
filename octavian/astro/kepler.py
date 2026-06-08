@@ -2,11 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-try:
-    import asset_asrl as ast  # type: ignore
-except Exception:  # pragma: no cover
-    ast = None  # type: ignore
-
+from .._asset import ast
 from .types import Vec3, as_vec3
 
 

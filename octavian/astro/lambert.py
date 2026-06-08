@@ -5,11 +5,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-try:
-    import asset_asrl as ast  # type: ignore
-except Exception:  # pragma: no cover
-    ast = None  # type: ignore
-
+from .._asset import ast, require_asset
 from .types import Vec3, as_vec3
 
 
@@ -27,8 +23,8 @@ class LambertSeed:
 def _call_lambert_izzo(
     r0: Vec3, rf: Vec3, tof_s: float, mu: float, longway: bool, nrev: int, rightbranch: bool
 ) -> tuple[Vec3, Vec3]:
-    if ast is None:
-        raise RuntimeError("asset_asrl is required for lambert_izzo.")
+    """Call ASSET's Lambert solver for one branch."""
+    require_asset("Lambert seed generation")
     if int(nrev) == 0:
         v1, v2 = ast.Astro.lambert_izzo(r0, rf, float(tof_s), float(mu), bool(longway))
     else:
