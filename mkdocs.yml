@@ -1,9 +1,12 @@
 site_name: Octavian
 site_description: Trajectory optimization and astrodynamics in Python.
+site_url: https://ghevia.github.io/octavian/
 repo_url: https://github.com/GHevia/octavian
 
 theme:
   name: mkdocs
+  logo: assets/octavian_logo.PNG
+  favicon: assets/octavian_logo.PNG
 
 plugins:
   - search
@@ -18,4 +21,10 @@ plugins:
 
 nav:
   - Home: index.md
+  - Getting Started: tutorials/getting-started.md
+  - Concepts: concepts.md
+  - Examples:
+      - Quick API: examples/quick.md
+      - Composable API: examples/composable.md
+  - GitHub Pages: publishing.md
   - API Reference: api.md

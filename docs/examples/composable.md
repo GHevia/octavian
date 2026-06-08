@@ -1,0 +1,209 @@
+# Composable API Examples
+
+The composable examples expose the lower-level mission pieces: `Mission`,
+`Phase`, dynamics models, constraints, variables, links, and objectives. Use
+these scripts as templates when the quick helper does not describe the mission
+shape directly.
+
+## 01: Single-Phase Terminal Delta-v Objective
+
+Path: `examples/composable/01_single_phase_terminal_dv_objective.py`
+
+Run:
+
+```bash
+python examples/composable/01_single_phase_terminal_dv_objective.py
+```
+
+Feature focus:
+
+- One coast phase.
+- Front and back impulsive delta-v variables.
+- Terminal velocity relaxed into a delta-v objective while terminal position remains fixed.
+- Hohmann-style circular transfer used by the regression tests.
+
+Expected output: `traj_composable_hohmann_terminal_dv_objective.html`.
+
+Screenshot placeholder: `docs/assets/screenshots/composable-01-terminal-dv.png`.
+
+## 02: Precoast With Continuous Link
+
+Path: `examples/composable/02_precoast_continuous_link.py`
+
+Run:
+
+```bash
+python examples/composable/02_precoast_continuous_link.py
+```
+
+Feature focus:
+
+- Explicit precoast and transfer phases.
+- Continuous link: position, velocity, and time are continuous across the boundary.
+- No link maneuver is created.
+
+Expected output: `traj_composable_precoast_continuous_link.html`.
+
+Screenshot placeholder: `docs/assets/screenshots/composable-02-continuous-link.png`.
+
+## 03: Precoast With Impulsive Link
+
+Path: `examples/composable/03_precoast_impulsive_link.py`
+
+Run:
+
+```bash
+python examples/composable/03_precoast_impulsive_link.py
+```
+
+Feature focus:
+
+- Explicit precoast and transfer phases.
+- Impulsive link: position and time are continuous, velocity may jump.
+- Link delta-v becomes a maneuver marker and objective contribution.
+
+Expected output: `traj_composable_precoast_impulsive_link.html`.
+
+Screenshot placeholder: `docs/assets/screenshots/composable-03-impulsive-link.png`.
+
+## 04: Hard Terminal Velocity Versus Objective
+
+Path: `examples/composable/04_terminal_velocity_hard_vs_objective.py`
+
+Run:
+
+```bash
+python examples/composable/04_terminal_velocity_hard_vs_objective.py
+```
+
+Feature focus:
+
+- Same geometry solved two ways.
+- Hard terminal state constraint.
+- Terminal delta-v objective formulation.
+- Useful for understanding when a target velocity is a constraint versus a cost.
+
+Expected output:
+
+- `traj_composable_terminal_velocity_hard.html`.
+- `traj_composable_terminal_velocity_objective.html`.
+
+Screenshot placeholders:
+
+- `docs/assets/screenshots/composable-04-hard-terminal-velocity.png`.
+- `docs/assets/screenshots/composable-04-objective-terminal-velocity.png`.
+
+## 05: Plotting Maneuver Markers
+
+Path: `examples/composable/05_plot_with_maneuvers.py`
+
+Run:
+
+```bash
+python examples/composable/05_plot_with_maneuvers.py
+```
+
+Feature focus:
+
+- Plotly HTML output with maneuver markers.
+- Raw marker placement versus snapped-to-trajectory marker placement.
+- Minimum-radius path constraint included in the transfer.
+
+Expected output:
+
+- `traj_plot_maneuvers_raw.html`.
+- `traj_plot_maneuvers_snapped.html`.
+
+Screenshot placeholders:
+
+- `docs/assets/screenshots/composable-05-maneuvers-raw.png`.
+- `docs/assets/screenshots/composable-05-maneuvers-snapped.png`.
+
+## 06: Precoast Plus Two Transfers With Three Burns
+
+Path: `examples/composable/06_precoast_impulsive_link_3burn.py`
+
+Run:
+
+```bash
+python examples/composable/06_precoast_impulsive_link_3burn.py
+```
+
+Feature focus:
+
+- Three phases.
+- Two impulsive links.
+- Terminal impulse.
+- Minimum-altitude path constraint.
+
+Expected output: `traj_composable_precoast_impulsive_link_3burn.html`.
+
+Screenshot placeholder: `docs/assets/screenshots/composable-06-three-burn.png`.
+
+## 07: Terminal Orbital-Element Constraints
+
+Path: `examples/composable/07_terminal_orbital_elements.py`
+
+Run:
+
+```bash
+python examples/composable/07_terminal_orbital_elements.py
+```
+
+Feature focus:
+
+- Target semi-major axis, eccentricity, and inclination directly.
+- Cartesian terminal state used as a guess anchor.
+- Comparison between one terminal impulse and two terminal impulse variables.
+
+Expected output: `traj_composable_terminal_orbital_elements.html`.
+
+Screenshot placeholder: `docs/assets/screenshots/composable-07-orbital-elements.png`.
+
+## 08: Chemical Burn With J2
+
+Path: `examples/composable/08_chemical_burn_j2.py`
+
+Run:
+
+```bash
+python examples/composable/08_chemical_burn_j2.py
+```
+
+Feature focus:
+
+- Burn-coast-burn structure.
+- Finite chemical burn phases.
+- Mass depletion state.
+- Three thrust-direction controls.
+- J2 perturbation enabled in every phase.
+
+Expected output: `traj_composable_chemical_burn_j2.html`.
+
+Screenshot placeholder: `docs/assets/screenshots/composable-08-chemical-j2.png`.
+
+## 09: Impulsive Reference Versus Chemical Burn
+
+Path: `examples/composable/09_impulse_vs_chemical_burn.py`
+
+Run:
+
+```bash
+python examples/composable/09_impulse_vs_chemical_burn.py
+```
+
+Feature focus:
+
+- Impulsive transfer reference.
+- Finite-burn transfer over the same coast-time window.
+- Side-by-side comparison of idealized and chemical-burn workflows.
+
+Expected output:
+
+- `traj_composable_impulse_reference.html`.
+- `traj_composable_chemical_reference.html`.
+
+Screenshot placeholders:
+
+- `docs/assets/screenshots/composable-09-impulse-reference.png`.
+- `docs/assets/screenshots/composable-09-chemical-reference.png`.
