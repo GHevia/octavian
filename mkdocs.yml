@@ -4,7 +4,7 @@ site_url: https://ghevia.github.io/octavian/
 repo_url: https://github.com/GHevia/octavian
 
 theme:
-  name: mkdocs
+  name: readthedocs
   logo: assets/octavian_logo.PNG
   favicon: assets/octavian_logo.PNG
 
