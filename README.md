@@ -26,7 +26,17 @@ If you plan to run the optimization solvers, install `asset_asrl` separately in 
 ```bash
 python examples/quick/01_two_impulse_free_time.py
 python examples/quick/02_two_impulse_precoast_impulsive_link.py
-python examples/composable/10_chemical_burn_j2.py
+python examples/composable/08_chemical_burn_j2.py
+```
+
+## Documentation
+
+Install the development dependencies, serve the docs locally, or build the static site:
+
+```bash
+pip install -e ".[dev]"
+mkdocs serve
+mkdocs build
 ```
 
 

@@ -22,6 +22,31 @@ from octavian.solvers import SolverOptions
 
 MU = 3.986004418e14
 DEFAULT_OPTS = SolverOptions(print_level=0)
+HOHMANN_R0_M = 7_000e3
+HOHMANN_RF_M = 12_000e3
+LINK_R_FINAL_M = 10_000e3
+LINK_TARGET_ANOMALY_RAD = np.deg2rad(140.0)
+
+
+def _circular_state(radius_m: float, *, true_anomaly_rad: float = 0.0):
+    c = float(np.cos(true_anomaly_rad))
+    s = float(np.sin(true_anomaly_rad))
+    speed = float(np.sqrt(MU / radius_m))
+    return state(
+        r_m=[radius_m * c, radius_m * s, 0.0],
+        v_mps=[-speed * s, speed * c, 0.0],
+    )
+
+
+def _hohmann_reference() -> tuple[float, float]:
+    transfer_a_m = 0.5 * (HOHMANN_R0_M + HOHMANN_RF_M)
+    v0_mps = np.sqrt(MU / HOHMANN_R0_M)
+    vf_mps = np.sqrt(MU / HOHMANN_RF_M)
+    transfer_perigee_mps = np.sqrt(MU * (2.0 / HOHMANN_R0_M - 1.0 / transfer_a_m))
+    transfer_apogee_mps = np.sqrt(MU * (2.0 / HOHMANN_RF_M - 1.0 / transfer_a_m))
+    dv_mps = float((transfer_perigee_mps - v0_mps) + (vf_mps - transfer_apogee_mps))
+    tof_s = float(np.pi * np.sqrt((transfer_a_m**3) / MU))
+    return dv_mps, tof_s
 
 
 def _solve_ok(mission: Mission):
@@ -51,80 +76,54 @@ def _demo_spacecraft() -> Spacecraft:
 
 
 def _quick01_mission() -> Mission:
-    x0 = state(
-        r_m=[7000e3, 0.0, 0.0],
-        v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 0.0],
-    )
-    xf = state(
-        r_m=[6900e3, 900e3, 0.0],
-        v_mps=[0.0, 7500.0, 0.0],
-    )
+    x0 = _circular_state(HOHMANN_R0_M)
+    xf = _circular_state(HOHMANN_RF_M, true_anomaly_rad=np.pi)
     from octavian import two_burn_rendezvous
 
     return two_burn_rendezvous(
         x0,
         xf,
         mu_m3ps2=MU,
-        tf_bounds_s=(600.0, 7200.0),
+        tf_bounds_s=(1_200.0, 12_000.0),
         nsegs=60,
         lambert_grid_size=60,
-        nrevs_to_try=(0, 1),
+        nrevs_to_try=(0,),
         solver_options=DEFAULT_OPTS,
-        name="Quick: two-impulse (free time)",
+        name="Quick: Hohmann transfer between circular orbits",
     )
 
 
 def _composable01_mission() -> Mission:
     spacecraft = _demo_spacecraft()
     dynamics = Dynamics(mu_m3ps2=MU)
-    x0 = state(
-        r_m=[7000e3, 0.0, 0.0],
-        v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 0.0],
-    )
-    xf = state(
-        r_m=[6900e3, 900e3, 0.0],
-        v_mps=[0.0, 7500.0, 0.0],
-    )
+    x0 = _circular_state(HOHMANN_R0_M)
+    xf = _circular_state(HOHMANN_RF_M, true_anomaly_rad=np.pi)
 
-    phase1 = Phase(
+    phase = Phase(
         name="transfer",
         mode="coast",
         spacecraft=spacecraft,
         dynamics=dynamics,
-        tof_bounds_s=(600.0, 7200.0),
-        constraints=[constraints.state(x0, where="Front")],
-        variables=[variables.ImpulsiveDeltaV(where="Front")],
-    )
-    phase2 = Phase(
-        name="transfer",
-        mode="coast",
-        spacecraft=spacecraft,
-        dynamics=dynamics,
-        previous=phase1,
-        link=links.continuous(),
-        tof_bounds_s=(600.0, 7200.0),
-        constraints=[constraints.state(xf, where="Back")],
-        variables=[variables.ImpulsiveDeltaV(where="Back")],
+        tof_bounds_s=(3_000.0, 7_000.0),
+        constraints=[constraints.state(x0, where="Front"), constraints.state(xf, where="Back")],
+        variables=[
+            variables.ImpulsiveDeltaV(where="Front"),
+            variables.ImpulsiveDeltaV(where="Back"),
+        ],
     )
     return Mission(
-        name="Composable: split continuous two-phase terminal dv objective",
-        phases=[phase1, phase2],
+        name="Composable: Hohmann transfer between circular orbits",
+        phases=[phase],
         objectives=[objectives.minimize_total_delta_v()],
         solver_options=DEFAULT_OPTS,
         lambert_grid_size=60,
-        nrevs_to_try=(0, 1),
+        nrevs_to_try=(0,),
     )
 
 
 def _quick02_mission() -> Mission:
-    x0 = state(
-        r_m=[7000e3, 0.0, 0.0],
-        v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 0.0],
-    )
-    xf = state(
-        r_m=[6900e3, 900e3, 0.0],
-        v_mps=[0.0, 7500.0, 0.0],
-    )
+    x0 = _circular_state(HOHMANN_R0_M)
+    xf = _circular_state(HOHMANN_RF_M, true_anomaly_rad=np.pi)
     from octavian import two_burn_rendezvous
 
     return two_burn_rendezvous(
@@ -132,34 +131,28 @@ def _quick02_mission() -> Mission:
         xf,
         mu_m3ps2=MU,
         precoast=True,
-        t1_bounds_s=(0.0, 6000.0),
-        tf_bounds_s=(400.0, 60000.0),
+        t1_bounds_s=(1.0, 1_000.0),
+        tf_bounds_s=(3_000.0, 7_000.0),
         nsegs=60,
         precoast_grid_size=12,
         lambert_grid_size=50,
         solver_options=DEFAULT_OPTS,
-        nrevs_to_try=(0, 1),
-        name="Quick: precoast + transfer (impulsive link)",
+        nrevs_to_try=(0,),
+        name="Quick: precoast plus circular-orbit transfer",
     )
 
 
 def _composable_quick02_equivalent() -> Mission:
     spacecraft = _demo_spacecraft()
     dynamics = Dynamics(mu_m3ps2=MU)
-    x0 = state(
-        r_m=[7000e3, 0.0, 0.0],
-        v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 0.0],
-    )
-    xf = state(
-        r_m=[6900e3, 900e3, 0.0],
-        v_mps=[0.0, 7500.0, 0.0],
-    )
+    x0 = _circular_state(HOHMANN_R0_M)
+    xf = _circular_state(HOHMANN_RF_M, true_anomaly_rad=np.pi)
     precoast = Phase(
         name="precoast",
         mode="coast",
         spacecraft=spacecraft,
         dynamics=dynamics,
-        tof_bounds_s=(0.0, 6000.0),
+        tof_bounds_s=(1.0, 1_000.0),
         constraints=[constraints.state(x0, where="Front")],
     )
     transfer = Phase(
@@ -169,7 +162,7 @@ def _composable_quick02_equivalent() -> Mission:
         dynamics=dynamics,
         previous=precoast,
         link=links.impulsive(),
-        tof_bounds_s=(400.0, 60000.0),
+        tof_bounds_s=(3_000.0, 7_000.0),
         constraints=[constraints.state(xf, where="Back")],
         variables=[
             variables.ImpulsiveDeltaV(where="Front"),
@@ -190,14 +183,8 @@ def _composable_quick02_equivalent() -> Mission:
 
 
 def _quick03_mission(w_time: float) -> Mission:
-    x0 = state(
-        r_m=[7000e3, 0.0, 0.0],
-        v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 0.0],
-    )
-    xf = state(
-        r_m=[6500e3, 2200e3, 0.0],
-        v_mps=[-900.0, 7200.0, 0.0],
-    )
+    x0 = _circular_state(HOHMANN_R0_M)
+    xf = _circular_state(LINK_R_FINAL_M, true_anomaly_rad=np.deg2rad(120.0))
     from octavian import two_burn_rendezvous
 
     return two_burn_rendezvous(
@@ -246,14 +233,8 @@ def _composable_single_phase_mission(x0, xf, *, tf_bounds_s, w_time: float) -> M
 def _composable02_mission() -> Mission:
     spacecraft = _demo_spacecraft()
     dynamics = Dynamics(mu_m3ps2=MU)
-    x0 = state(
-        r_m=[7000e3, 0.0, 0.0],
-        v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 0.0],
-    )
-    xf = state(
-        r_m=[6100e3, 5000e3, 0.0],
-        v_mps=[-1500.0, 4500.0, 0.0],
-    )
+    x0 = _circular_state(HOHMANN_R0_M)
+    xf = _circular_state(LINK_R_FINAL_M, true_anomaly_rad=LINK_TARGET_ANOMALY_RAD)
     precoast = Phase(
         name="precoast",
         mode="coast",
@@ -285,14 +266,8 @@ def _composable02_mission() -> Mission:
 def _composable02_single_phase_equivalent() -> Mission:
     spacecraft = _demo_spacecraft()
     dynamics = Dynamics(mu_m3ps2=MU)
-    x0 = state(
-        r_m=[7000e3, 0.0, 0.0],
-        v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 0.0],
-    )
-    xf = state(
-        r_m=[6100e3, 5000e3, 0.0],
-        v_mps=[-1500.0, 4500.0, 0.0],
-    )
+    x0 = _circular_state(HOHMANN_R0_M)
+    xf = _circular_state(LINK_R_FINAL_M, true_anomaly_rad=LINK_TARGET_ANOMALY_RAD)
     phase = Phase(
         name="transfer",
         mode="coast",
@@ -316,14 +291,8 @@ def _composable02_single_phase_equivalent() -> Mission:
 def _composable03_mission() -> Mission:
     spacecraft = _demo_spacecraft()
     dynamics = Dynamics(mu_m3ps2=MU)
-    x0 = state(
-        r_m=[7000e3, 0.0, 0.0],
-        v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 0.0],
-    )
-    xf = state(
-        r_m=[6100e3, 5000e3, 0.0],
-        v_mps=[-1500.0, 4500.0, 0.0],
-    )
+    x0 = _circular_state(HOHMANN_R0_M)
+    xf = _circular_state(LINK_R_FINAL_M, true_anomaly_rad=LINK_TARGET_ANOMALY_RAD)
     precoast = Phase(
         name="precoast",
         mode="coast",
@@ -361,14 +330,8 @@ def _composable07_mission() -> Mission:
         thrusters=[Thruster(name="main", thrust_N=0.0, isp_s=1e9)],
     )
     dynamics = Dynamics(mu_m3ps2=MU)
-    x0 = state(
-        r_m=[7000e3, 0.0, 0.0],
-        v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 0.0],
-    )
-    xf = state(
-        r_m=[6100e3, 5000e3, 0.0],
-        v_mps=[-1500.0, 4500.0, 0.0],
-    )
+    x0 = _circular_state(HOHMANN_R0_M)
+    xf = _circular_state(LINK_R_FINAL_M, true_anomaly_rad=LINK_TARGET_ANOMALY_RAD)
     precoast = Phase(
         name="precoast",
         mode="coast",
@@ -403,14 +366,8 @@ def _composable05_mission() -> tuple[Mission, float]:
     spacecraft = _demo_spacecraft()
     dynamics = Dynamics(mu_m3ps2=MU)
     r_min_m = 6378.1363e3 + 60e3
-    x0 = state(
-        r_m=[7000e3, 0.0, 0.0],
-        v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 0.0],
-    )
-    xf = state(
-        r_m=[6100e3, 5000e3, 0.0],
-        v_mps=[-1500.0, 4500.0, 0.0],
-    )
+    x0 = _circular_state(HOHMANN_R0_M)
+    xf = _circular_state(HOHMANN_RF_M, true_anomaly_rad=np.pi)
     precoast = Phase(
         name="precoast",
         mode="coast",
@@ -446,14 +403,8 @@ def _composable06_mission() -> Mission:
     spacecraft = _demo_spacecraft()
     dynamics = Dynamics(mu_m3ps2=MU)
     r_min_m = 6378.1363e3 + 60e3
-    x0 = state(
-        r_m=[7000e3, 0.0, 0.0],
-        v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 0.0],
-    )
-    xf = state(
-        r_m=[6100e3, 5000e3, 0.0],
-        v_mps=[-1500.0, 4500.0, 0.0],
-    )
+    x0 = _circular_state(HOHMANN_R0_M)
+    xf = _circular_state(HOHMANN_RF_M, true_anomaly_rad=np.pi)
     precoast = Phase(
         name="precoast",
         mode="coast",
@@ -593,6 +544,14 @@ def test_example_01_quick_and_composable_match() -> None:
     _assert_results_close(quick, composable, tf_rtol=3e-2, dv_rtol=3e-2, tf_atol_s=20.0, dv_atol_mps=2.0)
 
 
+def test_example_01_matches_hohmann_reference_solution() -> None:
+    expected_dv_mps, expected_tof_s = _hohmann_reference()
+    quick = _solve_ok(_quick01_mission())
+
+    assert quick.tf_s() == pytest.approx(expected_tof_s, rel=2.0e-2, abs=30.0)
+    assert quick.total_dv_mps() == pytest.approx(expected_dv_mps, rel=2.0e-2, abs=10.0)
+
+
 def test_example_02_quick_and_equivalent_composable_match() -> None:
     quick = _solve_ok(_quick02_mission())
     composable = _solve_ok(_composable_quick02_equivalent())
@@ -600,14 +559,8 @@ def test_example_02_quick_and_equivalent_composable_match() -> None:
 
 
 def test_example_03_time_tradeoff_matches_composable_formulation() -> None:
-    x0 = state(
-        r_m=[7000e3, 0.0, 0.0],
-        v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 0.0],
-    )
-    xf = state(
-        r_m=[6500e3, 2200e3, 0.0],
-        v_mps=[-900.0, 7200.0, 0.0],
-    )
+    x0 = _circular_state(HOHMANN_R0_M)
+    xf = _circular_state(LINK_R_FINAL_M, true_anomaly_rad=np.deg2rad(120.0))
     quick_dv = _solve_ok(_quick03_mission(0.0))
     comp_dv = _solve_ok(_composable_single_phase_mission(x0, xf, tf_bounds_s=(600.0, 20_000.0), w_time=0.0))
     _assert_results_close(quick_dv, comp_dv, tf_rtol=5e-2, dv_rtol=5e-2, tf_atol_s=40.0, dv_atol_mps=5.0)

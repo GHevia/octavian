@@ -1,7 +1,7 @@
-"""Example 10: burn-coast-burn chemical transfer with J2 perturbation.
+"""Composable example 08: burn-coast-burn chemical transfer with J2 perturbation.
 
 Run:
-  python examples/composable/10_chemical_burn_j2.py
+  python examples/composable/08_chemical_burn_j2.py
 """
 
 from __future__ import annotations

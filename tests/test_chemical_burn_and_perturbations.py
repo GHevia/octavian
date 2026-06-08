@@ -151,8 +151,8 @@ def test_zero_weight_objective_remains_zero() -> None:
     assert time_weight == pytest.approx(0.0)
 
 
-def test_example_10_configures_burn_coast_burn_with_j2() -> None:
-    namespace = runpy.run_path(str(ROOT / "examples/composable/10_chemical_burn_j2.py"))
+def test_example_08_configures_burn_coast_burn_with_j2() -> None:
+    namespace = runpy.run_path(str(ROOT / "examples/composable/08_chemical_burn_j2.py"))
     mission = namespace["mission"]
     phases = mission.phases
 
@@ -162,8 +162,8 @@ def test_example_10_configures_burn_coast_burn_with_j2() -> None:
     composable._validate_chemical_burn_transfer(phases)
 
 
-def test_example_11_compares_impulse_and_chemical_transfers() -> None:
-    namespace = runpy.run_path(str(ROOT / "examples/composable/11_impulse_vs_chemical_burn.py"))
+def test_example_09_compares_impulse_and_chemical_transfers() -> None:
+    namespace = runpy.run_path(str(ROOT / "examples/composable/09_impulse_vs_chemical_burn.py"))
 
     chemical_mission = namespace["chemical_mission"]
 
