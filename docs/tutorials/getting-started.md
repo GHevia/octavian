@@ -1,44 +1,58 @@
 # Getting Started
 
-This tutorial sets up the current Octavian workflow: install the package, make
-sure ASSET is available for solver-backed runs, execute a quick transfer, and
-inspect the generated trajectory.
+This tutorial takes a new user from installation to a solved trajectory and an
+inspectable Plotly output file.
 
-## Installation
+## Create an Environment
 
-For package use:
-
-```bash
-pip install octavian
-```
-
-For local development:
+Use a virtual environment so solver dependencies stay isolated from the system
+Python installation.
 
 ```bash
-pip install -e ".[dev]"
+python -m venv .venv
 ```
 
-The development extra installs pytest, ruff, MkDocs, and mkdocstrings. It does
-not install `asset_asrl`.
-
-## ASSET Requirement
-
-Octavian treats ASSET (`asset_asrl`) as an optional runtime dependency so that
-documentation, configuration objects, tests, and non-solver utilities can import
-without ASSET installed.
-
-Solver-backed workflows need ASSET in the same Python environment that runs the
-examples. In this repository's local Windows setup, ASSET-backed commands should
-run through the conda environment:
+On Windows:
 
 ```bash
-conda run -n asset_env python -m pytest tests/test_example_regressions.py -q
-conda run -n asset_env python examples/quick/01_two_impulse_free_time.py
+.venv\Scripts\activate
 ```
 
-Use `conda run -n asset_env ...` for automation instead of relying on
-`conda activate`, because activation does not persist across separate shell
-commands.
+On macOS or Linux:
+
+```bash
+source .venv/bin/activate
+```
+
+Install Octavian:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install octavian
+```
+
+Octavian declares `asset_asrl` as a runtime dependency because the optimization
+backends use ASSET. If your platform cannot install ASSET from PyPI, install
+ASSET using its platform-specific instructions, then install Octavian in that
+same environment.
+
+Check that ASSET imports before running solver-backed examples:
+
+```bash
+python -c "import asset_asrl; print(asset_asrl.__file__)"
+```
+
+If that command reports a missing shared library or DLL, Python found the
+package but the native ASSET runtime is not loadable in the active environment.
+Fix the ASSET installation first, then rerun the Octavian example.
+
+For local development from a checkout:
+
+```bash
+python -m pip install -e ".[dev]"
+```
+
+The development extra adds pytest, ruff, MkDocs, and mkdocstrings.
 
 ## Run a First Transfer
 
@@ -60,44 +74,82 @@ Open the HTML file in a browser to inspect the trajectory and maneuver markers.
 Screenshot placeholder: add a trajectory image at
 `docs/assets/screenshots/quick-01-hohmann-transfer.png`.
 
-## Mission-Script Shape
+## What the Script Does
 
-Most scripts follow this structure:
+The example starts by defining the central-body gravitational parameter and two
+circular boundary states:
 
 ```python
-from octavian import state, two_burn_rendezvous
-from octavian.solvers import SolverOptions
+MU = 3.986004418e14
+R_INITIAL_M = 7_000e3
+R_FINAL_M = 12_000e3
 
-x0 = state(r_m=[7000e3, 0.0, 0.0], v_mps=[0.0, 7546.0, 0.0])
-xf = state(r_m=[-12000e3, 0.0, 0.0], v_mps=[0.0, -5763.0, 0.0])
+x0 = state(
+    r_m=[R_INITIAL_M, 0.0, 0.0],
+    v_mps=[0.0, float(np.sqrt(MU / R_INITIAL_M)), 0.0],
+)
+xf = state(
+    r_m=[-R_FINAL_M, 0.0, 0.0],
+    v_mps=[0.0, -float(np.sqrt(MU / R_FINAL_M)), 0.0],
+)
+```
 
+Then it asks Octavian to solve a two-impulse transfer:
+
+```python
 mission = two_burn_rendezvous(
     x0,
     xf,
-    tf_bounds_s=(3000.0, 7000.0),
+    mu_m3ps2=MU,
+    tf_bounds_s=(3_000.0, 7_000.0),
+    nsegs=60,
+    lambert_grid_size=60,
+    nrevs_to_try=(0,),
     solver_options=SolverOptions(print_level=3),
+    name="Quick: Hohmann transfer between circular orbits",
 )
-
-solution = mission.solve()
-print(solution.summary())
 ```
 
-Use the quick API when the standard rendezvous shape is enough. Use the
-composable API when you need explicit phases, links, custom constraints, finite
-burns, or perturbations.
+The important flags are:
 
-## Validate the Install
+| Flag | Meaning |
+| --- | --- |
+| `mu_m3ps2` | Gravitational parameter used by dynamics and Lambert seeding. |
+| `tf_bounds_s` | Lower and upper bounds on final transfer time. |
+| `nsegs` | Mesh resolution for the transfer phase. Higher values give the optimizer more transcription points. |
+| `lambert_grid_size` | Number of Lambert time-of-flight guesses used to seed the solve. |
+| `nrevs_to_try` | Revolution counts included in the Lambert seed search. `(0,)` keeps this first example single-revolution. |
+| `solver_options` | Backend solver settings such as print level and line-search behavior. |
+| `name` | Human-readable label used in summaries and plots. |
 
-For a lightweight local check:
+Finally, it solves and writes an HTML trajectory:
+
+```python
+sol = mission.solve()
+print(sol.summary())
+
+save_trajectory_html(
+    sol.result.traj,
+    "traj_quick_hohmann_transfer.html",
+    maneuvers=sol.result.maneuvers,
+    title=mission.name,
+)
+```
+
+## Validate a Development Checkout
+
+For local development:
 
 ```bash
 python -m pytest -q
 python -m ruff check .
-python -m mkdocs build
+python -m mkdocs build --strict
 ```
 
-For ASSET-backed trajectory regression checks:
+The example regression tests solve ASSET-backed trajectories. They are slower
+than import-only tests and should be run before publishing changes that affect
+solver behavior:
 
 ```bash
-conda run -n asset_env python -m pytest tests/test_example_regressions.py -q
+python -m pytest tests/test_example_regressions.py -q
 ```

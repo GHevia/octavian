@@ -22,7 +22,9 @@ plugins:
 nav:
   - Home: index.md
   - Getting Started: tutorials/getting-started.md
+  - Mission Patterns: tutorials/mission-patterns.md
   - Concepts: concepts.md
+  - Project Principles: project-principles.md
   - Examples:
       - Quick API: examples/quick.md
       - Composable API: examples/composable.md

@@ -18,8 +18,8 @@ This MVP includes:
 - Lambert-Izzo seed sweeps across time of flight, longway, and multi-rev cases.
 - Plotly HTML visualization with maneuver markers.
 
-`octavian` can be installed from PyPI, but ASSET must still be installed
-separately for solver-backed workflows.
+`octavian` declares ASSET (`asset_asrl`) as a runtime dependency because the
+solver-backed workflows rely on it.
 
 ## Install
 
@@ -27,12 +27,20 @@ separately for solver-backed workflows.
 pip install octavian
 ```
 
-If you plan to run optimization solvers, install `asset_asrl` separately in the
-same environment. In this repo's local Windows setup, solver-backed commands are
-usually run through:
+For an isolated install:
 
 ```bash
-conda run -n asset_env python ...
+python -m venv .venv
+.venv\Scripts\activate
+python -m pip install --upgrade pip
+python -m pip install octavian
+```
+
+Before running solver-backed examples, verify ASSET imports in the active
+environment:
+
+```bash
+python -c "import asset_asrl; print(asset_asrl.__file__)"
 ```
 
 ## Examples
@@ -43,7 +51,8 @@ python examples/quick/02_two_impulse_precoast_impulsive_link.py
 python examples/composable/08_chemical_burn_j2.py
 ```
 
-See the MkDocs site for tutorial-style walkthroughs of every example.
+See the MkDocs site for tutorial-style walkthroughs of every example and mission
+pattern.
 
 ## Documentation
 

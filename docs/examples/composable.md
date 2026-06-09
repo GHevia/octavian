@@ -5,6 +5,22 @@ The composable examples expose the lower-level mission pieces: `Mission`,
 these scripts as templates when the quick helper does not describe the mission
 shape directly.
 
+## Shared Composable API Terms
+
+| Setting | What it controls |
+| --- | --- |
+| `Mission(phases=[...])` | The complete optimization problem. |
+| `Phase(...)` | One segment of the trajectory. |
+| `mode="coast"` | Ballistic two-body or perturbed coast dynamics. |
+| `mode="chemical_burn"` | Finite burn dynamics with mass and thrust-direction controls. |
+| `previous=...` | Connects a phase to the phase before it. |
+| `link=links.continuous()` | Enforces continuous position, velocity, and time at the boundary. |
+| `link=links.impulsive()` | Enforces continuous position and time while allowing velocity to jump. |
+| `constraints.state(..., where="Front" or "Back")` | Fixes boundary state information. |
+| `constraints.min_radius(..., where="Path")` | Keeps the trajectory above a radius floor along the phase. |
+| `variables.ImpulsiveDeltaV(...)` | Exposes a boundary velocity jump as a decision variable and maneuver. |
+| `objectives.minimize_total_delta_v()` | Minimizes the sum of declared impulsive delta-v terms. |
+
 ## 01: Single-Phase Terminal Delta-v Objective
 
 Path: `examples/composable/01_single_phase_terminal_dv_objective.py`
@@ -15,12 +31,23 @@ Run:
 python examples/composable/01_single_phase_terminal_dv_objective.py
 ```
 
-Feature focus:
+Capability showcased:
 
 - One coast phase.
 - Front and back impulsive delta-v variables.
 - Terminal velocity relaxed into a delta-v objective while terminal position remains fixed.
 - Hohmann-style circular transfer used by the regression tests.
+
+Important choices:
+
+| Code | Purpose |
+| --- | --- |
+| `constraints.state(x0, where="Front")` | Fixes the departure Cartesian state. |
+| `constraints.state(xf, where="Back")` | Fixes the target position and supplies target velocity. |
+| `ImpulsiveDeltaV(where="Front")` | Allows a departure burn. |
+| `ImpulsiveDeltaV(where="Back")` | Relaxes terminal velocity and charges the arrival burn. |
+| `lambert_grid_size=60` | Seeds the coast arc with a Lambert search. |
+| `nrevs_to_try=(0,)` | Keeps the solve on the direct transfer family. |
 
 Expected output: `traj_composable_hohmann_terminal_dv_objective.html`.
 
@@ -36,11 +63,21 @@ Run:
 python examples/composable/02_precoast_continuous_link.py
 ```
 
-Feature focus:
+Capability showcased:
 
 - Explicit precoast and transfer phases.
-- Continuous link: position, velocity, and time are continuous across the boundary.
-- No link maneuver is created.
+- Continuous phase boundary.
+- No link maneuver.
+
+Important choices:
+
+| Code | Purpose |
+| --- | --- |
+| `precoast` phase | Propagates from the initial state before transfer. |
+| `variables.ImpulsiveDeltaV(where="Front")` on precoast | Allows an initial departure adjustment. |
+| `previous=precoast` | Orders the transfer after the precoast. |
+| `link=links.continuous()` | Forces the transfer to start exactly where and how the precoast ends. |
+| `ImpulsiveDeltaV(where="Back")` | Allows only a terminal arrival burn on the transfer phase. |
 
 Expected output: `traj_composable_precoast_continuous_link.html`.
 
@@ -56,11 +93,20 @@ Run:
 python examples/composable/03_precoast_impulsive_link.py
 ```
 
-Feature focus:
+Capability showcased:
 
 - Explicit precoast and transfer phases.
-- Impulsive link: position and time are continuous, velocity may jump.
-- Link delta-v becomes a maneuver marker and objective contribution.
+- Impulsive phase boundary.
+- Link maneuver marker and objective contribution.
+
+Important choices:
+
+| Code | Purpose |
+| --- | --- |
+| `link=links.impulsive()` | Allows velocity to jump between precoast and transfer. |
+| `ImpulsiveDeltaV(where="Front")` on transfer | Declares the link velocity jump as a burn. |
+| `ImpulsiveDeltaV(where="Back")` on transfer | Declares the terminal arrival burn. |
+| no impulse variable on precoast | Keeps the precoast ballistic from the fixed initial state. |
 
 Expected output: `traj_composable_precoast_impulsive_link.html`.
 
@@ -76,12 +122,21 @@ Run:
 python examples/composable/04_terminal_velocity_hard_vs_objective.py
 ```
 
-Feature focus:
+Capability showcased:
 
 - Same geometry solved two ways.
 - Hard terminal state constraint.
 - Terminal delta-v objective formulation.
-- Useful for understanding when a target velocity is a constraint versus a cost.
+- Clear distinction between a required terminal velocity and a velocity target that can be bought with delta-v.
+
+Important choices:
+
+| Code | Purpose |
+| --- | --- |
+| `terminal_is_objective=False` | Keeps terminal velocity as a hard constraint. |
+| `terminal_is_objective=True` | Adds `ImpulsiveDeltaV(where="Back")`, relaxing terminal velocity into a cost. |
+| `tof_bounds = (0.5 * tof_guess, 1.5 * tof_guess)` | Centers the solve around a known circular coast time. |
+| printed velocity error | Shows whether terminal velocity was exactly enforced or reached through an objective. |
 
 Expected output:
 
@@ -103,11 +158,19 @@ Run:
 python examples/composable/05_plot_with_maneuvers.py
 ```
 
-Feature focus:
+Capability showcased:
 
 - Plotly HTML output with maneuver markers.
 - Raw marker placement versus snapped-to-trajectory marker placement.
 - Minimum-radius path constraint included in the transfer.
+
+Important choices:
+
+| Code | Purpose |
+| --- | --- |
+| `constraints.min_radius(r_min_m, where="Path")` | Keeps the path above the configured altitude floor. |
+| `snap_maneuvers_to_traj(...)` | Moves maneuver markers to the nearest plotted trajectory sample for cleaner visuals. |
+| `save_trajectory_html(..., maneuvers=...)` | Writes an inspectable plot with burn markers. |
 
 Expected output:
 
@@ -129,12 +192,21 @@ Run:
 python examples/composable/06_precoast_impulsive_link_3burn.py
 ```
 
-Feature focus:
+Capability showcased:
 
 - Three phases.
 - Two impulsive links.
 - Terminal impulse.
 - Minimum-altitude path constraint.
+
+Important choices:
+
+| Code | Purpose |
+| --- | --- |
+| `tof_is_relative=True` | Interprets each phase time bound as a duration rather than an absolute mission time. |
+| `transfer1` and `transfer2` | Split the transfer into two optimized coast arcs. |
+| impulsive links on both transfer phases | Create two interior maneuver opportunities. |
+| `ImpulsiveDeltaV(where="Back")` on `transfer2` | Adds the terminal burn, bringing the total to three burns. |
 
 Expected output: `traj_composable_precoast_impulsive_link_3burn.html`.
 
@@ -150,11 +222,21 @@ Run:
 python examples/composable/07_terminal_orbital_elements.py
 ```
 
-Feature focus:
+Capability showcased:
 
 - Target semi-major axis, eccentricity, and inclination directly.
 - Cartesian terminal state used as a guess anchor.
 - Comparison between one terminal impulse and two terminal impulse variables.
+
+Important choices:
+
+| Code | Purpose |
+| --- | --- |
+| `classical_to_cartesian(...)` | Builds a Cartesian seed from the target orbital elements. |
+| `constraints.semi_major_axis(...)` | Targets orbit size at the end of the phase. |
+| `constraints.eccentricity(...)` | Targets orbit shape at the end of the phase. |
+| `constraints.inclination_deg(...)` | Targets orbital plane tilt at the end of the phase. |
+| `use_terminal_burn` | Compares one-impulse and two-impulse formulations. |
 
 Expected output: `traj_composable_terminal_orbital_elements.html`.
 
@@ -170,13 +252,25 @@ Run:
 python examples/composable/08_chemical_burn_j2.py
 ```
 
-Feature focus:
+Capability showcased:
 
 - Burn-coast-burn structure.
 - Finite chemical burn phases.
 - Mass depletion state.
 - Three thrust-direction controls.
 - J2 perturbation enabled in every phase.
+
+Important choices:
+
+| Code | Purpose |
+| --- | --- |
+| `Thruster(thrust_N=..., isp_s=..., propellant_mass_kg=...)` | Defines finite-burn capability and available propellant. |
+| `Dynamics(..., perturbations=Perturbations(j2=True))` | Enables J2 acceleration in the composable backend. |
+| `mode="chemical_burn"` | Uses seven-state burn dynamics with mass and controls. |
+| `mode="coast"` between burns | Carries mass without thrusting during the ballistic coast. |
+| `tof_is_relative=True` | Treats coast and arrival burn bounds as durations after the prior phase. |
+| `minimize_total_delta_v(weight=0.0)` | Runs this first chemical example as a feasibility solve while still reporting burn summaries. |
+| `enable_adaptive_mesh=False` | Keeps the compact example predictable and fast. |
 
 Expected output: `traj_composable_chemical_burn_j2.html`.
 
@@ -192,11 +286,22 @@ Run:
 python examples/composable/09_impulse_vs_chemical_burn.py
 ```
 
-Feature focus:
+Capability showcased:
 
 - Impulsive transfer reference.
 - Finite-burn transfer over the same coast-time window.
 - Side-by-side comparison of idealized and chemical-burn workflows.
+
+Important choices:
+
+| Code | Purpose |
+| --- | --- |
+| `COAST_BOUNDS_S` | Uses the same coast-time window for the impulsive reference and finite-burn transfer. |
+| `select_best_lambert_seed(...)` | Finds the best impulsive reference over that window. |
+| `kepler_dense_guess(...)` | Builds a plot trajectory for the impulsive reference. |
+| `chemical_mission.solve()` | Solves the finite burn-coast-burn mission. |
+| `_chemical_equivalent_delta_v(...)` | Converts mass depletion summaries into equivalent delta-v for comparison. |
+| `relative_difference > 0.20` guard | Fails loudly if the finite-burn result diverges too far from the impulsive reference. |
 
 Expected output:
 

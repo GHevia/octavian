@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "octavian"
-version = "0.1.6"
+version = "0.1.7"
 description = "Trajectory optimization and astrodynamics in Python using ASSET, with mission-script APIs."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,6 +23,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Physics",
 ]
 dependencies = [
+  "asset_asrl",
   "numpy>=1.23",
   "plotly>=5.18.0",
 ]
