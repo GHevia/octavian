@@ -7,9 +7,10 @@ import numpy as np
 import pytest
 
 from octavian import Mission, Phase, Spacecraft, Thruster, constraints, objectives, state
+from octavian.data.ephemeris import epoch_to_et, sample_sun_moon_positions_eci_tod
 from octavian.models import Dynamics, Perturbations
 from octavian.runner import _is_composable_mission
-from octavian.solvers import composable
+from octavian.solvers import composable, third_bodies
 
 MU = 3.986004418e14
 ROOT = Path(__file__).resolve().parents[1]
@@ -86,6 +87,55 @@ def test_j2_perturbation_uses_composable_backend() -> None:
     assert _is_composable_mission(Mission(phases=[phase])) is True
 
 
+def test_sun_moon_perturbation_flags_are_normalized() -> None:
+    perturbations = Perturbations(moon=True, third_bodies=("SUN",))
+
+    assert perturbations.active_third_bodies() == ("moon", "sun")
+
+    phase = _burn_phase()
+    phase.mode = "coast"
+    phase.dynamics = Dynamics(mu_m3ps2=MU, perturbations=perturbations)
+
+    assert third_bodies.phase_third_body_names(phase) == ("moon", "sun")
+
+
+def test_sun_moon_perturbations_require_initial_epoch() -> None:
+    phase = _burn_phase()
+    phase.mode = "coast"
+    phase.dynamics = Dynamics(mu_m3ps2=MU, perturbations=Perturbations(moon=True))
+
+    with pytest.raises(ValueError, match="initial_epoch"):
+        third_bodies.build_third_body_tables(Mission(phases=[phase]), [phase], [(0.0, 100.0)])
+
+
+def test_sun_moon_table_duration_uses_time_upper_bound_and_margin() -> None:
+    phase = _burn_phase()
+    phase.dynamics = Dynamics(
+        mu_m3ps2=MU,
+        perturbations=Perturbations(sun=True),
+        third_body_table_margin_s=50.0,
+    )
+
+    duration = third_bodies.third_body_table_duration_s([phase], [(0.0, 100.0)])
+
+    assert duration == pytest.approx(150.0)
+
+
+def test_reduced_ephemeris_samples_sun_moon_positions_in_meters() -> None:
+    times_s, positions_m = sample_sun_moon_positions_eci_tod(
+        initial_epoch="2026-01-01T00:00:00Z",
+        duration_s=3600.0,
+        step_s=900.0,
+    )
+
+    assert times_s.shape[0] >= 6
+    assert positions_m["sun"].shape == (times_s.shape[0], 3)
+    assert positions_m["moon"].shape == (times_s.shape[0], 3)
+    assert np.linalg.norm(positions_m["sun"][0]) > 1.0e10
+    assert np.linalg.norm(positions_m["moon"][0]) > 1.0e8
+    assert epoch_to_et("2026-01-01T00:00:00Z") > 0.0
+
+
 def test_chemical_burn_guess_adds_mass_time_and_direction_controls() -> None:
     phase = _burn_phase()
     base_guess = [
@@ -136,8 +186,8 @@ def test_unsupported_perturbation_flags_fail_before_asset_build() -> None:
     phase = _burn_phase()
     phase.dynamics = Dynamics(mu_m3ps2=MU, perturbations=Perturbations(drag=True))
 
-    with pytest.raises(NotImplementedError, match="J2 perturbations only"):
-        composable._phase_perturbations(phase)
+    with pytest.raises(NotImplementedError, match="J2, Moon, and Sun perturbations only"):
+        third_bodies.phase_perturbations(phase)
 
 
 def test_zero_weight_objective_remains_zero() -> None:

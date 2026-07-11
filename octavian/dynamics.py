@@ -10,7 +10,23 @@ clear error, but importing this module will still succeed.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Any
+
 from ._asset import oc, require_asset, vf
+
+SUN_MU_M3PS2 = 1.32712440018e20
+MOON_MU_M3PS2 = 4.9048695e12
+
+
+@dataclass(frozen=True)
+class ThirdBodyTable:
+    """ASSET interpolation table and gravity parameter for a third body."""
+
+    name: str
+    mu_m3ps2: float
+    position_table: Any
 
 
 def _require_asset() -> None:
@@ -19,6 +35,7 @@ def _require_asset() -> None:
 
 
 def _point_mass_acceleration(position_vec, mu_m3ps2: float):
+    """Return central-body point-mass acceleration for an ASSET position vector."""
     return (-float(mu_m3ps2)) * position_vec.normalized_power3()
 
 
@@ -50,6 +67,7 @@ def j2_acceleration_components(
 
 
 def _j2_acceleration(position_vec, *, mu_m3ps2: float, radius_m: float, j2: float):
+    """Return J2 acceleration as an ASSET vector-function expression."""
     radius_sq = position_vec.dot(position_vec)
     radius = position_vec.norm()
     z = position_vec[2]
@@ -66,6 +84,43 @@ def _j2_acceleration(position_vec, *, mu_m3ps2: float, radius_m: float, j2: floa
     )
 
 
+def third_body_acceleration_components(
+    spacecraft_position_m,
+    body_position_m,
+    *,
+    mu_m3ps2: float,
+):
+    """Return third-body acceleration in an Earth-centered frame.
+
+    The expression includes both the third body's gravity on the spacecraft
+    and the same body's gravity on the Earth-centered frame origin. It mirrors
+    the ASSET vector-function implementation used by coast and burn EOMs.
+    """
+    rx, ry, rz = [float(component) for component in spacecraft_position_m]
+    bx, by, bz = [float(component) for component in body_position_m]
+
+    rel_x = bx - rx
+    rel_y = by - ry
+    rel_z = bz - rz
+    rel_radius = (rel_x * rel_x + rel_y * rel_y + rel_z * rel_z) ** 0.5
+    body_radius = (bx * bx + by * by + bz * bz) ** 0.5
+
+    mu = float(mu_m3ps2)
+    return (
+        mu * (rel_x / rel_radius**3 - bx / body_radius**3),
+        mu * (rel_y / rel_radius**3 - by / body_radius**3),
+        mu * (rel_z / rel_radius**3 - bz / body_radius**3),
+    )
+
+
+def _third_body_acceleration(position_vec, body_position_vec, *, mu_m3ps2: float):
+    """Return third-body acceleration in an Earth-centered ASSET expression."""
+    relative_to_spacecraft = body_position_vec - position_vec
+    spacecraft_acceleration = relative_to_spacecraft.normalized_power3()
+    frame_origin_acceleration = body_position_vec.normalized_power3()
+    return float(mu_m3ps2) * (spacecraft_acceleration - frame_origin_acceleration)
+
+
 def _gravity_acceleration(
     position_vec,
     *,
@@ -73,7 +128,15 @@ def _gravity_acceleration(
     include_j2: bool = False,
     central_body_radius_m: float = 6_378_136.3,
     j2_coefficient: float = 1.08262668e-3,
+    time_var=None,
+    third_body_tables: Sequence[ThirdBodyTable] = (),
 ):
+    """Compose central gravity and requested perturbation accelerations.
+
+    ``time_var`` is needed only when third-body tables are supplied; it is used
+    to query each body's interpolated Earth-centered position at the current
+    mission-relative phase time.
+    """
     acceleration = _point_mass_acceleration(position_vec, mu_m3ps2)
     if include_j2:
         acceleration = acceleration + _j2_acceleration(
@@ -82,6 +145,16 @@ def _gravity_acceleration(
             radius_m=central_body_radius_m,
             j2=j2_coefficient,
         )
+    if third_body_tables:
+        if time_var is None:
+            raise ValueError("Third-body dynamics require an ASSET time variable.")
+        for body in third_body_tables:
+            body_position = body.position_table(time_var)
+            acceleration = acceleration + _third_body_acceleration(
+                position_vec,
+                body_position,
+                mu_m3ps2=float(body.mu_m3ps2),
+            )
     return acceleration
 
 
@@ -133,6 +206,7 @@ class PerturbedECI(oc.ODEBase if oc is not None else object):
         j2: bool = False,
         central_body_radius_m: float = 6_378_136.3,
         j2_coefficient: float = 1.08262668e-3,
+        third_body_tables: Sequence[ThirdBodyTable] = (),
     ) -> None:
         _require_asset()
         self.mu = float(mu_m3ps2)
@@ -147,6 +221,8 @@ class PerturbedECI(oc.ODEBase if oc is not None else object):
             include_j2=bool(j2),
             central_body_radius_m=float(central_body_radius_m),
             j2_coefficient=float(j2_coefficient),
+            time_var=XtU.TVar(),
+            third_body_tables=tuple(third_body_tables),
         )
         ode = vf.stack([V, A])
 
@@ -170,6 +246,7 @@ class MassCoastECI(oc.ODEBase if oc is not None else object):
         j2: bool = False,
         central_body_radius_m: float = 6_378_136.3,
         j2_coefficient: float = 1.08262668e-3,
+        third_body_tables: Sequence[ThirdBodyTable] = (),
     ) -> None:
         _require_asset()
         self.mu = float(mu_m3ps2)
@@ -186,6 +263,8 @@ class MassCoastECI(oc.ODEBase if oc is not None else object):
             include_j2=bool(j2),
             central_body_radius_m=float(central_body_radius_m),
             j2_coefficient=float(j2_coefficient),
+            time_var=XtU.TVar(),
+            third_body_tables=tuple(third_body_tables),
         )
         ode = vf.stack([V, A, M * 0.0])
 
@@ -216,6 +295,7 @@ class ChemicalBurnECI(oc.ODEBase if oc is not None else object):
         j2: bool = False,
         central_body_radius_m: float = 6_378_136.3,
         j2_coefficient: float = 1.08262668e-3,
+        third_body_tables: Sequence[ThirdBodyTable] = (),
         g0_mps2: float = 9.80665,
     ) -> None:
         _require_asset()
@@ -242,6 +322,8 @@ class ChemicalBurnECI(oc.ODEBase if oc is not None else object):
             include_j2=bool(j2),
             central_body_radius_m=float(central_body_radius_m),
             j2_coefficient=float(j2_coefficient),
+            time_var=XtU.TVar(),
+            third_body_tables=tuple(third_body_tables),
         )
         thrust_acceleration = (self.thrust_N / M) * U
         mass_flow = -(self.thrust_N / (self.isp_s * self.g0_mps2)) * U.norm()

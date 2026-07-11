@@ -60,9 +60,11 @@ use total delta-v and, in the quick API, an optional final-time weight.
 ## Dynamics And Perturbations
 
 `Dynamics` configures the gravitational parameter, central-body radius, J2
-coefficient, and perturbation flags. J2 is currently implemented in the
-composable ASSET backend. Other perturbation flags exist as explicit future
-configuration hooks and fail clearly if requested before implementation.
+coefficient, and perturbation flags. J2, Moon, and Sun perturbations are
+implemented in the composable ASSET backend for coast and chemical-burn phases.
+Moon and Sun use the bundled reduced DE440 ephemeris in the `ECI_TOD` frame and
+require a mission initial epoch so Octavian can build ASSET interpolation
+tables over the mission time bounds.
 
 ## Spacecraft And Thrusters
 

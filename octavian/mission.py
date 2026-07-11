@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from .models import RetryPolicy, RunPlan, SolveConfig
 from .objectives import Objective, minimize_total_delta_v
@@ -20,6 +21,7 @@ class Mission:
     phases: list[Phase] = field(default_factory=list)
     spacecraft: dict[str, Spacecraft] = field(default_factory=dict)
     name: str = "Mission"
+    initial_epoch: str | datetime | float | None = None
 
     objectives: list[Objective] = field(default_factory=lambda: [minimize_total_delta_v()])
 

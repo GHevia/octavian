@@ -60,8 +60,15 @@ from ..astro.kepler import (
 from ..astro.lambert import select_best_lambert_seed
 from ..astro.types import as_vec3
 from ..astro.units import default_units
-from ..dynamics import ChemicalBurnECI, MassCoastECI, PerturbedECI, TwoBodyECI
+from ..dynamics import (
+    ChemicalBurnECI,
+    MassCoastECI,
+    PerturbedECI,
+    ThirdBodyTable,
+    TwoBodyECI,
+)
 from ..time import normalize_time_bounds
+from .third_bodies import build_third_body_tables, phase_perturbations, tables_for_phase
 
 
 def _require_asset() -> None:
@@ -103,6 +110,7 @@ def _phase_is_chemical_burn(phase: Phase) -> bool:
 
 
 def _is_coast_like(phase: Phase) -> bool:
+    """Return whether a phase mode uses coast-like translational dynamics."""
     normalized_mode = (getattr(phase, "mode", "") or "").strip().lower().replace("-", "_")
     return normalized_mode in ("coast", "transfer", "rendezvous")
 
@@ -156,32 +164,17 @@ def _first_thruster(phase: Phase):
     raise KeyError(f"No thruster named {thruster_name!r} on spacecraft {spacecraft.name!r}")
 
 
-def _phase_perturbations(phase: Phase):
-    dynamics = getattr(phase, "dynamics", None)
-    if dynamics is None:
-        raise ValueError(f"Phase {phase.name!r} is missing dynamics.")
-    perturbations = dynamics.active_perturbations()
-    unsupported = []
-    if perturbations.srp:
-        unsupported.append("srp")
-    if perturbations.drag:
-        unsupported.append("drag")
-    if perturbations.third_bodies:
-        unsupported.append("third_bodies")
-    if unsupported:
-        raise NotImplementedError(
-            "Composable solver currently implements J2 perturbations only; "
-            f"unsupported perturbation flags: {', '.join(unsupported)}."
-        )
-    return perturbations
-
-
-def _ode_for_phase(phase: Phase, *, carries_mass: bool = False):
+def _ode_for_phase(
+    phase: Phase,
+    *,
+    carries_mass: bool = False,
+    third_body_tables: Sequence[ThirdBodyTable] = (),
+):
     """Build the ASSET ODE for one phase."""
     dynamics = phase.dynamics
     if dynamics is None:
         raise ValueError(f"Phase {phase.name!r} is missing dynamics.")
-    perturbations = _phase_perturbations(phase)
+    perturbations = phase_perturbations(phase)
     if _phase_is_chemical_burn(phase):
         thruster = _first_thruster(phase)
         return ChemicalBurnECI(
@@ -191,6 +184,7 @@ def _ode_for_phase(phase: Phase, *, carries_mass: bool = False):
             j2=bool(perturbations.j2),
             central_body_radius_m=float(dynamics.central_body_radius_m),
             j2_coefficient=float(dynamics.j2_coefficient),
+            third_body_tables=tuple(third_body_tables),
         )
     if carries_mass:
         return MassCoastECI(
@@ -198,24 +192,33 @@ def _ode_for_phase(phase: Phase, *, carries_mass: bool = False):
             j2=bool(perturbations.j2),
             central_body_radius_m=float(dynamics.central_body_radius_m),
             j2_coefficient=float(dynamics.j2_coefficient),
+            third_body_tables=tuple(third_body_tables),
         )
-    if perturbations.j2:
+    if perturbations.j2 or third_body_tables:
         return PerturbedECI(
             mu_m3ps2=float(dynamics.mu_m3ps2),
-            j2=True,
+            j2=bool(perturbations.j2),
             central_body_radius_m=float(dynamics.central_body_radius_m),
             j2_coefficient=float(dynamics.j2_coefficient),
+            third_body_tables=tuple(third_body_tables),
         )
     return TwoBodyECI(mu_m3ps2=float(dynamics.mu_m3ps2))
 
 
 def _phase_dimensions(phase: Phase) -> tuple[int, int, bool]:
+    """Return the user-visible state/control dimensions implied by phase mode."""
     if _phase_is_chemical_burn(phase):
         return 7, 3, True
     return 6, 0, False
 
 
 def _compile_phase_dimensions(phase: Phase, *, carries_mass: bool = False) -> tuple[int, int, bool]:
+    """Return state/control dimensions used for ASSET compilation.
+
+    Coast-like phases normally use six Cartesian states. In burn-coast-burn
+    missions, coast phases between burns carry mass as a seventh constant state
+    so continuity links can preserve propellant bookkeeping.
+    """
     if _phase_is_chemical_burn(phase):
         return 7, 3, True
     if carries_mass:
@@ -292,10 +295,12 @@ def _get_constraint_of_type(
 
 
 def _get_state_constraint(phase: Phase, where: str) -> Constraint | None:
+    """Return the first state constraint at a phase boundary, if present."""
     return _get_constraint_of_type(phase, State, where)
 
 
 def _get_position_constraint(phase: Phase, where: str) -> Constraint | None:
+    """Return the first position constraint at a phase boundary, if present."""
     return _get_constraint_of_type(phase, Position, where)
 
 
@@ -317,12 +322,14 @@ def _orbital_element_constraints(phase: Phase, where: str | None = None) -> tupl
 
 
 def _state_boundary_value(c: Constraint | None) -> Any:
+    """Return the boundary-state payload stored by a state constraint."""
     if c is None:
         return None
     return getattr(c, "value", {}).get("x")
 
 
 def _state_groups(c: Constraint | None) -> tuple[str, ...]:
+    """Return state groups constrained by a state constraint."""
     if c is None:
         return tuple()
     groups = getattr(c, "value", {}).get("groups", ("R", "V"))
@@ -330,6 +337,7 @@ def _state_groups(c: Constraint | None) -> tuple[str, ...]:
 
 
 def _position_boundary_value(c: Constraint | None) -> np.ndarray | None:
+    """Return the Cartesian position payload stored by a position constraint."""
     if c is None:
         return None
     return np.asarray(c.value, dtype=float).reshape(3)
@@ -381,6 +389,8 @@ def _make_terminal_shell(last_phase: Phase) -> tuple[Phase, Phase] | None:
 
 @dataclass(frozen=True)
 class _OrbitalElementExpressions:
+    """ASSET scalar expressions used by orbital-element constraints."""
+
     semi_major_axis_m: Any
     eccentricity_sq: Any
     inclination_cosine: Any
@@ -481,6 +491,7 @@ def _apply_orbital_element_constraint(
 
 
 def _objective_weights(mission: Mission) -> tuple[bool, float, bool, float]:
+    """Return normalized delta-v and final-time objective switches and weights."""
     # minimize_dv, w_dv, minimize_time, w_time
     minimize_dv = True
     w_dv = 1.0
@@ -1075,6 +1086,7 @@ def _orbital_constraint_report_row(
 
 
 def _midpoint(bounds: tuple[float, float] | None, fallback: float) -> float:
+    """Return the midpoint of finite bounds, or ``fallback`` if bounds are absent."""
     if bounds is None:
         return float(fallback)
     lo, hi = map(float, bounds)
@@ -1107,6 +1119,7 @@ def _rocket_mass_after_impulse(
     dv_mps: float,
     isp_s: float,
 ) -> float:
+    """Return post-impulse mass using the ideal rocket equation."""
     if float(isp_s) <= 0.0:
         return float(mass0_kg)
     return float(mass0_kg) * float(np.exp(-max(float(dv_mps), 0.0) / (float(isp_s) * 9.80665)))
@@ -1348,6 +1361,7 @@ def _make_asset_phase(
     nsegs: int,
     *,
     carries_mass: bool = False,
+    third_body_tables: dict[str, ThirdBodyTable] | None = None,
 ):
     """Create an ASSET phase and return dimensional metadata."""
     prepared_guess, state_dim, control_dim, is_burn = _prepare_phase_guess(
@@ -1355,7 +1369,11 @@ def _make_asset_phase(
         guess,
         carries_mass=carries_mass,
     )
-    ode = _ode_for_phase(phase, carries_mass=carries_mass)
+    ode = _ode_for_phase(
+        phase,
+        carries_mass=carries_mass,
+        third_body_tables=tables_for_phase(phase, third_body_tables or {}),
+    )
     return ode.phase(Tmodes.LGL3, prepared_guess, int(nsegs)), state_dim, control_dim, is_burn
 
 
@@ -1386,6 +1404,7 @@ def solve_composable_mission(
 
     # Normalize time bounds (absolute Back-time bounds for each phase).
     abs_bounds = normalize_time_bounds(phases)
+    third_body_tables = build_third_body_tables(mission, phases, abs_bounds)
 
     # Units / scaling: use default_units() with a tiny dummy spec carrying x0/xf.
     first = phases[0]
@@ -1546,6 +1565,7 @@ def solve_composable_mission(
                     ig,
                     int(nsegs),
                     carries_mass=idx in mass_state_indices,
+                    third_body_tables=third_body_tables,
                 )
                 ocp.addPhase(asset_phase)
 
@@ -1652,6 +1672,7 @@ def solve_composable_mission(
             ig,
             int(nsegs),
             carries_mass=idx in mass_state_indices,
+            third_body_tables=third_body_tables,
         )
         ocp.addPhase(asset_phase)
 
@@ -1689,7 +1710,12 @@ def solve_composable_mission(
             npts=3,
             mu_m3ps2=mu,
         )
-        shell_asset_phase, state_dim, control_dim, is_burn = _make_asset_phase(shell_phase, shell_guess, 2)
+        shell_asset_phase, state_dim, control_dim, is_burn = _make_asset_phase(
+            shell_phase,
+            shell_guess,
+            2,
+            third_body_tables=third_body_tables,
+        )
         ocp.addPhase(shell_asset_phase)
         built.append(
             _PhaseBuild(

@@ -54,6 +54,8 @@ The API reference is generated from source docstrings with `mkdocstrings`.
 
 ::: octavian.astro.types
 
+::: octavian.data.ephemeris
+
 ## Visualization And Studies
 
 ::: octavian.viz.plotly
