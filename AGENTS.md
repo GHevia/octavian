@@ -147,5 +147,9 @@ When preparing a PR, include:
 - Why it matters.
 - How it was validated.
 - Any limitations, follow-ups, or environment constraints.
+- For every Codex-authored PR that should auto-release to PyPI, bump `[project].version`
+  in `pyproject.toml` in the same PR. Use the next patch version unless the user asks
+  for a minor or major release; PyPI publishing requires each release to have a new
+  version number.
 
 Prefer draft PRs for work that still needs confirmation or broader review.

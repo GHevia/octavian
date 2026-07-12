@@ -260,17 +260,9 @@ Capability showcased:
 - Three thrust-direction controls.
 - J2 perturbation enabled in every phase.
 
-Important choices:
-
-| Code | Purpose |
-| --- | --- |
-| `Thruster(thrust_N=..., isp_s=..., propellant_mass_kg=...)` | Defines finite-burn capability and available propellant. |
-| `Dynamics(..., perturbations=Perturbations(j2=True))` | Enables J2 acceleration in the composable backend. |
-| `mode="chemical_burn"` | Uses seven-state burn dynamics with mass and controls. |
-| `mode="coast"` between burns | Carries mass without thrusting during the ballistic coast. |
-| `tof_is_relative=True` | Treats coast and arrival burn bounds as durations after the prior phase. |
-| `minimize_total_delta_v(weight=0.0)` | Runs this first chemical example as a feasibility solve while still reporting burn summaries. |
-| `enable_adaptive_mesh=False` | Keeps the compact example predictable and fast. |
+The same coast and burn EOM path supports `Perturbations(moon=True, sun=True)`
+when the mission sets `initial_epoch`; Octavian samples the bundled reduced
+DE440 Sun/Moon ephemeris in `ECI_TOD` into ASSET interpolation tables.
 
 Expected output: `traj_composable_chemical_burn_j2.html`.
 
@@ -312,3 +304,32 @@ Screenshot placeholders:
 
 - `docs/assets/screenshots/composable-09-impulse-reference.png`.
 - `docs/assets/screenshots/composable-09-chemical-reference.png`.
+
+## 10: J2, Moon, And Sun Perturbations
+
+Path: `examples/composable/10_sun_moon_perturbations.py`
+
+Run:
+
+```bash
+python examples/composable/10_sun_moon_perturbations.py
+```
+
+Capability showcased:
+
+- Coast EOM with J2, Moon, and Sun perturbations enabled together.
+- `Mission.initial_epoch` driving Sun/Moon ephemeris table generation.
+- The bundled reduced DE440 Earth-centered Sun/Moon BSP in the `ECI_TOD` frame.
+
+Important choices:
+
+| Code | Purpose |
+| --- | --- |
+| `Perturbations(j2=True, moon=True, sun=True)` | Enables the three core Earth-orbit perturbations. |
+| `Mission(initial_epoch=...)` | Defines the start date for SPICE ephemeris sampling. |
+| `third_body_table_step_s=3600.0` | Sets the Sun/Moon interpolation sample spacing. |
+| `ImpulsiveDeltaV(where="Front"/"Back")` | Lets the optimizer satisfy the endpoint geometry while reporting the required burns. |
+
+Expected output: `traj_composable_sun_moon_perturbations.html`.
+
+Screenshot placeholder: `docs/assets/screenshots/composable-10-sun-moon-perturbations.png`.

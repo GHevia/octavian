@@ -51,6 +51,7 @@ def _fake_solution() -> Solution:
         ("examples/composable/07_terminal_orbital_elements.py", 2),
         ("examples/composable/08_chemical_burn_j2.py", 1),
         ("examples/composable/09_impulse_vs_chemical_burn.py", 1),
+        ("examples/composable/10_sun_moon_perturbations.py", 1),
     ],
 )
 def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int) -> None:
@@ -103,6 +104,13 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
             "traj_composable_impulse_reference.html",
             "traj_composable_chemical_reference.html",
         ]
+    elif script_rel.endswith("10_sun_moon_perturbations.py"):
+        mission = missions[0]
+        perturbations = mission.phases[0].dynamics.active_perturbations()
+        assert mission.initial_epoch == "2026-01-01T00:00:00Z"
+        assert perturbations.j2 is True
+        assert perturbations.active_third_bodies() == ("moon", "sun")
+        assert plotted == ["traj_composable_sun_moon_perturbations.html"]
     elif script_rel.endswith("07_terminal_orbital_elements.py"):
         assert len(missions[0].phases) == 1
         kinds = [getattr(c, "kind", "") for c in missions[0].phases[0].constraints]

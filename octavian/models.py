@@ -15,15 +15,33 @@ from typing import Any
 class Perturbations:
     """Perturbation flags for translational dynamics.
 
-    J2 is the first perturbation implemented by the composable ASSET backend.
-    The remaining flags are kept as explicit configuration hooks so mission
-    scripts have a stable place to opt into future perturbation models.
+    The composable ASSET backend supports the core Earth-orbit perturbations:
+    J2, lunar third-body gravity, and solar third-body gravity. ``moon`` and
+    ``sun`` are convenience flags; ``third_bodies=("moon", "sun")`` remains
+    accepted for scripts that prefer a body list.
     """
 
     j2: bool = False
+    moon: bool = False
+    sun: bool = False
     srp: bool = False
     drag: bool = False
     third_bodies: tuple[str, ...] = ()
+
+    def active_third_bodies(self) -> tuple[str, ...]:
+        """Return normalized third-body names requested by this config."""
+        names: list[str] = []
+        if self.moon:
+            names.append("moon")
+        if self.sun:
+            names.append("sun")
+        for body in self.third_bodies:
+            normalized = str(body).strip().lower().replace("-", "_")
+            if normalized in {"luna", "earth_moon"}:
+                normalized = "moon"
+            if normalized not in names:
+                names.append(normalized)
+        return tuple(names)
 
 
 @dataclass(slots=True)
@@ -33,8 +51,12 @@ class Dynamics:
     mu_m3ps2: float = 3.986004418e14
     central_body_radius_m: float = 6_378_136.3
     j2_coefficient: float = 1.08262668e-3
+    third_body_table_step_s: float = 3600.0
+    third_body_table_margin_s: float = 86400.0
     third_bodies: tuple[str, ...] = ()
     j2: bool = False
+    moon: bool = False
+    sun: bool = False
     srp: bool = False
     drag: bool = False
     perturbations: Perturbations | None = None
@@ -46,6 +68,8 @@ class Dynamics:
             return self.perturbations
         return Perturbations(
             j2=bool(self.j2),
+            moon=bool(self.moon),
+            sun=bool(self.sun),
             srp=bool(self.srp),
             drag=bool(self.drag),
             third_bodies=tuple(str(body) for body in self.third_bodies),
