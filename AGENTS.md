@@ -77,6 +77,8 @@ Do not blur these layers without a strong reason.
 - Do not revert unrelated user changes.
 - Prefer small, reviewable patches over broad rewrites.
 - If a change touches user-facing behavior, update docs, examples, or both.
+- Every new user-facing capability must include a docs update in the same Codex request or PR. Prefer updating
+  the relevant tutorial, example guide, and API docstrings together so users can discover and apply the feature.
 
 ## Testing And Validation
 

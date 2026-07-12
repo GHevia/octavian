@@ -23,6 +23,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Physics",
 ]
 dependencies = [
+  "asset_asrl",
   "numpy>=1.23",
   "plotly>=5.18.0",
   "spiceypy>=6.0",
