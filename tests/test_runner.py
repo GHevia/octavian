@@ -9,7 +9,8 @@ from octavian.phase import Phase, state
 from octavian.runner import MissionRunner
 from octavian.solution import Solution
 from octavian.solvers import SolverOptions
-from octavian.solvers.rendezvous import RendezvousResult
+from octavian.solvers.preconfigured import RendezvousResult
+from octavian.solvers.rendezvous import RendezvousResult as LegacyRendezvousResult
 from octavian.spacecraft import Spacecraft
 from octavian.variables import ImpulsiveDeltaV
 
@@ -51,7 +52,7 @@ def test_runner_scales_rendezvous_stage_mesh(monkeypatch: pytest.MonkeyPatch) ->
         seen_nsegs.append(spec.nsegs)
         return _result()
 
-    monkeypatch.setattr("octavian.runner.solve_rendezvous", fake_solve)
+    monkeypatch.setattr("octavian.runner.solve_preconfigured", fake_solve)
     runner = MissionRunner(
         solve_options=SolverOptions(),
         solve_config=SolveConfig(max_attempts=1),
@@ -66,6 +67,10 @@ def test_runner_scales_rendezvous_stage_mesh(monkeypatch: pytest.MonkeyPatch) ->
     assert solution.info["stage_index"] == 0
 
 
+def test_legacy_rendezvous_import_path_still_exports_result_type() -> None:
+    assert LegacyRendezvousResult is RendezvousResult
+
+
 def test_runner_retries_failed_rendezvous_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
     seen_grid_sizes: list[int] = []
 
@@ -75,7 +80,7 @@ def test_runner_retries_failed_rendezvous_attempt(monkeypatch: pytest.MonkeyPatc
             raise RuntimeError("seed failed")
         return _result()
 
-    monkeypatch.setattr("octavian.runner.solve_rendezvous", fake_solve)
+    monkeypatch.setattr("octavian.runner.solve_preconfigured", fake_solve)
     runner = MissionRunner(
         solve_options=SolverOptions(),
         solve_config=SolveConfig(max_attempts=2),
@@ -114,7 +119,7 @@ def test_retry_policy_limits_attempt_count(monkeypatch: pytest.MonkeyPatch) -> N
         calls += 1
         raise RuntimeError("still failing")
 
-    monkeypatch.setattr("octavian.runner.solve_rendezvous", fake_solve)
+    monkeypatch.setattr("octavian.runner.solve_preconfigured", fake_solve)
     runner = MissionRunner(
         solve_options=SolverOptions(),
         solve_config=SolveConfig(max_attempts=5, raise_on_fail=False),

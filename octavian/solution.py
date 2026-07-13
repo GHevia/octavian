@@ -15,11 +15,20 @@ from typing import Any
 
 import numpy as np
 
-from .solvers.rendezvous import RendezvousResult
+from .solvers.preconfigured import RendezvousResult
 
 
 @dataclass(slots=True)
 class AttemptLog:
+    """One solver attempt recorded by `MissionRunner`.
+
+    Attributes:
+        stage: Runner stage label, or ``"default"`` when no staged plan is used.
+        attempt: One-based attempt number within the stage.
+        status: Short status string such as ``"ok"`` or ``"fail"``.
+        message: Optional failure or diagnostic message.
+    """
+
     stage: str
     attempt: int
     status: str
@@ -28,6 +37,14 @@ class AttemptLog:
 
 @dataclass(slots=True)
 class Solution:
+    """Stable user-facing wrapper around a backend solve result.
+
+    `Solution` keeps backend result objects from leaking directly into mission
+    scripts. Successful solves expose the backend result through ``result`` and
+    convenience accessors such as ``traj``. Failed solves still return structured
+    attempt logs when ``SolveConfig.raise_on_fail`` is false.
+    """
+
     ok: bool
     result: RendezvousResult | None = None
     attempts: list[AttemptLog] = field(default_factory=list)
@@ -35,6 +52,7 @@ class Solution:
     last_error: str | None = None
 
     def summary(self) -> str:
+        """Return a human-readable solve summary."""
         if self.result is not None:
             return self.result.summary()
         lines = ["Octavian solution: FAILED"]
@@ -50,6 +68,7 @@ class Solution:
 
     @property
     def traj(self) -> np.ndarray:
+        """Return the solved trajectory array, or an empty array on failure."""
         if self.result is None:
             return np.empty((0, 0), dtype=float)
         return np.asarray(self.result.traj, dtype=float)

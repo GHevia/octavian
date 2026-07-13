@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .solvers import SolverOptions
-from .solvers.rendezvous import RendezvousResult, solve
+from .solvers.preconfigured import RendezvousResult, solve
 from .specs import TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec
 
 Spec = TwoImpulseFreeTimeSpec | TwoImpulsePreCoastSpec

@@ -42,7 +42,7 @@ The API reference is generated from source docstrings with `mkdocstrings`.
 
 ::: octavian.solvers.options
 
-::: octavian.solvers.rendezvous
+::: octavian.solvers.preconfigured
 
 ## Astrodynamics Helpers
 
