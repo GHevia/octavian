@@ -312,11 +312,13 @@ class MassCoastECI(oc.ODEBase if oc is not None else object):
         super().__init__(ode, 7, 0, Vgroups=Vgroups)
 
 
-class ChemicalBurnECI(oc.ODEBase if oc is not None else object):
-    """Finite chemical burn dynamics with three thrust-direction controls.
+class FiniteThrustECI(oc.ODEBase if oc is not None else object):
+    """Finite-thrust dynamics with three vector-throttle controls.
 
     ODE state is ``[r(3), v(3), m]`` and controls are a dimensionless thrust
-    direction/throttle vector. The compiler bounds the control norm to one.
+    direction/throttle vector. The model is propulsion-neutral: chemical and
+    electric thrusters differ through thrust and specific impulse rather than
+    separate equations of motion. The compiler bounds the control norm to one.
     Mass flow is proportional to ``|U|`` so a zero control vector coasts without
     consuming propellant while any partial throttle consumes proportionally.
     """
@@ -340,9 +342,9 @@ class ChemicalBurnECI(oc.ODEBase if oc is not None else object):
         self.g0_mps2 = float(g0_mps2)
 
         if self.thrust_N <= 0.0:
-            raise ValueError("ChemicalBurnECI requires thrust_N > 0.")
+            raise ValueError("FiniteThrustECI requires thrust_N > 0.")
         if self.isp_s <= 0.0:
-            raise ValueError("ChemicalBurnECI requires isp_s > 0.")
+            raise ValueError("FiniteThrustECI requires isp_s > 0.")
 
         XtU = oc.ODEArguments(7, 3)
         X = XtU.XVec()
@@ -374,3 +376,8 @@ class ChemicalBurnECI(oc.ODEBase if oc is not None else object):
         }
 
         super().__init__(ode, 7, 3, Vgroups=Vgroups)
+
+
+# Compatibility name for code written before the powered dynamics were made
+# propulsion-neutral.
+ChemicalBurnECI = FiniteThrustECI

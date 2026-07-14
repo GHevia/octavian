@@ -4,7 +4,7 @@ This module compiles a Mission made of Phase objects into a single ASSET
 OptimalControlProblem.
 
 Scope (v0.1):
-  - Two-body, J2-perturbed, finite chemical-burn, and CWH relative dynamics
+  - Two-body, J2-perturbed, finite-thrust, and CWH relative dynamics
   - Phase boundary constraints:
       * State (R,V) at Front/Back
       * Position (R) at Front/Back
@@ -13,9 +13,11 @@ Scope (v0.1):
       * impulsive: (R,t)
   - Variables:
       * ImpulsiveDeltaV at Front / Back
-      * Chemical-burn phase controls via ``mode="chemical_burn"``
+      * Powered phase controls via ``mode="finite_thrust"`` or compatibility
+        mode ``"chemical_burn"``
   - Objectives:
       * Minimize total Δv (default via Mission.objectives)
+      * Minimize powered-phase propellant use
       * Optional Minimize time (via Mission.objectives)
 
 This is the foundation for a general composable layer. Specialized solvers
@@ -65,6 +67,7 @@ if TYPE_CHECKING:  # pragma: no cover
 # Private compatibility aliases keep existing internal imports and focused
 # tests stable while implementation ownership moves into ``solvers.compiler``.
 _PhaseBuild = phase_compiler.PhaseBuild
+_augment_guess_for_powered_phase = phase_compiler.augment_powered_guess
 _augment_guess_for_chemical_burn = phase_compiler.augment_chemical_burn_guess
 _augment_guess_for_mass_coast = phase_compiler.augment_mass_coast_guess
 _compile_phase_dimensions = phase_compiler.compile_phase_dimensions
@@ -77,9 +80,12 @@ _mass_state_phase_indices = phase_compiler.mass_state_phase_indices
 _ode_for_phase = phase_compiler.ode_for_phase
 _phase_dimensions = phase_compiler.phase_dimensions
 _phase_is_chemical_burn = phase_compiler.is_chemical_burn
+_phase_is_powered = phase_compiler.is_powered_phase
+_powered_phase_kind = phase_compiler.powered_phase_kind
 _prepare_phase_guess = phase_compiler.prepare_phase_guess
 _trajectory_rvt = phase_compiler.trajectory_rvt
 _validate_chemical_burn_transfer = phase_compiler.validate_chemical_burn_transfer
+_validate_powered_phase_chain = phase_compiler.validate_powered_phase_chain
 
 
 def _require_asset() -> None:
@@ -113,6 +119,14 @@ def _objective_weights(mission: Mission) -> tuple[bool, float, bool, float]:
                 w_time = float(getattr(o, "weight", w_time or 1.0))
                 break
     return bool(minimize_dv), float(w_dv), bool(minimize_time), float(w_time)
+
+
+def _propellant_objective_weight(mission: Mission) -> float | None:
+    """Return the propellant objective weight, or ``None`` when inactive."""
+    for objective in list(getattr(mission, "objectives", []) or []):
+        if getattr(objective, "kind", "") == "propellant":
+            return float(getattr(objective, "weight", 1.0))
+    return None
 
 
 def _build_guess_single_phase_cwh(
@@ -763,7 +777,7 @@ def _rocket_mass_after_impulse(
     return float(mass0_kg) * float(np.exp(-max(float(dv_mps), 0.0) / (float(isp_s) * 9.80665)))
 
 
-def _build_guess_three_phase_chemical_transfer(
+def _build_guess_three_phase_powered_transfer(
     phases: Sequence[Phase],
     *,
     mu: float,
@@ -773,7 +787,7 @@ def _build_guess_three_phase_chemical_transfer(
     lambert_grid_size: int,
     nrevs_to_try: Sequence[int],
 ) -> tuple[dict[int, list[np.ndarray]], dict[int, dict[str, float | int | bool | str]]]:
-    """Seed burn-coast-burn from the equivalent two-impulse Lambert transfer.
+    """Seed powered-coast-powered from an equivalent impulsive transfer.
 
     The optimizer solves finite thrust controls, but the initial guess is easier
     to construct from an impulsive approximation. This helper estimates
@@ -785,7 +799,7 @@ def _build_guess_three_phase_chemical_transfer(
         return {}, {}
 
     burn0, coast, burn1 = phases
-    if not (_phase_is_chemical_burn(burn0) and _is_coast_like(coast) and _phase_is_chemical_burn(burn1)):
+    if not (_phase_is_powered(burn0) and _is_coast_like(coast) and _phase_is_powered(burn1)):
         return {}, {}
 
     x0 = burn0.initial_state or constraint_compiler.state_boundary_value(
@@ -829,7 +843,7 @@ def _build_guess_three_phase_chemical_transfer(
         v_arrive = as_vec3(seed.v2_mps)
         t2 = float(t1 + seed.tof_s)
         seed_info = {
-            "guess_kind": "chemical_burn_two_impulse_equivalent",
+            "guess_kind": "powered_two_impulse_equivalent",
             "seed_tof_s": float(seed.tof_s),
             "seed_longway": bool(seed.longway),
             "seed_nrev": int(seed.nrev),
@@ -839,7 +853,7 @@ def _build_guess_three_phase_chemical_transfer(
     except Exception:
         v_depart = as_vec3(x0.v_mps)
         v_arrive = as_vec3(vf_target)
-        seed_info = {"guess_kind": "chemical_burn_linear_fallback"}
+        seed_info = {"guess_kind": "powered_linear_fallback"}
 
     if abs_bounds[2] is not None:
         t3_min, t3_max = map(float, abs_bounds[2])
@@ -888,6 +902,10 @@ def _build_guess_three_phase_chemical_transfer(
     guesses = {0: burn0_guess, 1: coast_guess, 2: burn1_guess}
     infos = {idx: dict(seed_info, guess_phase_index=idx, guess_phase_name=phases[idx].name) for idx in guesses}
     return guesses, infos
+
+
+# Compatibility name for focused tests and downstream imports.
+_build_guess_three_phase_chemical_transfer = _build_guess_three_phase_powered_transfer
 
 
 def _build_front_impulse_velocity_targets(phases: Sequence[Phase]) -> dict[int, np.ndarray]:
@@ -991,7 +1009,7 @@ def solve_composable_mission(
             "Add an explicit frame transformation before linking phases in different frames."
         )
 
-    _validate_chemical_burn_transfer(phases)
+    _validate_powered_phase_chain(phases)
     mass_state_indices = _mass_state_phase_indices(phases)
 
     relative_phases = [phase for phase in phases if _cwh_model(phase) is not None]
@@ -1021,13 +1039,18 @@ def solve_composable_mission(
             "burn",
             "chemical_burn",
             "finite_burn",
+            "powered",
+            "finite_thrust",
         ):
             raise NotImplementedError(
-                "Composable solver supports inertial/relative coast-like and chemical-burn phases. "
+                "Composable solver supports inertial/relative coast-like and finite-thrust phases. "
                 f"Got mode={ph.mode!r}"
             )
 
     minimize_dv, w_dv, minimize_time, w_time = _objective_weights(mission)
+    propellant_weight = _propellant_objective_weight(mission)
+    if propellant_weight is not None and not mass_state_indices:
+        raise ValueError("A propellant objective requires at least one powered phase.")
 
     # Normalize time bounds (absolute Back-time bounds for each phase).
     abs_bounds = normalize_time_bounds(phases)
@@ -1107,7 +1130,7 @@ def solve_composable_mission(
         guess_info[0] = info0
 
     elif mass_state_indices and len(phases) == 3:
-        chemical_guesses, chemical_info = _build_guess_three_phase_chemical_transfer(
+        powered_guesses, powered_info = _build_guess_three_phase_powered_transfer(
             phases,
             mu=mu,
             abs_bounds=abs_bounds,
@@ -1116,8 +1139,8 @@ def solve_composable_mission(
             lambert_grid_size=int(getattr(mission, "lambert_grid_size", 60)),
             nrevs_to_try=tuple(int(x) for x in getattr(mission, "nrevs_to_try", (0, 1))),
         )
-        guesses.update(chemical_guesses)
-        guess_info.update(chemical_info)
+        guesses.update(powered_guesses)
+        guess_info.update(powered_info)
 
     elif len(phases) == 1:
         p0 = phases[0]
@@ -1219,7 +1242,7 @@ def solve_composable_mission(
                 guess_info.update(chain_info)
                 ig = guesses[idx]
                 nsegs = len(ig) - 1
-                asset_phase, layout, is_burn = _make_asset_phase(
+                asset_phase, layout, powered_kind = _make_asset_phase(
                     ph,
                     ig,
                     int(nsegs),
@@ -1236,7 +1259,7 @@ def solve_composable_mission(
                         index=idx,
                         compile_phase=(last_compile_phase if ph is phases[-1] else None),
                         layout=layout,
-                        is_chemical_burn=is_burn,
+                        powered_kind=powered_kind,
                     )
                 )
                 continue
@@ -1325,7 +1348,7 @@ def solve_composable_mission(
                         mu_m3ps2=mu,
                     )
 
-        asset_phase, layout, is_burn = _make_asset_phase(
+        asset_phase, layout, powered_kind = _make_asset_phase(
             ph,
             ig,
             int(nsegs),
@@ -1342,7 +1365,7 @@ def solve_composable_mission(
                 index=idx,
                 compile_phase=(last_compile_phase if ph is phases[-1] else None),
                 layout=layout,
-                is_chemical_burn=is_burn,
+                powered_kind=powered_kind,
             )
         )
 
@@ -1367,7 +1390,7 @@ def solve_composable_mission(
             npts=3,
             mu_m3ps2=mu,
         )
-        shell_asset_phase, layout, is_burn = _make_asset_phase(
+        shell_asset_phase, layout, powered_kind = _make_asset_phase(
             shell_phase,
             shell_guess,
             2,
@@ -1382,7 +1405,7 @@ def solve_composable_mission(
                 index=len(built),
                 compile_phase=shell_phase,
                 layout=layout,
-                is_chemical_burn=is_burn,
+                powered_kind=powered_kind,
                 enable_adaptive_mesh=False,
             )
         )
@@ -1396,7 +1419,15 @@ def solve_composable_mission(
 
     for b in built:
         b.asset_phase.setAutoScaling(bool(opts.enable_auto_scaling))
-        b.asset_phase.setUnits(R=r_unit, V=v_unit, t=t_unit)
+        if b.state_dim == 7:
+            b.asset_phase.setUnits(
+                R=r_unit,
+                V=v_unit,
+                M=solver_scaling.mass_kg,
+                t=t_unit,
+            )
+        else:
+            b.asset_phase.setUnits(R=r_unit, V=v_unit, t=t_unit)
         b.asset_phase.setAdaptiveMesh(bool(opts.enable_adaptive_mesh and b.enable_adaptive_mesh))
 
     ocp.setAutoScaling(True, True)
@@ -1429,7 +1460,7 @@ def solve_composable_mission(
             dry_mass_kg = float(spacecraft.dry_mass_kg)
             if dry_mass_kg > 0.0:
                 ap.addLUVarBound("Back", "M", dry_mass_kg, float(spacecraft.initial_mass_kg))
-            if b.is_chemical_burn:
+            if b.is_powered:
                 ap.addUpperNormBound("Path", "U", 1.0)
 
         # Apply State/Position boundary constraints with impulsive-variable override logic
@@ -1562,24 +1593,19 @@ def solve_composable_mission(
                 AutoScale=1.0 / float(v_unit),
             )
 
-    # Boundary Δv objectives (mission start and terminal)
-    if minimize_dv:
-        for b in built:
-            if not b.is_chemical_burn:
-                continue
-            spacecraft = b.ph.spacecraft
-            if isinstance(spacecraft, str) or spacecraft is None:
-                continue
-            mass_argument = vf.Arguments(1).tolist()[0]
-            b.asset_phase.addStateObjective(
-                "Back",
-                -float(w_dv) * mass_argument,
-                list(b.layout.state_indices("mass")),
-                [],
-                [],
-                AutoScale=1.0 / max(float(spacecraft.initial_mass_kg), 1.0),
-            )
+    # Powered propellant objective, applied once at the end of the mass chain.
+    if propellant_weight is not None:
+        final_powered = next(build for build in reversed(built) if build.is_powered)
+        spacecraft = final_powered.ph.spacecraft
+        if isinstance(spacecraft, str) or spacecraft is None:  # guarded by validation
+            raise ValueError("A propellant objective requires a configured spacecraft.")
+        final_powered.asset_phase.addValueObjective(
+            "Back",
+            final_powered.layout.state_indices("mass")[0],
+            -float(propellant_weight) / max(float(spacecraft.initial_mass_kg), 1.0),
+        )
 
+    if minimize_dv:
         # Start: if first phase has impulsive Δv at Front, penalize relative to desired initial velocity
         first_ph = built[0].ph
         first_ap = built[0].asset_phase
@@ -1722,23 +1748,28 @@ def solve_composable_mission(
                 )
             )
 
+    powered_phases: list[dict[str, float | str]] = []
     chemical_burns: list[dict[str, float | str]] = []
     phase_segments: list[dict[str, float | str]] = []
     for build, phase_traj in zip(built, trajs, strict=True):
-        is_burn = bool(build.is_chemical_burn)
+        is_powered = build.is_powered
         is_relative = _cwh_model(build.ph) is not None
         phase_segments.append(
             {
                 "name": build.ph.name,
                 "mode": (
-                    "chemical_burn" if is_burn else "relative_coast" if is_relative else "coast"
+                    str(build.powered_kind)
+                    if is_powered
+                    else "relative_coast"
+                    if is_relative
+                    else "coast"
                 ),
                 "t_start_s": float(phase_traj[0, 6]),
                 "t_end_s": float(phase_traj[-1, 6]),
-                "color": "red" if is_burn else "blue",
+                "color": "red" if is_powered else "blue",
             }
         )
-        if not build.is_chemical_burn:
+        if not is_powered:
             continue
         raw_traj = raw_trajs[build.index]
         mass_index = build.layout.state_indices("mass")[0]
@@ -1752,17 +1783,19 @@ def solve_composable_mission(
             equivalent_dv_mps = float(thruster.isp_s) * 9.80665 * float(
                 np.log(max(mass_initial_kg, mass_final_kg) / mass_final_kg)
             )
-        chemical_burns.append(
-            {
-                "phase": build.ph.name,
-                "t_start_s": float(phase_traj[0, 6]),
-                "t_end_s": float(phase_traj[-1, 6]),
-                "mass_initial_kg": mass_initial_kg,
-                "mass_final_kg": mass_final_kg,
-                "propellant_used_kg": propellant_used_kg,
-                "equivalent_dv_mps": equivalent_dv_mps,
-            }
-        )
+        summary = {
+            "phase": build.ph.name,
+            "kind": str(build.powered_kind),
+            "t_start_s": float(phase_traj[0, 6]),
+            "t_end_s": float(phase_traj[-1, 6]),
+            "mass_initial_kg": mass_initial_kg,
+            "mass_final_kg": mass_final_kg,
+            "propellant_used_kg": propellant_used_kg,
+            "equivalent_dv_mps": equivalent_dv_mps,
+        }
+        powered_phases.append(summary)
+        if build.is_chemical_burn:
+            chemical_burns.append(dict(summary))
 
     return RendezvousResult(
         converged=bool(converged),
@@ -1785,6 +1818,7 @@ def solve_composable_mission(
             "dynamics_model": "cwh" if relative_phases else "central_gravity",
             "state_layouts": [build.layout.name for build in built],
             "constraint_report": constraint_report,
+            "powered_phases": powered_phases,
             "chemical_burns": chemical_burns,
             "phase_segments": phase_segments,
             "phase_guess_info": guess_info,

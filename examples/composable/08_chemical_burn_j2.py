@@ -84,7 +84,7 @@ mission = Mission(
     phases=[departure_burn, coast, arrival_burn],
     # Keep this first chemical-burn example as a feasibility solve. Propellant
     # usage is reported from the mass state after convergence.
-    objectives=[objectives.minimize_total_delta_v(weight=0.0)],
+    objectives=[objectives.minimize_propellant(weight=0.0)],
     solver_options=SolverOptions(print_level=0, max_ls_iters=2, enable_adaptive_mesh=False),
     mesh_nsegs_precoast=8,
     mesh_nsegs_transfer=16,

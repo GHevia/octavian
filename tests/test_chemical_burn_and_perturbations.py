@@ -69,12 +69,13 @@ def test_chemical_burn_mode_uses_composable_backend() -> None:
     assert composable._phase_dimensions(mission.phases[0]) == (7, 3, True)
 
 
-def test_chemical_burn_transfer_requires_burn_coast_burn_shape() -> None:
-    with pytest.raises(ValueError, match="departure burn, a coast, and an arrival burn"):
-        composable._validate_chemical_burn_transfer([_burn_phase()])
+def test_powered_phase_chain_supports_standalone_and_burn_coast_burn_shapes() -> None:
+    standalone = [_burn_phase()]
+    composable._validate_powered_phase_chain(standalone)
+    assert composable._mass_state_phase_indices(standalone) == {0}
 
     phases = _burn_coast_burn_phases()
-    composable._validate_chemical_burn_transfer(phases)
+    composable._validate_powered_phase_chain(phases)
     assert composable._mass_state_phase_indices(phases) == {0, 1, 2}
 
 
@@ -199,6 +200,14 @@ def test_zero_weight_objective_remains_zero() -> None:
     assert weight == pytest.approx(0.0)
     assert minimize_time is False
     assert time_weight == pytest.approx(0.0)
+
+
+def test_propellant_objective_has_an_independent_weight() -> None:
+    mission = Mission(objectives=[objectives.minimize_propellant(weight=0.25)])
+
+    assert composable._propellant_objective_weight(mission) == pytest.approx(0.25)
+    minimize_dv, _, _, _ = composable._objective_weights(mission)
+    assert minimize_dv is False
 
 
 def test_example_08_configures_burn_coast_burn_with_j2() -> None:

@@ -12,7 +12,8 @@ shape directly.
 | `Mission(phases=[...])` | The complete optimization problem. |
 | `Phase(...)` | One segment of the trajectory. |
 | `mode="coast"` | Ballistic two-body or perturbed coast dynamics. |
-| `mode="chemical_burn"` | Finite burn dynamics with mass and thrust-direction controls. |
+| `mode="finite_thrust"` | Propulsion-neutral finite-thrust dynamics with mass and vector-throttle controls. |
+| `mode="chemical_burn"` | Compatibility spelling for a chemical finite-thrust phase. |
 | `mode="relative_coast"` | CWH coast dynamics in a chief-centered LVLH frame. |
 | `previous=...` | Connects a phase to the phase before it. |
 | `link=links.continuous()` | Enforces continuous position, velocity, and time at the boundary. |
@@ -21,6 +22,7 @@ shape directly.
 | `constraints.min_radius(..., where="Path")` | Keeps the trajectory above a radius floor along the phase. |
 | `variables.ImpulsiveDeltaV(...)` | Exposes a boundary velocity jump as a decision variable and maneuver. |
 | `objectives.minimize_total_delta_v()` | Minimizes the sum of declared impulsive delta-v terms. |
+| `objectives.minimize_propellant()` | Maximizes final mass after the last powered phase. |
 
 ## 01: Single-Phase Terminal Delta-v Objective
 
@@ -260,6 +262,11 @@ Capability showcased:
 - Mass depletion state.
 - Three thrust-direction controls.
 - J2 perturbation enabled in every phase.
+- Explicit propellant objective and powered-phase mass reporting.
+
+The compiler does not require this exact three-phase shape. A finite-thrust
+phase can stand alone, and longer powered/coast chains carry mass continuously
+from the first powered phase through the last.
 
 The same coast and burn EOM path supports `Perturbations(moon=True, sun=True)`
 when the mission sets `initial_epoch`; Octavian samples the bundled reduced
