@@ -54,6 +54,7 @@ def _fake_solution() -> Solution:
         ("examples/composable/09_impulse_vs_chemical_burn.py", 1),
         ("examples/composable/10_sun_moon_perturbations.py", 1),
         ("examples/composable/11_cwh_relative_rendezvous.py", 1),
+        ("examples/composable/12_cwh_safety_corridor.py", 1),
     ],
 )
 def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int) -> None:
@@ -77,7 +78,9 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
     runpy.run_path(str(ROOT / script_rel), run_name="__main__")
 
     assert len(missions) == expected_solve_calls
-    if not script_rel.endswith("11_cwh_relative_rendezvous.py"):
+    if not script_rel.endswith(
+        ("11_cwh_relative_rendezvous.py", "12_cwh_safety_corridor.py")
+    ):
         assert len(plotted) >= 1
 
     if script_rel.endswith("01_single_phase_terminal_dv_objective.py"):
@@ -119,6 +122,13 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
         assert mission.phases[0].mode == "relative_coast"
         assert mission.phases[0].dynamics.frame.kind == "relative"
         assert mission.phases[0].dynamics.model.mean_motion_radps > 0.0
+        assert plotted == []
+    elif script_rel.endswith("12_cwh_safety_corridor.py"):
+        mission = missions[0]
+        kinds = [constraint.kind for constraint in mission.phases[0].constraints]
+        assert "keep_out_sphere" in kinds
+        assert "approach_cone" in kinds
+        assert "lighting_angle" in kinds
         assert plotted == []
     elif script_rel.endswith("07_terminal_orbital_elements.py"):
         assert len(missions[0].phases) == 1

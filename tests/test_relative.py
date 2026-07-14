@@ -13,6 +13,7 @@ from octavian.relative import (
     inertial_to_relative_state,
     propagate_cwh,
     relative_to_inertial_state,
+    select_cwh_rendezvous_seed,
 )
 
 
@@ -69,6 +70,20 @@ def test_cwh_rendezvous_velocity_hits_requested_position() -> None:
     velocity = cwh_rendezvous_velocity(r0, rf, tof_s, n)
     final_state = propagate_cwh(np.hstack([r0, velocity]), tof_s, n)
     assert final_state[0:3] == pytest.approx(rf, abs=1e-9)
+
+
+def test_cwh_seed_selection_prefers_accepted_geometry_candidate() -> None:
+    initial = state([0.0, -1_000.0, 0.0], [0.0, 0.0, 0.0])
+    final = state([0.0, -100.0, 0.0], [0.0, 0.0, 0.0])
+    seed = select_cwh_rendezvous_seed(
+        initial,
+        final,
+        mean_motion_radps=0.0011,
+        tof_bounds_s=(1_200.0, 2_400.0),
+        samples=20,
+        candidate_filter=lambda candidate: candidate.tof_s <= 1_400.0,
+    )
+    assert seed.tof_s <= 1_400.0
 
 
 def test_inertial_relative_state_transform_round_trip() -> None:

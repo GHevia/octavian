@@ -364,3 +364,25 @@ Important choices:
 The example prints the solution, frame, and selected dynamics model without
 creating a plot. Existing inertial trajectory plots are not labeled for LVLH
 geometry yet.
+
+## 12: CWH Safety Corridor
+
+Path: `examples/composable/12_cwh_safety_corridor.py`
+
+Run:
+
+```bash
+conda run -n asset_env python examples/composable/12_cwh_safety_corridor.py
+```
+
+Capability showcased:
+
+- A 75 m spherical keep-out zone around the chief.
+- A one-sided 30° approach cone along the negative LVLH y axis.
+- An 85°–121° angle bound to a fixed illumination direction.
+- Geometry-aware CWH seed selection and post-solve satisfaction reporting.
+
+The unconstrained minimum-delta-v arc falls outside the 30° corridor. The
+constraint therefore moves the optimized transfer to the cone boundary,
+demonstrating that the geometry changes the solution rather than only checking
+it afterward.
