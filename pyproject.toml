@@ -61,6 +61,9 @@ packages = ["octavian"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+  "robustness: deterministic solver-backed robustness campaign cases",
+]
 
 [tool.ruff]
 line-length = 100
