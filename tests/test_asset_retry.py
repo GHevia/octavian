@@ -5,6 +5,7 @@ import pytest
 from octavian._asset import (
     AssetNonMonotonicTimeError,
     is_non_monotonic_time_error,
+    set_ocp_threads,
     solve_with_standard_sequence,
 )
 
@@ -23,12 +24,16 @@ class _FakeOCP(_FakeTarget):
         self.failures = list(failures)
         self.final_result = bool(final_result)
         self.solve_calls = 0
+        self.thread_values: list[tuple[int, int]] = []
 
     def solve_optimize_solve(self) -> bool:
         self.solve_calls += 1
         if self.failures:
             raise self.failures.pop(0)
         return self.final_result
+
+    def setThreads(self, optimizer_threads: int, mesh_threads: int) -> None:  # noqa: N802 - mirrors ASSET API
+        self.thread_values.append((int(optimizer_threads), int(mesh_threads)))
 
 
 def test_non_monotonic_time_error_detection_uses_asset_message() -> None:
@@ -74,3 +79,18 @@ def test_solve_does_not_retry_unrelated_asset_errors() -> None:
         solve_with_standard_sequence(ocp)
 
     assert ocp.solve_calls == 1
+
+
+def test_set_ocp_threads_configures_asset_thread_pair() -> None:
+    ocp = _FakeOCP([])
+
+    set_ocp_threads(ocp, (1, 1))
+
+    assert ocp.thread_values == [(1, 1)]
+
+
+def test_set_ocp_threads_rejects_invalid_thread_counts() -> None:
+    ocp = _FakeOCP([])
+
+    with pytest.raises(ValueError, match="positive integers"):
+        set_ocp_threads(ocp, (1, 0))

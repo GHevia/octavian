@@ -162,6 +162,33 @@ def solve_with_standard_sequence(
     )
 
 
+def set_ocp_threads(ocp: Any, threads: tuple[int, int] | None) -> None:
+    """Apply ASSET OCP threading controls when requested.
+
+    Parameters
+    ----------
+    ocp
+        ASSET optimal-control problem.
+    threads
+        Optional ``(optimizer_threads, mesh_threads)`` pair passed to
+        ``ocp.setThreads``. Use ``(1, 1)`` for deterministic test solves.
+    """
+    if threads is None:
+        return
+
+    if len(threads) != 2:
+        raise ValueError("asset_threads must be a two-item tuple, such as (1, 1).")
+
+    optimizer_threads, mesh_threads = (int(threads[0]), int(threads[1]))
+    if optimizer_threads < 1 or mesh_threads < 1:
+        raise ValueError("asset_threads values must both be positive integers.")
+
+    setter = getattr(ocp, "setThreads", None)
+    if setter is None:
+        raise RuntimeError("This ASSET OCP object does not expose setThreads().")
+    setter(optimizer_threads, mesh_threads)
+
+
 def _set_adaptive_mesh(ocp: Any, phases: Sequence[Any], enabled: bool) -> None:
     """Best-effort adaptive mesh switch for an OCP and its phases."""
     for target in (ocp, *tuple(phases)):

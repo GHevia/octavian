@@ -21,7 +21,7 @@ from octavian.astro import classical_to_cartesian
 from octavian.solvers import SolverOptions
 
 MU = 3.986004418e14
-DEFAULT_OPTS = SolverOptions(print_level=0)
+DEFAULT_OPTS = SolverOptions(print_level=0, max_ls_iters=5, asset_threads=(1, 1))
 HOHMANN_R0_M = 7_000e3
 HOHMANN_RF_M = 12_000e3
 LINK_R_FINAL_M = 10_000e3

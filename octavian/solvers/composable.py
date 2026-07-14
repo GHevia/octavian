@@ -37,6 +37,7 @@ from .._asset import (
     fix_front_time,
     oc,
     require_asset,
+    set_ocp_threads,
     solve_with_standard_sequence,
     vf,
 )
@@ -93,6 +94,7 @@ class _PhaseBuild:
     state_dim: int = 6
     control_dim: int = 0
     is_chemical_burn: bool = False
+    enable_adaptive_mesh: bool = True
 
 
 def _has_impulsive_var(phase: Phase, where: str) -> bool:
@@ -1552,6 +1554,7 @@ def solve_composable_mission(
                 state_dim=state_dim,
                 control_dim=control_dim,
                 is_chemical_burn=is_burn,
+                enable_adaptive_mesh=False,
             )
         )
 
@@ -1560,14 +1563,15 @@ def solve_composable_mission(
     ocp.optimizer.PrintLevel = int(opts.print_level)
     ocp.optimizer.MaxLSIters = int(opts.max_ls_iters)
     ocp.optimizer.set_QPOrderingMode(str(opts.qp_ordering_mode))
+    set_ocp_threads(ocp, opts.asset_threads)
 
     for b in built:
         b.asset_phase.setAutoScaling(bool(opts.enable_auto_scaling))
         b.asset_phase.setUnits(R=r_unit, V=v_unit, t=t_unit)
-        b.asset_phase.setAdaptiveMesh(bool(opts.enable_adaptive_mesh))
+        b.asset_phase.setAdaptiveMesh(bool(opts.enable_adaptive_mesh and b.enable_adaptive_mesh))
 
     ocp.setAutoScaling(True, True)
-    ocp.setAdaptiveMesh(True)
+    ocp.setAdaptiveMesh(bool(opts.enable_adaptive_mesh))
     ocp.PrintMeshInfo = False
 
     # Apply constraints and time bounds per phase

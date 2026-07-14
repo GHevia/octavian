@@ -26,6 +26,7 @@ from .._asset import (
     add_back_time_bound,
     oc,
     require_asset,
+    set_ocp_threads,
     solve_with_standard_sequence,
     vf,
 )
@@ -375,12 +376,13 @@ def solve_two_impulse_free_time(
     ocp.optimizer.PrintLevel = int(opts.print_level)
     ocp.optimizer.MaxLSIters = int(opts.max_ls_iters)
     ocp.optimizer.set_QPOrderingMode(str(opts.qp_ordering_mode))
+    set_ocp_threads(ocp, opts.asset_threads)
 
     phase.setAutoScaling(bool(opts.enable_auto_scaling))
     phase.setUnits(R=r_unit, V=v_unit, t=t_unit)
     phase.setAdaptiveMesh(bool(opts.enable_adaptive_mesh))
     ocp.setAutoScaling(True, True)
-    ocp.setAdaptiveMesh(True)
+    ocp.setAdaptiveMesh(bool(opts.enable_adaptive_mesh))
     ocp.PrintMeshInfo = False
 
     converged = solve_with_standard_sequence(ocp, phases=(phase,))
@@ -632,19 +634,15 @@ def solve_two_impulse_precoast(
     ocp.optimizer.PrintLevel = int(opts.print_level)
     ocp.optimizer.MaxLSIters = int(opts.max_ls_iters)
     ocp.optimizer.set_QPOrderingMode(str(opts.qp_ordering_mode))
+    set_ocp_threads(ocp, opts.asset_threads)
 
     for phase in [phase1, phase0]:
         phase.setAutoScaling(bool(opts.enable_auto_scaling))
         phase.setUnits(R=r_unit, V=v_unit, t=t_unit)
         phase.setAdaptiveMesh(bool(opts.enable_adaptive_mesh))
 
-    for ph in (phase0, phase1):
-        ph.setAutoScaling(True)
-        ph.setUnits(R=r_unit, V=v_unit, t=t_unit)
-        ph.setAdaptiveMesh(True)
-
     ocp.setAutoScaling(True, True)
-    ocp.setAdaptiveMesh(True)
+    ocp.setAdaptiveMesh(bool(opts.enable_adaptive_mesh))
     ocp.PrintMeshInfo = False
 
     converged = solve_with_standard_sequence(ocp, phases=(phase0, phase1))

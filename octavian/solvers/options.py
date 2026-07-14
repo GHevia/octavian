@@ -25,6 +25,9 @@ class SolverOptions:
             ``optimizer.set_QPOrderingMode``).
         enable_auto_scaling: Whether to enable ASSET phase auto-scaling.
         enable_adaptive_mesh: Whether to allow adaptive mesh refinement.
+        asset_threads: Optional ``(optimizer_threads, mesh_threads)`` pair passed
+            to ASSET's ``ocp.setThreads``. Use ``(1, 1)`` for deterministic
+            regression tests when ASSET's multi-threaded solve path is noisy.
     """
 
     print_level: int = 0
@@ -32,3 +35,4 @@ class SolverOptions:
     qp_ordering_mode: str = "MINDEG"
     enable_auto_scaling: bool = True
     enable_adaptive_mesh: bool = True
+    asset_threads: tuple[int, int] | None = None
