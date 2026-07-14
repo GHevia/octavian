@@ -116,6 +116,8 @@ of the phase definition.
   compilation orchestrator.
 - `octavian/solvers/compiler/phase_compiler.py`: phase classification, state
   dimensions, dynamics selection, guess shaping, and ASSET phase construction.
+- `octavian/coordinates/`: immutable frame, state-layout, and characteristic
+  scaling declarations shared by configuration, compilation, and reporting.
 - `octavian/solvers/constraint_compiler.py`: composable-backend constraint
   lookup, orbital-element ASSET expressions, terminal post-burn shell handling,
   and orbital-element result reports.

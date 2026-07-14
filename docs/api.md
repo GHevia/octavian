@@ -32,6 +32,12 @@ The API reference is generated from source docstrings with `mkdocstrings`.
 
 ::: octavian.dynamics
 
+::: octavian.coordinates.frames
+
+::: octavian.coordinates.layouts
+
+::: octavian.coordinates.scaling
+
 ## Quick Builders And Specs
 
 ::: octavian.quick

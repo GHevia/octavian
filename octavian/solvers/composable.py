@@ -46,7 +46,7 @@ from ..astro.kepler import (
 )
 from ..astro.lambert import select_best_lambert_seed
 from ..astro.types import as_vec3
-from ..astro.units import default_units
+from ..astro.units import default_scaling
 from ..constraints import OrbitalElementConstraint
 from ..phase import Phase
 from ..time import normalize_time_bounds
@@ -912,6 +912,13 @@ def solve_composable_mission(
     if not phases:
         raise ValueError("Mission has no phases")
 
+    frames = {phase.dynamics.frame for phase in phases if phase.dynamics is not None}
+    if len(frames) > 1:
+        raise ValueError(
+            "Composable missions currently require one coordinate frame across all phases. "
+            "Add an explicit frame transformation before linking phases in different frames."
+        )
+
     _validate_chemical_burn_transfer(phases)
     mass_state_indices = _mass_state_phase_indices(phases)
 
@@ -929,7 +936,7 @@ def solve_composable_mission(
     abs_bounds = normalize_time_bounds(phases)
     third_body_tables = build_third_body_tables(mission, phases, abs_bounds)
 
-    # Units / scaling: use default_units() with a tiny dummy spec carrying x0/xf.
+    # Characteristic scaling remains dimensional at the public API boundary.
     first = phases[0]
     last = phases[-1]
     mu = float(first.dynamics.mu_m3ps2)  # type: ignore[union-attr]
@@ -967,11 +974,21 @@ def solve_composable_mission(
             self.r_unit_m = None
             self.v_unit_mps = None
             self.t_unit_s = None
+            self.scaling = first.dynamics.scaling  # type: ignore[union-attr]
+            spacecraft = first.spacecraft
+            self.mass_unit_kg = (
+                float(spacecraft.initial_mass_kg)
+                if not isinstance(spacecraft, str) and spacecraft is not None
+                else 1.0
+            )
             # approximate time bounds from last phase if available
             last_bounds = abs_bounds[-1]
             self.tf_bounds_s = last_bounds if last_bounds is not None else (0.0, 10.0)
 
-    r_unit, v_unit, t_unit = default_units(_UnitSpec(x0_for_units, xf_for_units, mu))
+    solver_scaling = default_scaling(_UnitSpec(x0_for_units, xf_for_units, mu))
+    r_unit = solver_scaling.length_m
+    v_unit = solver_scaling.velocity_mps
+    t_unit = solver_scaling.time_s
 
     # Build guesses: handle common 2-phase precoast+transfer case for better robustness
     nsegs0 = int(getattr(mission, "mesh_nsegs_precoast", 30))
@@ -1068,7 +1085,7 @@ def solve_composable_mission(
                 if prev_guess is None:
                     prev_guess = _trajectory_rvt(
                         np.asarray(built[-1].asset_phase.returnTraj(), dtype=float),
-                        built[-1].state_dim,
+                        built[-1].layout,
                     ).tolist()
                 prev_last = np.asarray(prev_guess[-1], dtype=float)
                 chain_t_start = float(prev_last[6])
@@ -1093,7 +1110,7 @@ def solve_composable_mission(
                 guess_info.update(chain_info)
                 ig = guesses[idx]
                 nsegs = len(ig) - 1
-                asset_phase, state_dim, control_dim, is_burn = _make_asset_phase(
+                asset_phase, layout, is_burn = _make_asset_phase(
                     ph,
                     ig,
                     int(nsegs),
@@ -1109,8 +1126,7 @@ def solve_composable_mission(
                         t_bounds=tuple(abs_bounds[idx] or (0.0, 1.0)),
                         index=idx,
                         compile_phase=(last_compile_phase if ph is phases[-1] else None),
-                        state_dim=state_dim,
-                        control_dim=control_dim,
+                        layout=layout,
                         is_chemical_burn=is_burn,
                     )
                 )
@@ -1158,7 +1174,7 @@ def solve_composable_mission(
                 if prev_guess is None:
                     prev_guess = _trajectory_rvt(
                         np.asarray(built[-1].asset_phase.returnTraj(), dtype=float),
-                        built[-1].state_dim,
+                        built[-1].layout,
                     ).tolist()
                 rv_start = np.asarray(prev_guess[-1])[0:6]
                 t_start = float(np.asarray(prev_guess[-1])[6])
@@ -1200,7 +1216,7 @@ def solve_composable_mission(
                         mu_m3ps2=mu,
                     )
 
-        asset_phase, state_dim, control_dim, is_burn = _make_asset_phase(
+        asset_phase, layout, is_burn = _make_asset_phase(
             ph,
             ig,
             int(nsegs),
@@ -1216,8 +1232,7 @@ def solve_composable_mission(
                 t_bounds=tuple(abs_bounds[idx] or (0.0, 1.0)),
                 index=idx,
                 compile_phase=(last_compile_phase if ph is phases[-1] else None),
-                state_dim=state_dim,
-                control_dim=control_dim,
+                layout=layout,
                 is_chemical_burn=is_burn,
             )
         )
@@ -1227,7 +1242,7 @@ def solve_composable_mission(
         if last_guess is None:
             last_guess = _trajectory_rvt(
                 np.asarray(built[-1].asset_phase.returnTraj(), dtype=float),
-                built[-1].state_dim,
+                built[-1].layout,
             ).tolist()
         last_pt = np.asarray(last_guess[-1], dtype=float)
         shell_t0 = float(last_pt[6])
@@ -1243,7 +1258,7 @@ def solve_composable_mission(
             npts=3,
             mu_m3ps2=mu,
         )
-        shell_asset_phase, state_dim, control_dim, is_burn = _make_asset_phase(
+        shell_asset_phase, layout, is_burn = _make_asset_phase(
             shell_phase,
             shell_guess,
             2,
@@ -1257,8 +1272,7 @@ def solve_composable_mission(
                 t_bounds=(shell_t0 + 0.1, shell_tf),
                 index=len(built),
                 compile_phase=shell_phase,
-                state_dim=state_dim,
-                control_dim=control_dim,
+                layout=layout,
                 is_chemical_burn=is_burn,
                 enable_adaptive_mesh=False,
             )
@@ -1421,12 +1435,12 @@ def solve_composable_mission(
                 float(w_dv) * dvmag,
                 prev_ap,
                 "Back",
-                [3, 4, 5],
+                list(prev_build.layout.state_indices("velocity")),
                 [],
                 [],
                 ap,
                 "Front",
-                [3, 4, 5],
+                list(b.layout.state_indices("velocity")),
                 [],
                 [],
                 [],
@@ -1445,7 +1459,7 @@ def solve_composable_mission(
             b.asset_phase.addStateObjective(
                 "Back",
                 -float(w_dv) * mass_argument,
-                [6],
+                list(b.layout.state_indices("mass")),
                 [],
                 [],
                 AutoScale=1.0 / max(float(spacecraft.initial_mass_kg), 1.0),
@@ -1465,7 +1479,12 @@ def solve_composable_mission(
             a0 = vf.Arguments(3)
             dv0 = vf.sqrt((a0 - v_target).dot(a0 - v_target))
             first_ap.addStateObjective(
-                "Front", float(w_dv) * dv0, [3, 4, 5], [], [], AutoScale=1.0 / float(v_unit)
+                "Front",
+                float(w_dv) * dv0,
+                list(built[0].layout.state_indices("velocity")),
+                [],
+                [],
+                AutoScale=1.0 / float(v_unit),
             )
 
         # Terminal: if last phase has impulsive Δv at Back, penalize relative to desired terminal velocity
@@ -1477,7 +1496,12 @@ def solve_composable_mission(
                 b0 = vf.Arguments(3)
                 dvf = vf.sqrt((v_target - b0).dot(v_target - b0))
                 last_ap.addStateObjective(
-                    "Back", float(w_dv) * dvf, [3, 4, 5], [], [], AutoScale=1.0 / float(v_unit)
+                    "Back",
+                    float(w_dv) * dvf,
+                    list(built[-1].layout.state_indices("velocity")),
+                    [],
+                    [],
+                    AutoScale=1.0 / float(v_unit),
                 )
 
     # Time objective: minimize final time at last phase Back
@@ -1488,7 +1512,7 @@ def solve_composable_mission(
         last_ap.addStateObjective(
             "Back",
             float(w_time) * at,
-            [last_build.state_dim],
+            [last_build.layout.time_column],
             [],
             [],
             AutoScale=1.0 / float(t_unit),
@@ -1502,7 +1526,10 @@ def solve_composable_mission(
 
     # Extract trajectory (stitch)
     raw_trajs = [np.asarray(b.asset_phase.returnTraj(), dtype=float) for b in built]
-    trajs = [_trajectory_rvt(raw_traj, b.state_dim) for raw_traj, b in zip(raw_trajs, built, strict=True)]
+    trajs = [
+        _trajectory_rvt(raw_traj, build.layout)
+        for raw_traj, build in zip(raw_trajs, built, strict=True)
+    ]
     traj = trajs[0]
     for t in trajs[1:]:
         traj = np.vstack([traj, t[1:, :]])
@@ -1586,8 +1613,9 @@ def solve_composable_mission(
         if not build.is_chemical_burn:
             continue
         raw_traj = raw_trajs[build.index]
-        mass_initial_kg = float(raw_traj[0, 6])
-        mass_final_kg = float(raw_traj[-1, 6])
+        mass_index = build.layout.state_indices("mass")[0]
+        mass_initial_kg = float(raw_traj[0, mass_index])
+        mass_final_kg = float(raw_traj[-1, mass_index])
         propellant_used_kg = max(0.0, mass_initial_kg - mass_final_kg)
         equivalent_dv_mps = 0.0
         spacecraft = build.ph.spacecraft
@@ -1619,6 +1647,9 @@ def solve_composable_mission(
             "r_unit_m": r_unit,
             "v_unit_mps": v_unit,
             "t_unit_s": t_unit,
+            "scaling": solver_scaling.to_dict(),
+            "frame": first.dynamics.frame.to_dict(),  # type: ignore[union-attr]
+            "state_layouts": [build.layout.name for build in built],
             "constraint_report": constraint_report,
             "chemical_burns": chemical_burns,
             "phase_segments": phase_segments,

@@ -20,6 +20,7 @@ from .lambert import LambertSeed as LambertSeed
 from .lambert import select_best_lambert_seed as select_best_lambert_seed
 from .types import Vec3 as Vec3
 from .types import as_vec3 as as_vec3
+from .units import default_scaling as default_scaling
 from .units import default_units as default_units
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "classic_to_cartesian",
     "classical_to_cartesian",
     "default_units",
+    "default_scaling",
     "estimate_orbital_period_s",
     "kepler_dense_guess",
     "propagate_cartesian_rv",

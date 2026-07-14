@@ -60,11 +60,29 @@ use total delta-v and, in the quick API, an optional final-time weight.
 ## Dynamics And Perturbations
 
 `Dynamics` configures the gravitational parameter, central-body radius, J2
-coefficient, and perturbation flags. J2, Moon, and Sun perturbations are
+coefficient, reference frame, characteristic scaling, and perturbation flags.
+J2, Moon, and Sun perturbations are
 implemented in the composable ASSET backend for coast and chemical-burn phases.
 Moon and Sun use the bundled reduced DE440 ephemeris in the `ECI_TOD` frame and
 require a mission initial epoch so Octavian can build ASSET interpolation
 tables over the mission time bounds.
+
+## Frames, Layouts, And Scaling
+
+Every `Dynamics` declaration carries a `CoordinateFrame`; existing missions
+default to Earth-centered inertial coordinates. Solver results preserve that
+metadata through `solution.frame`, so trajectory consumers do not have to infer
+an origin or orientation from array shape.
+
+The compiler uses named `StateLayout` objects for position, velocity, mass, and
+controls. Public trajectories remain `[R, V, t]`, while powered phases can carry
+mass and thrust controls without spreading raw column numbers through compiler
+passes.
+
+Octavian still accepts and returns SI values. `SolverScaling` only declares the
+characteristic units used to condition the optimization problem. Automatic
+endpoint-derived scaling remains the default, and the selected units are
+available through `solution.scaling`.
 
 ## Spacecraft And Thrusters
 
@@ -84,6 +102,7 @@ report:
 - phase segments,
 - chemical burn summaries,
 - constraint reports.
+- reference-frame and solver-scaling metadata.
 
 Plotly helpers turn the trajectory and maneuvers into inspectable HTML files.
 
