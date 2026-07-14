@@ -22,6 +22,7 @@ Octavian currently supports:
 - continuous and impulsive phase links,
 - boundary state and position constraints,
 - minimum-radius path constraints,
+- relative keep-out, approach-cone, and fixed lighting-angle constraints,
 - terminal orbital-element constraints for semi-major axis, eccentricity, and
   inclination,
 - finite chemical burns with mass depletion and thrust-direction controls,
@@ -120,6 +121,9 @@ of the phase definition.
   compilation orchestrator.
 - `octavian/solvers/compiler/phase_compiler.py`: phase classification, state
   dimensions, dynamics selection, guess shaping, and ASSET phase construction.
+- `octavian/solvers/compiler/relative_constraint_compiler.py`: Cartesian
+  keep-out, approach-cone, and lighting inequality compilation plus result
+  reports.
 - `octavian/coordinates/`: immutable frame, state-layout, and characteristic
   scaling declarations shared by configuration, compilation, and reporting.
 - `octavian/bodies/`: immutable central-body constants and case-insensitive

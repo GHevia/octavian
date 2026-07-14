@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -27,8 +28,14 @@ def select_cwh_rendezvous_seed(
     mean_motion_radps: float,
     tof_bounds_s: tuple[float, float],
     samples: int = 60,
+    candidate_filter: Callable[[CWHRendezvousSeed], bool] | None = None,
 ) -> CWHRendezvousSeed:
-    """Select the lowest-impulse nonsingular CWH seed over a time grid."""
+    """Select the lowest-impulse nonsingular CWH seed over a time grid.
+
+    When ``candidate_filter`` is supplied, the lowest-cost accepted seed wins.
+    If no candidate is accepted, the lowest-cost unfiltered seed is returned so
+    the optimizer still receives a deterministic fallback.
+    """
     minimum_time_s, maximum_time_s = map(float, tof_bounds_s)
     if not (0.0 < minimum_time_s < maximum_time_s):
         raise ValueError("tof_bounds_s must satisfy 0 < minimum < maximum")
@@ -36,6 +43,7 @@ def select_cwh_rendezvous_seed(
         raise ValueError("samples must be at least 2")
 
     best: CWHRendezvousSeed | None = None
+    best_accepted: CWHRendezvousSeed | None = None
     for tof_s in np.linspace(minimum_time_s, maximum_time_s, int(samples)):
         try:
             departure_velocity = cwh_rendezvous_velocity(
@@ -62,10 +70,19 @@ def select_cwh_rendezvous_seed(
         )
         if best is None or candidate.total_dv_mps < best.total_dv_mps:
             best = candidate
+        if (
+            candidate_filter is not None
+            and candidate_filter(candidate)
+            and (
+                best_accepted is None
+                or candidate.total_dv_mps < best_accepted.total_dv_mps
+            )
+        ):
+            best_accepted = candidate
 
     if best is None:
         raise RuntimeError("No nonsingular CWH rendezvous seed exists in the time bounds")
-    return best
+    return best_accepted or best
 
 
 def cwh_dense_guess(

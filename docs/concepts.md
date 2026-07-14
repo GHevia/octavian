@@ -35,6 +35,9 @@ show:
 - Terminal semi-major axis.
 - Terminal eccentricity.
 - Terminal inclination.
+- Offset spherical keep-out zones.
+- One-sided approach cones.
+- Fixed-direction lighting-angle bounds.
 
 ## Variables
 
@@ -90,6 +93,12 @@ state transforms for analysis before or after optimization. The current CWH
 compiler supports one unforced relative phase. Inertial orbital-element
 constraints, finite thrust, and inertial/relative phase links are rejected
 until an explicit acceleration or frame-link model is configured.
+
+Relative geometry constraints operate on Cartesian position in the phase
+frame. `keep_out_sphere` accepts an arbitrary center, `approach_cone` defines a
+forward axis and half-angle, and `lighting_angle` bounds the angle to a fixed
+Sun direction. The fixed-direction lighting model is appropriate over short
+relative arcs; it is not an ephemeris-varying eclipse or power model.
 
 ## Frames, Layouts, And Scaling
 

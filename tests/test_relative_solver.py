@@ -92,3 +92,61 @@ def test_cwh_relative_rendezvous_compiles_solves_and_reports_frame() -> None:
     )
     assert result.total_dv_mps() == pytest.approx(expected_dv_mps, rel=2e-5)
     assert result.traj[-1, 3:6] == pytest.approx(analytic_arrival[3:6], abs=1e-7)
+
+
+def test_cwh_relative_geometry_constraints_compile_and_report() -> None:
+    initial_state = state([0.0, -1_000.0, 0.0], [0.0, 0.0, 0.0])
+    final_state = state([0.0, -100.0, 0.0], [0.0, 0.0, 0.0])
+    phase = Phase(
+        name="safe_approach",
+        mode="relative_coast",
+        spacecraft=Spacecraft(name="Deputy", dry_mass_kg=250.0),
+        dynamics=Dynamics.cwh(
+            chief_orbit_radius_m=EARTH.mean_radius_m + 400_000.0,
+            reference_length_m=1_000.0,
+        ),
+        initial_state=initial_state,
+        final_state=final_state,
+        tof_bounds_s=(1_200.0, 2_400.0),
+        constraints=[
+            constraints.state(initial_state, where="Front"),
+            constraints.state(final_state, where="Back"),
+            constraints.keep_out_sphere(75.0),
+            constraints.approach_cone([0.0, -1.0, 0.0], 30.0),
+            constraints.lighting_angle(
+                [1.0, 0.0, 0.0],
+                min_angle_deg=85.0,
+                max_angle_deg=121.0,
+            ),
+        ],
+        variables=[
+            variables.impulsive_delta_v(at="Front"),
+            variables.impulsive_delta_v(at="Back"),
+        ],
+    )
+    solution = Mission(
+        phases=[phase],
+        objectives=[objectives.minimize_total_delta_v()],
+        mesh_nsegs_transfer=50,
+        lambert_grid_size=60,
+        solver_options=SolverOptions(
+            print_level=0,
+            max_ls_iters=5,
+            asset_threads=(1, 1),
+        ),
+    ).solve()
+
+    assert solution.ok
+    assert solution.result is not None
+    report = solution.result.info["constraint_report"]
+    assert [row["constraint"] for row in report] == [
+        "keep_out_sphere",
+        "approach_cone",
+        "lighting_min_angle_deg",
+        "lighting_max_angle_deg",
+    ]
+    assert all(row["satisfied"] for row in report)
+    assert report[0]["actual"] >= 75.0
+    assert report[1]["actual"] <= 30.0 + 1e-4
+    assert report[2]["actual"] >= 85.0 - 1e-4
+    assert report[3]["actual"] <= 121.0 + 1e-4

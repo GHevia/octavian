@@ -49,11 +49,11 @@ from ..astro.types import as_vec3
 from ..astro.units import default_scaling
 from ..constraints import OrbitalElementConstraint
 from ..phase import Phase
-from ..relative import cwh_dense_guess, select_cwh_rendezvous_seed
+from ..relative import CWHRendezvousSeed, cwh_dense_guess, select_cwh_rendezvous_seed
 from ..time import normalize_time_bounds
 from ..types import Maneuver
 from . import constraint_compiler
-from .compiler import phase_compiler
+from .compiler import phase_compiler, relative_constraint_compiler
 from .options import SolverOptions
 from .preconfigured import RendezvousResult  # reuse stable result type
 from .third_bodies import build_third_body_tables
@@ -136,12 +136,37 @@ def _build_guess_single_phase_cwh(
         raise ValueError(
             "A CWH rendezvous phase requires initial and final State values for guess generation."
         )
+    geometry_constraints = relative_constraint_compiler.relative_geometry_constraints(phase)
+
+    def geometry_is_feasible(candidate: CWHRendezvousSeed) -> bool:
+        if not geometry_constraints:
+            return True
+        candidate_guess = cwh_dense_guess(
+            initial_state.r_m,
+            candidate.departure_velocity_mps,
+            mean_motion_radps=model.mean_motion_radps,
+            t0_s=0.0,
+            tf_s=candidate.tof_s,
+            npts=max(int(nsegs) + 1, 61),
+        )
+        candidate_traj = np.asarray(candidate_guess, dtype=float)
+        return all(
+            row["satisfied"]
+            for constraint in geometry_constraints
+            for row in relative_constraint_compiler.relative_constraint_report_rows(
+                phase_name=phase.name,
+                constraint=constraint,
+                phase_traj=candidate_traj,
+            )
+        )
+
     seed = select_cwh_rendezvous_seed(
         initial_state,
         final_state,
         mean_motion_radps=model.mean_motion_radps,
         tof_bounds_s=tf_bounds,
         samples=samples,
+        candidate_filter=geometry_is_feasible if geometry_constraints else None,
     )
     guess = cwh_dense_guess(
         initial_state.r_m,
@@ -156,6 +181,7 @@ def _build_guess_single_phase_cwh(
         "seed_tof_s": seed.tof_s,
         "seed_total_dv_mps": seed.total_dv_mps,
         "seed_samples": int(samples),
+        "seed_geometry_feasible": bool(geometry_is_feasible(seed)),
     }
 
 
@@ -1469,6 +1495,12 @@ def solve_composable_mission(
                 ap.addLowerNormBound(location, "R", minimum_radius_m)
             elif isinstance(constraint, OrbitalElementConstraint):
                 constraint_compiler.apply_orbital_element_constraint(ap, constraint, mu)
+            elif relative_constraint_compiler.is_relative_geometry_constraint(constraint):
+                relative_constraint_compiler.apply_relative_geometry_constraint(
+                    ap,
+                    constraint,
+                    b.layout.state_indices("position"),
+                )
 
         # Time bounds: normalize tof_bounds_s to absolute Back-time bounds.
         bounds = b.t_bounds
@@ -1677,6 +1709,16 @@ def solve_composable_mission(
                     constraint=constraint,
                     phase_traj=phase_traj,
                     mu_m3ps2=mu,
+                )
+            )
+        for constraint in relative_constraint_compiler.relative_geometry_constraints(
+            constraint_phase
+        ):
+            constraint_report.extend(
+                relative_constraint_compiler.relative_constraint_report_rows(
+                    phase_name=constraint_phase.name,
+                    constraint=constraint,
+                    phase_traj=phase_traj,
                 )
             )
 
