@@ -26,13 +26,11 @@ changing the compilation model.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from .._asset import (
-    Tmodes,
     add_back_time_bound,
     fix_front_time,
     oc,
@@ -50,256 +48,41 @@ from ..astro.lambert import select_best_lambert_seed
 from ..astro.types import as_vec3
 from ..astro.units import default_units
 from ..constraints import OrbitalElementConstraint
-from ..dynamics import (
-    ChemicalBurnECI,
-    MassCoastECI,
-    PerturbedECI,
-    ThirdBodyTable,
-    TwoBodyECI,
-)
 from ..phase import Phase
 from ..time import normalize_time_bounds
 from ..types import Maneuver
-from ..variables import ImpulsiveDeltaV
 from . import constraint_compiler
+from .compiler import phase_compiler
 from .options import SolverOptions
 from .preconfigured import RendezvousResult  # reuse stable result type
-from .third_bodies import build_third_body_tables, phase_perturbations, tables_for_phase
+from .third_bodies import build_third_body_tables
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..mission import Mission
 
 
+# Private compatibility aliases keep existing internal imports and focused
+# tests stable while implementation ownership moves into ``solvers.compiler``.
+_PhaseBuild = phase_compiler.PhaseBuild
+_augment_guess_for_chemical_burn = phase_compiler.augment_chemical_burn_guess
+_augment_guess_for_mass_coast = phase_compiler.augment_mass_coast_guess
+_compile_phase_dimensions = phase_compiler.compile_phase_dimensions
+_first_thruster = phase_compiler.first_thruster
+_has_impulsive_var = phase_compiler.has_impulsive_variable
+_is_coast_like = phase_compiler.is_coast_like
+_make_asset_phase = phase_compiler.make_asset_phase
+_mass_state_phase_indices = phase_compiler.mass_state_phase_indices
+_ode_for_phase = phase_compiler.ode_for_phase
+_phase_dimensions = phase_compiler.phase_dimensions
+_phase_is_chemical_burn = phase_compiler.is_chemical_burn
+_prepare_phase_guess = phase_compiler.prepare_phase_guess
+_trajectory_rvt = phase_compiler.trajectory_rvt
+_validate_chemical_burn_transfer = phase_compiler.validate_chemical_burn_transfer
+
+
 def _require_asset() -> None:
     """Require ASSET before compiling a composable mission."""
     require_asset("composable optimization solves")
-
-
-@dataclass
-class _PhaseBuild:
-    """Bookkeeping for one compiled ASSET phase.
-
-    User-facing phases and compiled phases can diverge when the compiler adds
-    internal helper phases, such as the post-burn shell used for terminal
-    orbital-element targets. This record keeps the ASSET phase, original phase,
-    compile-time phase override, dimensions, and time bounds together for the
-    later constraint, link, solve, and result-extraction passes.
-    """
-
-    ph: Phase
-    asset_phase: Any
-    t_bounds: tuple[float, float]
-    index: int
-    compile_phase: Phase | None = None
-    state_dim: int = 6
-    control_dim: int = 0
-    is_chemical_burn: bool = False
-    enable_adaptive_mesh: bool = True
-
-
-def _has_impulsive_var(phase: Phase, where: str) -> bool:
-    """Return whether a phase has an impulsive delta-v at a boundary."""
-    w = (where or "").strip().lower()
-    loc = "Front" if w in ("front", "start", "initial", "t0") else "Back"
-    for variable in getattr(phase, "variables", []) or []:
-        if isinstance(variable, ImpulsiveDeltaV) and getattr(variable, "where", "") == loc:
-            return True
-    for event in getattr(phase, "events", []) or []:
-        if getattr(event, "kind", "") == "impulse" and getattr(event, "where", "") == loc:
-            return True
-    return False
-
-
-def _phase_is_chemical_burn(phase: Phase) -> bool:
-    """Return whether a phase should compile to finite chemical-burn dynamics."""
-    normalized_mode = (getattr(phase, "mode", "") or "").strip().lower().replace("-", "_")
-    return normalized_mode in ("burn", "chemical_burn", "finite_burn")
-
-
-def _is_coast_like(phase: Phase) -> bool:
-    """Return whether a phase mode uses coast-like translational dynamics."""
-    normalized_mode = (getattr(phase, "mode", "") or "").strip().lower().replace("-", "_")
-    return normalized_mode in ("coast", "transfer", "rendezvous")
-
-
-def _mass_state_phase_indices(phases: Sequence[Phase]) -> set[int]:
-    """Return phases that should carry mass for finite-burn transfers."""
-    burn_indices = [idx for idx, phase in enumerate(phases) if _phase_is_chemical_burn(phase)]
-    if not burn_indices:
-        return set()
-
-    out = set(burn_indices)
-    first_burn = burn_indices[0]
-    last_burn = burn_indices[-1]
-    for idx in range(first_burn + 1, last_burn):
-        if _is_coast_like(phases[idx]):
-            out.add(idx)
-    return out
-
-
-def _validate_chemical_burn_transfer(phases: Sequence[Phase]) -> None:
-    """Validate the burn-coast-burn shape required for finite chemical transfers."""
-    burn_indices = [idx for idx, phase in enumerate(phases) if _phase_is_chemical_burn(phase)]
-    if not burn_indices:
-        return
-    if len(phases) < 3 or len(burn_indices) < 2:
-        raise ValueError(
-            "Chemical burn transfers require at least three phases: "
-            "a departure burn, a coast, and an arrival burn."
-        )
-    first_burn = burn_indices[0]
-    last_burn = burn_indices[-1]
-    if first_burn != 0 or last_burn != len(phases) - 1:
-        raise ValueError(
-            "Chemical burn transfers must start with a burn phase and end with a burn phase."
-        )
-    if not any(_is_coast_like(phases[idx]) for idx in range(first_burn + 1, last_burn)):
-        raise ValueError("Chemical burn transfers require a coast phase between the burns.")
-
-
-def _first_thruster(phase: Phase):
-    """Return the thruster configured for a chemical burn phase."""
-    spacecraft = getattr(phase, "spacecraft", None)
-    if isinstance(spacecraft, str) or spacecraft is None:
-        raise ValueError(f"Chemical burn phase {phase.name!r} requires a Spacecraft object.")
-    thruster_name = str(getattr(phase, "info", {}).get("thruster", "main"))
-    thruster = spacecraft.get_thruster(thruster_name)
-    if thruster is not None:
-        return thruster
-    if len(spacecraft.thrusters) == 1:
-        return spacecraft.thrusters[0]
-    raise KeyError(f"No thruster named {thruster_name!r} on spacecraft {spacecraft.name!r}")
-
-
-def _ode_for_phase(
-    phase: Phase,
-    *,
-    carries_mass: bool = False,
-    third_body_tables: Sequence[ThirdBodyTable] = (),
-):
-    """Build the ASSET ODE for one phase.
-
-    Phase mode, mass bookkeeping, and perturbation flags jointly select the ODE
-    class. Chemical burns need controls and mass, coasts between burns may carry
-    mass without controls, and ordinary coast-like phases use either two-body or
-    perturbed translational dynamics.
-    """
-    dynamics = phase.dynamics
-    if dynamics is None:
-        raise ValueError(f"Phase {phase.name!r} is missing dynamics.")
-    perturbations = phase_perturbations(phase)
-    if _phase_is_chemical_burn(phase):
-        thruster = _first_thruster(phase)
-        return ChemicalBurnECI(
-            mu_m3ps2=float(dynamics.mu_m3ps2),
-            thrust_N=float(thruster.thrust_N),
-            isp_s=float(thruster.isp_s),
-            j2=bool(perturbations.j2),
-            central_body_radius_m=float(dynamics.central_body_radius_m),
-            j2_coefficient=float(dynamics.j2_coefficient),
-            third_body_tables=tuple(third_body_tables),
-        )
-    if carries_mass:
-        return MassCoastECI(
-            mu_m3ps2=float(dynamics.mu_m3ps2),
-            j2=bool(perturbations.j2),
-            central_body_radius_m=float(dynamics.central_body_radius_m),
-            j2_coefficient=float(dynamics.j2_coefficient),
-            third_body_tables=tuple(third_body_tables),
-        )
-    if perturbations.j2 or third_body_tables:
-        return PerturbedECI(
-            mu_m3ps2=float(dynamics.mu_m3ps2),
-            j2=bool(perturbations.j2),
-            central_body_radius_m=float(dynamics.central_body_radius_m),
-            j2_coefficient=float(dynamics.j2_coefficient),
-            third_body_tables=tuple(third_body_tables),
-        )
-    return TwoBodyECI(mu_m3ps2=float(dynamics.mu_m3ps2))
-
-
-def _phase_dimensions(phase: Phase) -> tuple[int, int, bool]:
-    """Return the user-visible state/control dimensions implied by phase mode."""
-    if _phase_is_chemical_burn(phase):
-        return 7, 3, True
-    return 6, 0, False
-
-
-def _compile_phase_dimensions(phase: Phase, *, carries_mass: bool = False) -> tuple[int, int, bool]:
-    """Return state/control dimensions used for ASSET compilation.
-
-    Coast-like phases normally use six Cartesian states. In burn-coast-burn
-    missions, coast phases between burns carry mass as a seventh constant state
-    so continuity links can preserve propellant bookkeeping.
-    """
-    if _phase_is_chemical_burn(phase):
-        return 7, 3, True
-    if carries_mass:
-        return 7, 0, False
-    return 6, 0, False
-
-
-def _trajectory_rvt(raw_traj: np.ndarray, state_dim: int) -> np.ndarray:
-    """Return the public ``[R, V, t]`` view of an ASSET trajectory."""
-    raw = np.asarray(raw_traj, dtype=float)
-    time_col = int(state_dim)
-    if raw.shape[1] <= time_col:
-        raise ValueError("ASSET trajectory is missing the phase time column.")
-    return raw[:, [0, 1, 2, 3, 4, 5, time_col]]
-
-
-def _augment_guess_for_chemical_burn(
-    base_guess: Sequence[np.ndarray],
-    *,
-    phase: Phase,
-    mass0_kg: float,
-    thrust_N: float,
-    isp_s: float,
-) -> list[np.ndarray]:
-    """Convert an impulsive-style ``[R,V,t]`` guess into burn state/control rows.
-
-    The shared guess builders work in public trajectory rows, while chemical
-    burn ASSET phases require ``[R,V,M,t,U]`` rows. This helper adds a plausible
-    mass history and a constant thrust direction inferred from the velocity
-    change across the base guess. The throttle estimate is capped to ``[0, 1]``.
-    """
-    rows = [np.asarray(row, dtype=float).reshape(-1) for row in base_guess]
-    if not rows:
-        return []
-
-    dv_vec = as_vec3(rows[-1][3:6] - rows[0][3:6])
-    dv_mag = float(np.linalg.norm(dv_vec))
-    direction = dv_vec / dv_mag if dv_mag > 0.0 else np.zeros(3, dtype=float)
-
-    duration_s = max(float(rows[-1][6] - rows[0][6]), 1.0)
-    mass_flow_kgps = float(thrust_N) / (float(isp_s) * 9.80665)
-    accel_mps2 = float(thrust_N) / max(float(mass0_kg), 1.0)
-    impulsive_burn_time_s = dv_mag / max(accel_mps2, 1e-12)
-    throttle = min(1.0, max(0.0, impulsive_burn_time_s / duration_s))
-    control = throttle * direction
-
-    augmented: list[np.ndarray] = []
-    mass_start_kg = float(getattr(phase, "info", {}).get("_mass_guess_start_kg", mass0_kg))
-    for idx, row in enumerate(rows):
-        frac = idx / max(len(rows) - 1, 1)
-        mass = max(mass_start_kg - mass_flow_kgps * throttle * duration_s * frac, 1.0)
-        augmented.append(np.hstack([row[0:6], mass, row[6], control]))
-    return augmented
-
-
-def _augment_guess_for_mass_coast(
-    base_guess: Sequence[np.ndarray],
-    *,
-    phase: Phase,
-    mass0_kg: float,
-) -> list[np.ndarray]:
-    """Add a constant mass state to a coast guess."""
-    mass_start_kg = float(getattr(phase, "info", {}).get("_mass_guess_start_kg", mass0_kg))
-    augmented: list[np.ndarray] = []
-    for row in base_guess:
-        rvt = np.asarray(row, dtype=float).reshape(-1)
-        augmented.append(np.hstack([rvt[0:6], mass_start_kg, rvt[6]]))
-    return augmented
 
 
 def _objective_weights(mission: Mission) -> tuple[bool, float, bool, float]:
@@ -1108,83 +891,6 @@ def _fallback_phase_tf_guess(
     tf_guess = min(max(tf_guess, tmin_abs), tmax_abs)
     tf_guess = max(tf_guess, float(t_start) + 0.1)
     return float(tf_guess)
-
-
-def _prepare_phase_guess(
-    phase: Phase,
-    guess: Sequence[np.ndarray],
-    *,
-    carries_mass: bool = False,
-) -> tuple[list[np.ndarray], int, int, bool]:
-    """Return a guess with the row shape required by the phase dynamics.
-
-    Public guess builders produce ``[R,V,t]`` rows. ASSET phase construction
-    needs rows matching the selected ODE state/control dimensions. This helper
-    dispatches to burn or mass-coast augmentation and returns the dimensions for
-    downstream time bounds, trajectory extraction, and mass bookkeeping.
-    """
-    state_dim, control_dim, is_burn = _compile_phase_dimensions(phase, carries_mass=carries_mass)
-    if not carries_mass:
-        return [np.asarray(row, dtype=float) for row in guess], state_dim, control_dim, is_burn
-
-    spacecraft = phase.spacecraft
-    if isinstance(spacecraft, str) or spacecraft is None:
-        raise ValueError(f"Mass-carrying phase {phase.name!r} requires a Spacecraft object.")
-    if not is_burn:
-        return (
-            _augment_guess_for_mass_coast(
-                guess,
-                phase=phase,
-                mass0_kg=float(spacecraft.initial_mass_kg),
-            ),
-            state_dim,
-            control_dim,
-            is_burn,
-        )
-
-    thruster = _first_thruster(phase)
-    if float(thruster.thrust_N) <= 0.0 or float(thruster.isp_s) <= 0.0:
-        raise ValueError(f"Chemical burn phase {phase.name!r} requires thrust_N > 0 and isp_s > 0.")
-    return (
-        _augment_guess_for_chemical_burn(
-            guess,
-            phase=phase,
-            mass0_kg=float(spacecraft.initial_mass_kg),
-            thrust_N=float(thruster.thrust_N),
-            isp_s=float(thruster.isp_s),
-        ),
-        state_dim,
-        control_dim,
-        is_burn,
-    )
-
-
-def _make_asset_phase(
-    phase: Phase,
-    guess: Sequence[np.ndarray],
-    nsegs: int,
-    *,
-    carries_mass: bool = False,
-    third_body_tables: dict[str, ThirdBodyTable] | None = None,
-):
-    """Create an ASSET phase and return dimensional metadata.
-
-    This is the final boundary between Octavian mission objects and ASSET phase
-    objects. It chooses the concrete ODE, reshapes the guess rows, applies
-    third-body tables for the phase, and returns the metadata needed by later
-    compiler passes.
-    """
-    prepared_guess, state_dim, control_dim, is_burn = _prepare_phase_guess(
-        phase,
-        guess,
-        carries_mass=carries_mass,
-    )
-    ode = _ode_for_phase(
-        phase,
-        carries_mass=carries_mass,
-        third_body_tables=tables_for_phase(phase, third_body_tables or {}),
-    )
-    return ode.phase(Tmodes.LGL3, prepared_guess, int(nsegs)), state_dim, control_dim, is_burn
 
 
 def solve_composable_mission(
