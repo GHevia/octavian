@@ -106,6 +106,8 @@ def powered_phase_kind(phase: Phase) -> str | None:
         return "chemical_burn"
     if normalized_mode in ("powered", "finite_thrust"):
         return "finite_thrust"
+    if normalized_mode == "low_thrust":
+        return "low_thrust"
     return None
 
 
@@ -373,6 +375,11 @@ def prepare_phase_guess(
     propulsion_kind = powered_phase_kind(phase)
     if propulsion_kind is None and not carries_mass:
         return [np.asarray(row, dtype=float) for row in guess], layout, None
+
+    rows = [np.asarray(row, dtype=float).reshape(-1) for row in guess]
+    compiled_width = layout.state_dim + 1 + layout.control_dim
+    if propulsion_kind is not None and rows and all(row.size == compiled_width for row in rows):
+        return rows, layout, propulsion_kind
 
     spacecraft = phase.spacecraft
     if isinstance(spacecraft, str) or spacecraft is None:

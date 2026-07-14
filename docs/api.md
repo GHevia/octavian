@@ -20,6 +20,8 @@ The API reference is generated from source docstrings with `mkdocstrings`.
 
 ::: octavian.objectives
 
+::: octavian.guesses
+
 ::: octavian.links
 
 ::: octavian.events

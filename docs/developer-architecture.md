@@ -76,6 +76,7 @@ of the phase definition.
 - `octavian/models.py`: `Dynamics`, `Perturbations`, solve config, run plans,
   stages, and retry policy.
 - `octavian/spacecraft.py`: spacecraft and thruster data models.
+- `octavian/guesses.py`: typed user declarations for phase initial guesses.
 - `octavian/constraints.py`: constraint class hierarchy and factory helpers.
 - `octavian/variables.py`: user-facing optimization variables such as
   `ImpulsiveDeltaV`.
@@ -121,6 +122,8 @@ of the phase definition.
   compilation orchestrator.
 - `octavian/solvers/compiler/phase_compiler.py`: phase classification, state
   dimensions, dynamics selection, guess shaping, and ASSET phase construction.
+- `octavian/solvers/compiler/powered_guessing.py`: pure numerical low-thrust
+  spiral estimates and dynamics-integrated powered guess rows.
 - `octavian/solvers/compiler/relative_constraint_compiler.py`: Cartesian
   keep-out, approach-cone, and lighting inequality compilation plus result
   reports.
@@ -200,11 +203,12 @@ constraint compilation, terminal post-burn shell handling, and constraint
 reporting live in `octavian/solvers/constraint_compiler.py`.
 
 Future restructuring should continue splitting by compiler responsibility
-rather than by arbitrary helper buckets. The next candidate modules are:
+rather than by arbitrary helper buckets. Powered guess construction now has a
+dedicated compiler module. The next candidate modules are:
 
-- `solvers/compiler/guessing.py` for Kepler, Lambert, and powered-arc seeds,
+- `solvers/compiler/inertial_guessing.py` for remaining Kepler and Lambert seeds,
 - `solvers/compiler/objective_compiler.py` for objective normalization and ASSET costs,
-- `solvers/compiler/result_extraction.py` for trajectories, maneuvers, chemical-burn
+- `solvers/compiler/result_extraction.py` for trajectories, maneuvers, powered
   summaries, and constraint reports.
 
 Avoid creating a broad `utils.py` for unrelated helpers. Shared code should move

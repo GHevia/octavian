@@ -41,6 +41,7 @@ class Phase:
     tof_bounds_s: tuple[float, float] | None = None
     tof_is_relative: bool = False
     info: dict[str, Any] = field(default_factory=dict)
+    initial_guess: Any | None = None
 
     def inherit_defaults(self) -> None:
         """Inherit spacecraft, dynamics, and default link from the previous phase."""

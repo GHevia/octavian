@@ -100,6 +100,19 @@ Use `objectives.minimize_propellant()` to maximize the final mass of the chain.
 The generic `powered_phases` result table reports mass use for every powered
 mode; the older `chemical_burns` key remains available for chemical phases.
 
+`mode="low_thrust"` uses the same physical ODE and identifies the phase for
+low-thrust-specific seed construction and reporting. The built-in
+`guesses.low_thrust_spiral(...)` seed integrates constant-throttle tangential
+steering with mass depletion, then releases every control sample and phase time
+to the optimizer. Its `auto` direction raises or lowers based on the final
+Cartesian seed anchor's radius.
+
+The spiral seed is intended for near-circular, approximately coplanar orbit
+raising or lowering. It is not an analytical solution and does not constrain
+the optimized steering law. Use terminal orbital-element constraints so final
+orbital phase remains free. Highly eccentric transfers, large plane changes,
+and interplanetary low-thrust arcs will need additional seed families.
+
 ### Relative Motion
 
 `Dynamics.cwh(...)` selects the linear Clohessy-Wiltshire model for a deputy
