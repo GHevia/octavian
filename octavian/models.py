@@ -8,11 +8,21 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from .bodies import CelestialBody
 from .bodies import resolve as resolve_body
 from .coordinates import EARTH_INERTIAL, CoordinateFrame, SolverScaling
+
+
+class TranslationalModel(Protocol):
+    """Configuration contract for non-default translational dynamics models."""
+
+    @property
+    def frame(self) -> CoordinateFrame: ...
+
+    @property
+    def scaling(self) -> SolverScaling: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,8 +62,9 @@ class Perturbations:
 class Dynamics:
     """Environment and dynamics configuration.
 
-    ``frame`` records the meaning of Cartesian states throughout compilation
-    and reporting. ``scaling`` optionally overrides the solver's automatic
+    ``model`` selects an alternate translational model such as CWH. ``frame``
+    records the meaning of Cartesian states throughout compilation and
+    reporting. ``scaling`` optionally overrides the solver's automatic
     characteristic units while preserving SI inputs and outputs.
     """
 
@@ -70,11 +81,16 @@ class Dynamics:
     drag: bool = False
     perturbations: Perturbations | None = None
     central_body: CelestialBody | str | None = None
+    model: TranslationalModel | None = None
     frame: CoordinateFrame = EARTH_INERTIAL
     scaling: SolverScaling | None = None
     info: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if self.model is not None:
+            self.frame = self.model.frame
+            if self.scaling is None:
+                self.scaling = self.model.scaling
         if self.central_body is None:
             return
         body = resolve_body(self.central_body)
@@ -82,7 +98,7 @@ class Dynamics:
         self.mu_m3ps2 = body.mu_m3ps2
         self.central_body_radius_m = body.mean_radius_m
         self.j2_coefficient = body.j2_coefficient
-        if self.frame.origin != body.name:
+        if self.model is None and self.frame.origin != body.name:
             self.frame = body.inertial_frame()
 
     @classmethod
@@ -94,6 +110,28 @@ class Dynamics:
         """
         resolved = resolve_body(body)
         return cls(central_body=resolved, **kwargs)
+
+    @classmethod
+    def cwh(
+        cls,
+        *,
+        chief_orbit_radius_m: float,
+        central_body: CelestialBody | str = "earth",
+        chief_name: str = "chief",
+        reference_length_m: float = 1_000.0,
+        **kwargs: Any,
+    ) -> Dynamics:
+        """Create circular-chief Clohessy-Wiltshire relative dynamics."""
+        from .relative import ClohessyWiltshire
+
+        body = resolve_body(central_body)
+        model = ClohessyWiltshire.from_circular_orbit(
+            chief_orbit_radius_m,
+            body=body,
+            chief_name=chief_name,
+            reference_length_m=reference_length_m,
+        )
+        return cls(central_body=body, model=model, **kwargs)
 
     def active_perturbations(self) -> Perturbations:
         """Return normalized perturbation flags for solver compilation."""

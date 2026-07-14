@@ -27,6 +27,8 @@ Octavian currently supports:
 - finite chemical burns with mass depletion and thrust-direction controls,
 - Earth two-body, J2, Sun, and Moon gravity perturbations in the composable
   backend,
+- single-phase CWH relative-motion optimization with analytic seeding and
+  inertial/LVLH transforms,
 - ASSET-backed optimization with a targeted retry path for non-monotonic mesh
   time failures,
 - `Solution` and `RendezvousResult` reporting,
@@ -94,6 +96,8 @@ of the phase definition.
 - `octavian/astro/lambert.py`: Lambert seed generation and selection.
 - `octavian/astro/types.py`: vector normalization helpers.
 - `octavian/astro/units.py`: default unit scaling for ASSET phases.
+- `octavian/relative/`: CWH configuration, analytic propagation and seeding,
+  ASSET EOM, and inertial/LVLH state transforms.
 - `octavian/time.py`: time-bound normalization.
 - `octavian/data/ephemeris.py`: bundled reduced Sun/Moon ephemeris access,
   epoch conversion, and SPICE sampling.
@@ -144,8 +148,9 @@ The normal mission flow is:
 3. `MissionRunner.solve()` validates the mission and chooses a backend.
 4. Quick rendezvous-like missions compile to `TwoImpulseFreeTimeSpec` or
    `TwoImpulsePreCoastSpec` and run through `octavian.solvers.preconfigured`.
-5. Missions with explicit composable features, perturbations, variables, or
-   chemical burns run through `octavian.solvers.composable`.
+5. Missions with explicit composable features, alternate dynamics models,
+   perturbations, variables, or chemical burns run through
+   `octavian.solvers.composable`.
 6. Backends construct ASSET OCPs and call
    `octavian._asset.solve_with_standard_sequence()`.
 7. The backend extracts a `RendezvousResult`.

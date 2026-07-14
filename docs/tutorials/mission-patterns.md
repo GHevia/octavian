@@ -23,6 +23,7 @@ Use `Mission` and `Phase` directly when you need:
 - finite chemical-burn phases,
 - J2 perturbations,
 - custom objectives or per-phase mesh settings.
+- chief-centered CWH relative motion.
 
 ## Pattern 1: Standard Two-Impulse Transfer
 
@@ -231,3 +232,37 @@ The body declaration supplies gravitational parameter, reference radius, J2
 coefficient, and inertial frame origin together. Named body constants override
 raw `mu_m3ps2` values so the configuration cannot silently mix Earth and Sun
 properties. For a custom object, construct `CelestialBody` explicitly.
+
+## Pattern 12: Optimize Relative Motion With CWH
+
+```python
+dynamics = Dynamics.cwh(
+    chief_orbit_radius_m=EARTH.mean_radius_m + 400_000.0,
+    central_body=EARTH,
+    chief_name="Chief",
+    reference_length_m=1_000.0,
+)
+
+phase = Phase(
+    mode="relative_coast",
+    spacecraft=deputy,
+    dynamics=dynamics,
+    initial_state=initial_relative_state,
+    final_state=final_relative_state,
+    tof_bounds_s=(1_200.0, 2_400.0),
+    constraints=[
+        constraints.state(initial_relative_state, where="Front"),
+        constraints.state(final_relative_state, where="Back"),
+    ],
+    variables=[
+        variables.impulsive_delta_v(at="Front"),
+        variables.impulsive_delta_v(at="Back"),
+    ],
+)
+```
+
+Relative positions and velocities use the chief LVLH/RTN frame. Use
+`relative.inertial_to_relative_state(...)` and
+`relative.relative_to_inertial_state(...)` to transform analysis states at a
+known chief state. CWH assumes a circular chief and small deputy separation;
+use a nonlinear model when those assumptions are not appropriate.

@@ -57,4 +57,19 @@ def inertial(origin: str, *, orientation: str = "ICRF", name: str | None = None)
     )
 
 
+def lvlh(chief: str = "chief", *, name: str | None = None) -> CoordinateFrame:
+    """Create a chief-centered local-vertical/local-horizontal frame.
+
+    The orientation follows the RTN convention used by Octavian's relative
+    dynamics: x is radial, y is along track, and z is orbit normal.
+    """
+    normalized_chief = str(chief).strip().lower().replace(" ", "_")
+    return CoordinateFrame(
+        name=name or f"{normalized_chief}_lvlh",
+        origin=normalized_chief,
+        orientation="LVLH/RTN",
+        kind="relative",
+    )
+
+
 EARTH_INERTIAL = inertial("earth", orientation="ECI", name="earth_inertial")

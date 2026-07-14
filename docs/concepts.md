@@ -76,6 +76,21 @@ Sun-centered support currently means idealized heliocentric two-body dynamics.
 It does not yet generate planetary ephemeris states or model sphere-of-influence
 departure and arrival transitions.
 
+### Relative Motion
+
+`Dynamics.cwh(...)` selects the linear Clohessy-Wiltshire model for a deputy
+near a chief on a circular orbit. Relative states are expressed in the chief's
+LVLH/RTN frame: x radial, y along track, and z orbit normal. The model supplies
+frame and characteristic scaling metadata automatically, while the composable
+compiler uses an analytic CWH position-targeting seed instead of Lambert and
+Kepler guesses.
+
+`octavian.relative` also provides analytic propagation and inertial-to-LVLH
+state transforms for analysis before or after optimization. The current CWH
+compiler supports one unforced relative phase. Inertial orbital-element
+constraints, finite thrust, and inertial/relative phase links are rejected
+until an explicit acceleration or frame-link model is configured.
+
 ## Frames, Layouts, And Scaling
 
 Every `Dynamics` declaration carries a `CoordinateFrame`; existing missions
@@ -112,6 +127,7 @@ report:
 - chemical burn summaries,
 - constraint reports.
 - reference-frame and solver-scaling metadata.
+- dynamics-model metadata for relative trajectories.
 
 Plotly helpers turn the trajectory and maneuvers into inspectable HTML files.
 

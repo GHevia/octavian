@@ -488,6 +488,8 @@ def _is_composable_mission(mission: Mission) -> bool:
         if normalized_mode in ("burn", "chemical_burn", "finite_burn"):
             return True
         dynamics = getattr(phase, "dynamics", None)
+        if dynamics is not None and dynamics.model is not None:
+            return True
         if dynamics is not None and dynamics.active_perturbations().j2:
             return True
         if getattr(phase, "variables", None) and len(list(phase.variables or [])) > 0:

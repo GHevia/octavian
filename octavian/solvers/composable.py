@@ -4,7 +4,7 @@ This module compiles a Mission made of Phase objects into a single ASSET
 OptimalControlProblem.
 
 Scope (v0.1):
-  - Two-body, J2-perturbed, and finite chemical-burn dynamics
+  - Two-body, J2-perturbed, finite chemical-burn, and CWH relative dynamics
   - Phase boundary constraints:
       * State (R,V) at Front/Back
       * Position (R) at Front/Back
@@ -49,6 +49,7 @@ from ..astro.types import as_vec3
 from ..astro.units import default_scaling
 from ..constraints import OrbitalElementConstraint
 from ..phase import Phase
+from ..relative import cwh_dense_guess, select_cwh_rendezvous_seed
 from ..time import normalize_time_bounds
 from ..types import Maneuver
 from . import constraint_compiler
@@ -67,6 +68,7 @@ _PhaseBuild = phase_compiler.PhaseBuild
 _augment_guess_for_chemical_burn = phase_compiler.augment_chemical_burn_guess
 _augment_guess_for_mass_coast = phase_compiler.augment_mass_coast_guess
 _compile_phase_dimensions = phase_compiler.compile_phase_dimensions
+_cwh_model = phase_compiler.cwh_model
 _first_thruster = phase_compiler.first_thruster
 _has_impulsive_var = phase_compiler.has_impulsive_variable
 _is_coast_like = phase_compiler.is_coast_like
@@ -111,6 +113,50 @@ def _objective_weights(mission: Mission) -> tuple[bool, float, bool, float]:
                 w_time = float(getattr(o, "weight", w_time or 1.0))
                 break
     return bool(minimize_dv), float(w_dv), bool(minimize_time), float(w_time)
+
+
+def _build_guess_single_phase_cwh(
+    phase: Phase,
+    *,
+    tf_bounds: tuple[float, float],
+    nsegs: int,
+    samples: int,
+) -> tuple[list[np.ndarray], dict[str, float | int | str]]:
+    """Build an analytic position-targeted guess for one CWH phase."""
+    model = _cwh_model(phase)
+    if model is None:
+        raise TypeError("CWH guess construction requires ClohessyWiltshire dynamics")
+    initial_state = phase.initial_state or constraint_compiler.state_boundary_value(
+        constraint_compiler.get_state_constraint(phase, "Front")
+    )
+    final_state = phase.final_state or constraint_compiler.state_boundary_value(
+        constraint_compiler.get_state_constraint(phase, "Back")
+    )
+    if initial_state is None or final_state is None:
+        raise ValueError(
+            "A CWH rendezvous phase requires initial and final State values for guess generation."
+        )
+    seed = select_cwh_rendezvous_seed(
+        initial_state,
+        final_state,
+        mean_motion_radps=model.mean_motion_radps,
+        tof_bounds_s=tf_bounds,
+        samples=samples,
+    )
+    guess = cwh_dense_guess(
+        initial_state.r_m,
+        seed.departure_velocity_mps,
+        mean_motion_radps=model.mean_motion_radps,
+        t0_s=0.0,
+        tf_s=seed.tof_s,
+        npts=int(nsegs) + 1,
+    )
+    return guess, {
+        "guess_kind": "cwh_position_targeted",
+        "seed_tof_s": seed.tof_s,
+        "seed_total_dv_mps": seed.total_dv_mps,
+        "seed_samples": int(samples),
+    }
 
 
 def _build_guess_two_phase_precoast_transfer(
@@ -922,11 +968,36 @@ def solve_composable_mission(
     _validate_chemical_burn_transfer(phases)
     mass_state_indices = _mass_state_phase_indices(phases)
 
+    relative_phases = [phase for phase in phases if _cwh_model(phase) is not None]
+    if relative_phases and len(relative_phases) != len(phases):
+        raise ValueError(
+            "A composable mission cannot link CWH and inertial phases without an explicit frame transform."
+        )
+    if relative_phases and len(phases) != 1:
+        raise NotImplementedError(
+            "CWH compilation currently supports one optimized phase per mission."
+        )
+    if relative_phases and any(
+        isinstance(constraint, OrbitalElementConstraint)
+        for phase in relative_phases
+        for constraint in phase.constraints
+    ):
+        raise ValueError("Inertial orbital-element constraints are not valid in a CWH relative frame.")
+
     for ph in phases:
         normalized_mode = (ph.mode or "").lower().replace("-", "_")
-        if normalized_mode not in ("coast", "transfer", "rendezvous", "burn", "chemical_burn", "finite_burn"):
+        if normalized_mode not in (
+            "coast",
+            "transfer",
+            "rendezvous",
+            "relative_coast",
+            "cwh",
+            "burn",
+            "chemical_burn",
+            "finite_burn",
+        ):
             raise NotImplementedError(
-                "Composable solver supports coast-like and chemical-burn phases. "
+                "Composable solver supports inertial/relative coast-like and chemical-burn phases. "
                 f"Got mode={ph.mode!r}"
             )
 
@@ -997,7 +1068,19 @@ def solve_composable_mission(
     guesses: dict[int, list[np.ndarray]] = {}
     guess_info: dict[int, dict[str, float | int | bool | str]] = {}
 
-    if mass_state_indices and len(phases) == 3:
+    if relative_phases:
+        p0 = phases[0]
+        tf_bounds = abs_bounds[0] or (600.0, 7_200.0)
+        ig0, info0 = _build_guess_single_phase_cwh(
+            p0,
+            tf_bounds=tf_bounds,
+            nsegs=nsegs1,
+            samples=int(getattr(mission, "lambert_grid_size", 60)),
+        )
+        guesses[0] = ig0
+        guess_info[0] = info0
+
+    elif mass_state_indices and len(phases) == 3:
         chemical_guesses, chemical_info = _build_guess_three_phase_chemical_transfer(
             phases,
             mu=mu,
@@ -1601,10 +1684,13 @@ def solve_composable_mission(
     phase_segments: list[dict[str, float | str]] = []
     for build, phase_traj in zip(built, trajs, strict=True):
         is_burn = bool(build.is_chemical_burn)
+        is_relative = _cwh_model(build.ph) is not None
         phase_segments.append(
             {
                 "name": build.ph.name,
-                "mode": "chemical_burn" if is_burn else "coast",
+                "mode": (
+                    "chemical_burn" if is_burn else "relative_coast" if is_relative else "coast"
+                ),
                 "t_start_s": float(phase_traj[0, 6]),
                 "t_end_s": float(phase_traj[-1, 6]),
                 "color": "red" if is_burn else "blue",
@@ -1654,6 +1740,7 @@ def solve_composable_mission(
                 if first.dynamics.central_body is not None  # type: ignore[union-attr]
                 else first.dynamics.frame.origin  # type: ignore[union-attr]
             ),
+            "dynamics_model": "cwh" if relative_phases else "central_gravity",
             "state_layouts": [build.layout.name for build in built],
             "constraint_report": constraint_report,
             "chemical_burns": chemical_burns,
