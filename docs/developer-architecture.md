@@ -81,8 +81,8 @@ of the phase definition.
   `ImpulsiveDeltaV`.
 - `octavian/events.py`: boundary events such as impulses.
 - `octavian/links.py`: continuous and impulsive phase link declarations.
-- `octavian/objectives.py`: objective declarations such as total delta-v and
-  final time.
+- `octavian/objectives.py`: objective declarations such as total delta-v,
+  propellant, and final time.
 - `octavian/conops.py`: reusable concept-of-operations mission builders.
 - `octavian/quick.py`: high-level quick-start problem builders.
 - `octavian/specs.py`: lower-level problem specifications used by legacy quick
@@ -91,7 +91,7 @@ of the phase definition.
 ### Astrodynamics And Data
 
 - `octavian/dynamics.py`: ASSET vector-function ODEs for two-body, J2,
-  third-body, mass-coast, and chemical-burn dynamics.
+  third-body, mass-coast, and propulsion-neutral finite-thrust dynamics.
 - `octavian/astro/kepler.py`: Kepler propagation, orbital element conversion,
   and dense initial guesses.
 - `octavian/astro/lambert.py`: Lambert seed generation and selection.

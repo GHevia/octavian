@@ -13,11 +13,12 @@ returns a `Solution`.
 ## Phase
 
 A `Phase` describes one segment of flight. Current examples use coast,
-rendezvous, and chemical-burn phases.
+rendezvous, relative-coast, and finite-thrust phases.
 
 Common phase inputs:
 
-- `mode`: the phase type, such as `coast` or `chemical_burn`.
+- `mode`: the phase type, such as `coast`, `finite_thrust`, or the compatible
+  chemical-specific spelling `chemical_burn`.
 - `spacecraft`: mass and thruster configuration.
 - `dynamics`: gravity and perturbation configuration.
 - `tof_bounds_s`: allowed time-of-flight bounds.
@@ -57,15 +58,17 @@ to jump. That jump becomes an impulsive maneuver when an appropriate
 
 ## Objectives
 
-Objectives define what the optimizer minimizes. The current scripts primarily
-use total delta-v and, in the quick API, an optional final-time weight.
+Objectives define what the optimizer minimizes. Use total delta-v for declared
+impulsive maneuvers, propellant for finite-thrust phases, and total time for
+time-of-flight trade studies. Propellant is evaluated once at the final
+powered mass state, so a burn-coast-burn chain is not double-counted.
 
 ## Dynamics And Perturbations
 
 `Dynamics` configures the gravitational parameter, central-body radius, J2
 coefficient, reference frame, characteristic scaling, and perturbation flags.
 J2, Moon, and Sun perturbations are
-implemented in the composable ASSET backend for coast and chemical-burn phases.
+implemented in the composable ASSET backend for coast and finite-thrust phases.
 Moon and Sun use the bundled reduced DE440 ephemeris in the `ECI_TOD` frame and
 require a mission initial epoch so Octavian can build ASSET interpolation
 tables over the mission time bounds.
@@ -78,6 +81,24 @@ parameters remain supported for custom bodies and backward compatibility.
 Sun-centered support currently means idealized heliocentric two-body dynamics.
 It does not yet generate planetary ephemeris states or model sphere-of-influence
 departure and arrival transitions.
+
+### Powered Phases
+
+`mode="finite_thrust"` selects the propulsion-neutral powered equations of
+motion: Cartesian position and velocity, spacecraft mass, and a three-component
+vector throttle. Its norm is bounded by one, and mass flow follows the selected
+thruster's thrust and specific impulse. `mode="chemical_burn"` remains a fully
+supported compatibility spelling and is reported as a chemical burn.
+
+Powered phases can be used alone or in arbitrary powered/coast sequences. Coast
+phases between the first and last powered phases automatically carry the mass
+state so continuous links conserve spacecraft mass. A chain uses one spacecraft
+configuration, but each powered phase may select a named thruster with
+`phase.info["thruster"]`.
+
+Use `objectives.minimize_propellant()` to maximize the final mass of the chain.
+The generic `powered_phases` result table reports mass use for every powered
+mode; the older `chemical_burns` key remains available for chemical phases.
 
 ### Relative Motion
 

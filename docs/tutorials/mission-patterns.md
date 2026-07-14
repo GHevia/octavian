@@ -142,7 +142,7 @@ dynamics = Dynamics(mu_m3ps2=MU, perturbations=Perturbations(j2=True))
 J2 is currently implemented in the composable ASSET backend. Other perturbation
 flags are reserved for future extensions and fail clearly if requested.
 
-## Pattern 8: Finite Chemical Burns
+## Pattern 8: Finite-Thrust Phases
 
 ```python
 spacecraft = Spacecraft(
@@ -159,18 +159,35 @@ spacecraft = Spacecraft(
 )
 ```
 
-Chemical-burn phases use `mode="chemical_burn"` and require a thruster with
-positive thrust and specific impulse. The state includes mass, and the solver
-tracks propellant usage through mass depletion.
+Powered phases use `mode="finite_thrust"` and require a thruster with positive
+thrust and specific impulse. The chemical-specific compatibility spelling is
+`mode="chemical_burn"`. The state includes mass, and the solver tracks
+propellant usage through mass depletion.
 
-A typical finite-burn transfer uses:
+```python
+powered = Phase(
+    name="injection",
+    mode="finite_thrust",
+    spacecraft=spacecraft,
+    dynamics=dynamics,
+)
+
+mission = Mission(
+    phases=[powered],
+    objectives=[objectives.minimize_propellant()],
+)
+```
+
+A common finite-burn transfer uses:
 
 1. departure chemical burn,
 2. coast,
 3. arrival chemical burn.
 
-Keep the first chemical-burn examples as feasibility solves if the main goal is
-to validate structure and report propellant usage rather than optimize fuel.
+This is a mission pattern, not a compiler restriction. Standalone powered
+phases and longer powered/coast sequences are supported. Coast phases between
+powered phases carry mass automatically; all phases in that chain must use the
+same spacecraft configuration.
 
 ## Pattern 9: Plot the Result
 

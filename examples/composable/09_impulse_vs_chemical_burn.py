@@ -83,7 +83,7 @@ chemical_mission = Mission(
     phases=[departure_burn, coast, arrival_burn],
     # Feasibility solve: the finite-burn equivalent delta-v is reported from
     # mass depletion and compared with the impulsive Lambert seed.
-    objectives=[objectives.minimize_total_delta_v(weight=0.0)],
+    objectives=[objectives.minimize_propellant(weight=0.0)],
     solver_options=SolverOptions(print_level=0, max_ls_iters=2, enable_adaptive_mesh=False),
     mesh_nsegs_precoast=8,
     mesh_nsegs_transfer=16,
