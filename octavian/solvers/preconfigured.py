@@ -33,8 +33,7 @@ from .._asset import (
 from ..astro.kepler import estimate_orbital_period_s, kepler_dense_guess, propagate_cartesian_rv
 from ..astro.lambert import LambertSeed, select_best_lambert_seed
 from ..astro.types import as_vec3
-from ..astro.units import default_units
-from ..coordinates import EARTH_INERTIAL, SolverScaling
+from ..astro.units import default_scaling
 from ..dynamics import TwoBodyECI
 from ..specs import TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec
 from ..types import Maneuver
@@ -296,7 +295,10 @@ def solve_two_impulse_free_time(
     if not (tfmin > 0.0 and tfmax > tfmin):
         raise ValueError("tf_bounds_s must satisfy 0 < tfmin < tfmax")
 
-    r_unit, v_unit, t_unit = default_units(spec)
+    solver_scaling = default_scaling(spec)
+    r_unit = solver_scaling.length_m
+    v_unit = solver_scaling.velocity_mps
+    t_unit = solver_scaling.time_s
 
     ode = TwoBodyECI(mu_m3ps2=float(spec.mu_m3ps2))
     t0 = 0.0
@@ -411,8 +413,9 @@ def solve_two_impulse_free_time(
             "r_unit_m": r_unit,
             "v_unit_mps": v_unit,
             "t_unit_s": t_unit,
-            "scaling": SolverScaling(r_unit, v_unit, t_unit).to_dict(),
-            "frame": EARTH_INERTIAL.to_dict(),
+            "scaling": solver_scaling.to_dict(),
+            "frame": spec.frame.to_dict(),
+            "central_body": spec.central_body_name or spec.frame.origin,
             "state_layouts": ["cartesian"],
             "seed_tof_s": seed.tof_s,
             "seed_longway": seed.longway,
@@ -458,7 +461,10 @@ def solve_two_impulse_precoast(
     if tfmax <= t1min:
         raise ValueError("tf must be after t1: require tfmax > t1min")
 
-    r_unit, v_unit, t_unit = default_units(spec)
+    solver_scaling = default_scaling(spec)
+    r_unit = solver_scaling.length_m
+    v_unit = solver_scaling.velocity_mps
+    t_unit = solver_scaling.time_s
     _require_asset()
 
     mu = float(spec.mu_m3ps2)
@@ -683,8 +689,9 @@ def solve_two_impulse_precoast(
             "r_unit_m": r_unit,
             "v_unit_mps": v_unit,
             "t_unit_s": t_unit,
-            "scaling": SolverScaling(r_unit, v_unit, t_unit).to_dict(),
-            "frame": EARTH_INERTIAL.to_dict(),
+            "scaling": solver_scaling.to_dict(),
+            "frame": spec.frame.to_dict(),
+            "central_body": spec.central_body_name or spec.frame.origin,
             "state_layouts": ["cartesian", "cartesian"],
             "seed_dt_s": seed.tof_s,
             "seed_longway": seed.longway,

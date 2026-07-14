@@ -213,3 +213,21 @@ result records both declarations:
 print(solution.frame)
 print(solution.scaling)
 ```
+
+## Pattern 11: Change The Central Body
+
+```python
+from octavian import SUN, two_burn_rendezvous
+
+mission = two_burn_rendezvous(
+    x0,
+    xf,
+    central_body=SUN,
+    tf_bounds_s=(20.0e6, 30.0e6),
+)
+```
+
+The body declaration supplies gravitational parameter, reference radius, J2
+coefficient, and inertial frame origin together. Named body constants override
+raw `mu_m3ps2` values so the configuration cannot silently mix Earth and Sun
+properties. For a custom object, construct `CelestialBody` explicitly.

@@ -338,6 +338,13 @@ def _mission_to_rendezvous_spec(
             xf=phase.final_state,
             tf_bounds_s=final_time_bounds_s,
             mu_m3ps2=float(phase.dynamics.mu_m3ps2),
+            central_body_name=(
+                phase.dynamics.central_body.name
+                if phase.dynamics.central_body is not None
+                else phase.dynamics.frame.origin
+            ),
+            frame=phase.dynamics.frame,
+            scaling=phase.dynamics.scaling,
             nsegs=int(mission.mesh_nsegs_transfer),
             w_time=float(time_weight),
             lambert_grid_size=int(mission.lambert_grid_size),
@@ -382,6 +389,13 @@ def _mission_to_rendezvous_spec(
             t1_bounds_s=precoast_bounds_s,
             tf_bounds_s=transfer_bounds_s,
             mu_m3ps2=float(transfer_phase.dynamics.mu_m3ps2),
+            central_body_name=(
+                transfer_phase.dynamics.central_body.name
+                if transfer_phase.dynamics.central_body is not None
+                else transfer_phase.dynamics.frame.origin
+            ),
+            frame=transfer_phase.dynamics.frame,
+            scaling=transfer_phase.dynamics.scaling,
             nsegs_precoast=int(mission.mesh_nsegs_precoast),
             nsegs_transfer=int(mission.mesh_nsegs_transfer),
             w_time=float(time_weight),

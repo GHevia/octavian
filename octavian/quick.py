@@ -6,6 +6,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
+from .bodies import CelestialBody
 from .conops import rendezvous_precoast_then_transfer, rendezvous_two_impulse
 from .mission import Mission
 from .models import Dynamics
@@ -37,6 +38,7 @@ def two_burn_rendezvous(
     xf: BoundaryState,
     *,
     mu_m3ps2: float = 3.986004418e14,
+    central_body: CelestialBody | str | None = None,
     tf_bounds_s: tuple[float, float] = (600.0, 7200.0),
     nsegs: int = 60,
     lambert_grid_size: int = 60,
@@ -56,6 +58,9 @@ def two_burn_rendezvous(
         x0: Initial boundary state.
         xf: Final boundary state.
         mu_m3ps2: Central-body gravitational parameter in m^3/s^2.
+        central_body: Optional built-in or custom body. When provided, its
+            gravity, radius, J2, and inertial frame replace ``mu_m3ps2`` and
+            the legacy Earth defaults.
         tf_bounds_s: Bounds on the final rendezvous time in seconds.
         nsegs: Number of mesh segments used by the transfer phase.
         lambert_grid_size: Number of Lambert time-of-flight samples to try.
@@ -77,8 +82,11 @@ def two_burn_rendezvous(
     """
     default_thruster = Thruster(name="main")
     spacecraft = Spacecraft(name="SC", dry_mass_kg=0.0, thrusters=[default_thruster])
-    dynamics = Dynamics(mu_m3ps2=float(mu_m3ps2))
-
+    dynamics = (
+        Dynamics.for_body(central_body)
+        if central_body is not None
+        else Dynamics(mu_m3ps2=float(mu_m3ps2))
+    )
     if not precoast:
         mission = rendezvous_two_impulse(
             spacecraft=spacecraft,

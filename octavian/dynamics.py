@@ -15,9 +15,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from ._asset import oc, require_asset, vf
+from .bodies import MOON, SUN
 
-SUN_MU_M3PS2 = 1.32712440018e20
-MOON_MU_M3PS2 = 4.9048695e12
+SUN_MU_M3PS2 = SUN.mu_m3ps2
+MOON_MU_M3PS2 = MOON.mu_m3ps2
 
 
 @dataclass(frozen=True)

@@ -118,6 +118,8 @@ of the phase definition.
   dimensions, dynamics selection, guess shaping, and ASSET phase construction.
 - `octavian/coordinates/`: immutable frame, state-layout, and characteristic
   scaling declarations shared by configuration, compilation, and reporting.
+- `octavian/bodies/`: immutable central-body constants and case-insensitive
+  catalog lookup used by quick and composable dynamics configuration.
 - `octavian/solvers/constraint_compiler.py`: composable-backend constraint
   lookup, orbital-element ASSET expressions, terminal post-burn shell handling,
   and orbital-element result reports.

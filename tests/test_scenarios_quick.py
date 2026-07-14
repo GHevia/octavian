@@ -28,6 +28,7 @@ def _fake_solution() -> Solution:
         ("examples/quick/02_two_impulse_precoast_impulsive_link.py", 1),
         ("examples/quick/03_time_tradeoff.py", 2),
         ("examples/quick/04_batch_targets.py", 7),
+        ("examples/quick/05_sun_centered_transfer.py", 1),
     ],
 )
 def test_quick_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int) -> None:
@@ -51,7 +52,10 @@ def test_quick_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script
     runpy.run_path(str(ROOT / script_rel), run_name="__main__")
 
     assert len(missions) == expected_solve_calls
-    assert len(plotted) >= 1
+    if script_rel.endswith("05_sun_centered_transfer.py"):
+        assert plotted == []
+    else:
+        assert len(plotted) >= 1
 
     if script_rel.endswith("01_two_impulse_free_time.py"):
         assert len(missions[0].phases) == 1
@@ -67,3 +71,6 @@ def test_quick_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script
         assert float(missions[1].w_time) > 0.0
     elif script_rel.endswith("04_batch_targets.py"):
         assert all(len(m.phases) == 2 for m in missions)
+    elif script_rel.endswith("05_sun_centered_transfer.py"):
+        assert missions[0].phases[0].dynamics.central_body.name == "sun"
+        assert missions[0].phases[0].dynamics.frame.origin == "sun"

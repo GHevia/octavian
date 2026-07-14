@@ -4,10 +4,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .coordinates import EARTH_INERTIAL, CoordinateFrame, SolverScaling
+
 
 @dataclass(frozen=True)
 class BoundaryState:
-    """Dimensional Cartesian boundary state in ECI.
+    """Dimensional Cartesian boundary state in the mission dynamics frame.
 
     Attributes:
         r_m: Position in meters, shape (3,).
@@ -33,6 +35,9 @@ class TwoImpulseFreeTimeSpec:
     tf_guess_s: float | None = None
 
     mu_m3ps2: float = 3.986004418e14
+    central_body_name: str | None = None
+    frame: CoordinateFrame = EARTH_INERTIAL
+    scaling: SolverScaling | None = None
     nsegs: int = 60
 
     # Auto-scaling overrides
@@ -83,6 +88,9 @@ class TwoImpulsePreCoastSpec:
     tf_bounds_s: tuple[float, float] = (600.0, 7200.0)
 
     mu_m3ps2: float = 3.986004418e14
+    central_body_name: str | None = None
+    frame: CoordinateFrame = EARTH_INERTIAL
+    scaling: SolverScaling | None = None
 
     nsegs_precoast: int = 30
     nsegs_transfer: int = 60

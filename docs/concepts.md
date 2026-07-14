@@ -67,6 +67,15 @@ Moon and Sun use the bundled reduced DE440 ephemeris in the `ECI_TOD` frame and
 require a mission initial epoch so Octavian can build ASSET interpolation
 tables over the mission time bounds.
 
+Built-in `EARTH`, `MOON`, and `SUN` definitions keep gravity, radius, J2, and
+frame origin consistent. Use `Dynamics.for_body(SUN)` for composable missions
+or pass `central_body=SUN` to the quick transfer builder. Raw gravitational
+parameters remain supported for custom bodies and backward compatibility.
+
+Sun-centered support currently means idealized heliocentric two-body dynamics.
+It does not yet generate planetary ephemeris states or model sphere-of-influence
+departure and arrival transitions.
+
 ## Frames, Layouts, And Scaling
 
 Every `Dynamics` declaration carries a `CoordinateFrame`; existing missions
