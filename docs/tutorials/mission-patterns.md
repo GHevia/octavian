@@ -307,3 +307,38 @@ one-sided, so the opposite direction does not satisfy it. Lighting bounds use
 a fixed direction over the phase; transform or update that direction when a
 longer arc needs time-varying Sun geometry. Constraint extrema and satisfaction
 flags are included in `solution.result.info["constraint_report"]`.
+
+## Pattern 14: Seed A Low-Thrust Spiral
+
+```python
+from octavian import guesses
+
+phase = Phase(
+    mode="low_thrust",
+    spacecraft=electric_spacecraft,
+    dynamics=dynamics,
+    initial_state=initial_circular_state,
+    final_state=terminal_radius_anchor,
+    tof_bounds_s=(14 * 3_600.0, 24 * 3_600.0),
+    initial_guess=guesses.low_thrust_spiral(
+        throttle=0.85,
+        direction="auto",
+    ),
+    constraints=[
+        constraints.state(initial_circular_state, where="Front"),
+        constraints.semi_major_axis(target_radius_m, where="Back", tol_m=10_000.0),
+        constraints.eccentricity(0.01, where="Back", tol=0.0099),
+    ],
+)
+```
+
+The seed estimates tangential spiral delta-v, converts it to burn time through
+the rocket equation, and integrates gravity, thrust, and mass at the requested
+seed throttle. `direction="auto"` selects prograde for a larger target radius
+and retrograde for a smaller one. The optimizer does not retain this steering
+law; the vector throttle at every collocation point remains free.
+
+Use a final Cartesian state only as the target-radius and scaling anchor, then
+constrain terminal orbital elements to leave longitude free. This built-in seed
+assumes a near-circular, approximately coplanar transfer. Adjust `time_scale`
+or provide a future custom seed for strongly eccentric or plane-changing arcs.

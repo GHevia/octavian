@@ -31,6 +31,21 @@ def _fake_solution() -> Solution:
                     "equivalent_dv_mps": 143.98885710585398,
                 }
             ],
+            "powered_phases": [
+                {
+                    "phase": "burn",
+                    "kind": "low_thrust",
+                    "propellant_used_kg": 1.0,
+                    "equivalent_dv_mps": 143.98885710585398,
+                }
+            ],
+            "phase_guess_info": {
+                0: {
+                    "seed_tof_s": 3_600.0,
+                    "seed_final_radius_m": 8_000_000.0,
+                }
+            },
+            "constraint_report": [],
             "phase_segments": [
                 {"name": "burn", "t_start_s": 0.0, "t_end_s": 100.0, "color": "red"},
                 {"name": "coast", "t_start_s": 100.0, "t_end_s": 200.0, "color": "blue"},
@@ -55,6 +70,7 @@ def _fake_solution() -> Solution:
         ("examples/composable/10_sun_moon_perturbations.py", 1),
         ("examples/composable/11_cwh_relative_rendezvous.py", 1),
         ("examples/composable/12_cwh_safety_corridor.py", 1),
+        ("examples/composable/13_low_thrust_orbit_raise.py", 1),
     ],
 )
 def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int) -> None:
@@ -130,6 +146,13 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
         assert "approach_cone" in kinds
         assert "lighting_angle" in kinds
         assert plotted == []
+    elif script_rel.endswith("13_low_thrust_orbit_raise.py"):
+        mission = missions[0]
+        phase = mission.phases[0]
+        assert phase.mode == "low_thrust"
+        assert phase.initial_guess.throttle == pytest.approx(0.85)
+        assert mission.objectives[0].kind == "propellant"
+        assert plotted == ["traj_composable_low_thrust_orbit_raise.html"]
     elif script_rel.endswith("07_terminal_orbital_elements.py"):
         assert len(missions[0].phases) == 1
         kinds = [getattr(c, "kind", "") for c in missions[0].phases[0].constraints]

@@ -491,6 +491,7 @@ def _is_composable_mission(mission: Mission) -> bool:
             "finite_burn",
             "powered",
             "finite_thrust",
+            "low_thrust",
         ):
             return True
         dynamics = getattr(phase, "dynamics", None)

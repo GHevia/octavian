@@ -4,7 +4,7 @@ This module compiles a Mission made of Phase objects into a single ASSET
 OptimalControlProblem.
 
 Scope (v0.1):
-  - Two-body, J2-perturbed, finite-thrust, and CWH relative dynamics
+  - Two-body, J2-perturbed, finite-/low-thrust, and CWH relative dynamics
   - Phase boundary constraints:
       * State (R,V) at Front/Back
       * Position (R) at Front/Back
@@ -50,12 +50,13 @@ from ..astro.lambert import select_best_lambert_seed
 from ..astro.types import as_vec3
 from ..astro.units import default_scaling
 from ..constraints import OrbitalElementConstraint
+from ..guesses import LowThrustSpiralGuess
 from ..phase import Phase
 from ..relative import CWHRendezvousSeed, cwh_dense_guess, select_cwh_rendezvous_seed
 from ..time import normalize_time_bounds
 from ..types import Maneuver
 from . import constraint_compiler
-from .compiler import phase_compiler, relative_constraint_compiler
+from .compiler import phase_compiler, powered_guessing, relative_constraint_compiler
 from .options import SolverOptions
 from .preconfigured import RendezvousResult  # reuse stable result type
 from .third_bodies import build_third_body_tables
@@ -127,6 +128,54 @@ def _propellant_objective_weight(mission: Mission) -> float | None:
         if getattr(objective, "kind", "") == "propellant":
             return float(getattr(objective, "weight", 1.0))
     return None
+
+
+def _build_guess_single_phase_low_thrust(
+    phase: Phase,
+    *,
+    mu: float,
+    tf_bounds: tuple[float, float],
+    nsegs: int,
+) -> tuple[list[np.ndarray], dict[str, float | int | str]]:
+    """Build a dynamics-integrated tangential spiral seed."""
+    initial_state = phase.initial_state or constraint_compiler.state_boundary_value(
+        constraint_compiler.get_state_constraint(phase, "Front")
+    )
+    if initial_state is None:
+        raise ValueError(
+            "Low-thrust spiral seeding requires an initial state or Front state constraint."
+        )
+    terminal = _phase_terminal_target(phase)
+    if terminal is None:
+        raise ValueError(
+            "Low-thrust spiral seeding requires final_state or a terminal position anchor."
+        )
+    target_position, _ = terminal
+
+    config = phase.initial_guess
+    if config is None:
+        config = LowThrustSpiralGuess()
+    if not isinstance(config, LowThrustSpiralGuess):
+        raise TypeError(
+            "A low_thrust phase initial_guess must be guesses.low_thrust_spiral(...)."
+        )
+    spacecraft = phase.spacecraft
+    if isinstance(spacecraft, str) or spacecraft is None:
+        raise ValueError("Low-thrust spiral seeding requires a Spacecraft object.")
+    thruster = _first_thruster(phase)
+    return powered_guessing.build_low_thrust_spiral_seed(
+        initial_position_m=initial_state.r_m,
+        initial_velocity_mps=initial_state.v_mps,
+        target_radius_m=float(np.linalg.norm(target_position)),
+        mu_m3ps2=float(mu),
+        initial_mass_kg=float(spacecraft.initial_mass_kg),
+        dry_mass_kg=float(spacecraft.dry_mass_kg),
+        thrust_N=float(thruster.thrust_N),
+        isp_s=float(thruster.isp_s),
+        time_bounds_s=tf_bounds,
+        npts=int(nsegs) + 1,
+        config=config,
+    )
 
 
 def _build_guess_single_phase_cwh(
@@ -1041,6 +1090,7 @@ def solve_composable_mission(
             "finite_burn",
             "powered",
             "finite_thrust",
+            "low_thrust",
         ):
             raise NotImplementedError(
                 "Composable solver supports inertial/relative coast-like and finite-thrust phases. "
@@ -1125,6 +1175,18 @@ def solve_composable_mission(
             tf_bounds=tf_bounds,
             nsegs=nsegs1,
             samples=int(getattr(mission, "lambert_grid_size", 60)),
+        )
+        guesses[0] = ig0
+        guess_info[0] = info0
+
+    elif len(phases) == 1 and _powered_phase_kind(phases[0]) == "low_thrust":
+        p0 = phases[0]
+        tf_bounds = abs_bounds[0] or (86_400.0, 30.0 * 86_400.0)
+        ig0, info0 = _build_guess_single_phase_low_thrust(
+            p0,
+            mu=mu,
+            tf_bounds=tf_bounds,
+            nsegs=nsegs1,
         )
         guesses[0] = ig0
         guess_info[0] = info0

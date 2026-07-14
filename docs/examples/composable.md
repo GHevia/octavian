@@ -14,6 +14,7 @@ shape directly.
 | `mode="coast"` | Ballistic two-body or perturbed coast dynamics. |
 | `mode="finite_thrust"` | Propulsion-neutral finite-thrust dynamics with mass and vector-throttle controls. |
 | `mode="chemical_burn"` | Compatibility spelling for a chemical finite-thrust phase. |
+| `mode="low_thrust"` | Finite-thrust dynamics with an integrated low-thrust seed workflow. |
 | `mode="relative_coast"` | CWH coast dynamics in a chief-centered LVLH frame. |
 | `previous=...` | Connects a phase to the phase before it. |
 | `link=links.continuous()` | Enforces continuous position, velocity, and time at the boundary. |
@@ -393,3 +394,35 @@ The unconstrained minimum-delta-v arc falls outside the 30° corridor. The
 constraint therefore moves the optimized transfer to the cone boundary,
 demonstrating that the geometry changes the solution rather than only checking
 it afterward.
+
+## 13: Low-Thrust Orbit Raise
+
+Path: `examples/composable/13_low_thrust_orbit_raise.py`
+
+Run:
+
+```bash
+conda run -n asset_env python examples/composable/13_low_thrust_orbit_raise.py
+```
+
+Capability showcased:
+
+- A single `mode="low_thrust"` phase using the common mass/throttle ODE.
+- A typed, dynamics-integrated prograde spiral initial guess.
+- Free terminal orbital phase through semi-major-axis and near-circular
+  eccentricity constraints.
+- Explicit final-mass optimization and powered-phase reporting.
+
+Important choices:
+
+| Code | Purpose |
+| --- | --- |
+| `guesses.low_thrust_spiral(throttle=0.85)` | Integrates a prograde seed and initializes the control history. |
+| `final_state=terminal_seed_anchor` | Supplies target radius and scaling without fixing terminal longitude. |
+| `objectives.minimize_propellant()` | Maximizes final spacecraft mass. |
+| `tof_bounds_s=(14 h, 24 h)` | Brackets the seed's 17.59-hour burn estimate. |
+
+The reference solve raises a 560 kg spacecraft from a 7,000 km to an 8,000 km
+near-circular orbit in about 17.72 hours using about 15.05 kg of propellant.
+
+Expected output: `traj_composable_low_thrust_orbit_raise.html`.
