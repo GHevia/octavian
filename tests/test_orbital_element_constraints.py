@@ -8,7 +8,7 @@ import pytest
 from octavian import Phase, constraints
 from octavian.astro import cartesian_to_classic, classic_to_cartesian, classical_to_cartesian
 from octavian.quick import state
-from octavian.solvers import composable
+from octavian.solvers import composable, constraint_compiler
 from octavian.variables import ImpulsiveDeltaV
 
 MU = 3.986004418e14
@@ -95,24 +95,24 @@ def test_compiler_adds_exact_orbital_element_constraints(monkeypatch: pytest.Mon
         mu_m3ps2=MU,
     )
     monkeypatch.setattr(
-        composable,
+        constraint_compiler,
         "vf",
         SimpleNamespace(Arguments=lambda _: _FakeArgs(r_m, v_mps), stack=lambda values: float(values[0])),
         raising=True,
     )
 
     asset_phase = _FakeAssetPhase()
-    composable._apply_orbital_element_constraint(
+    constraint_compiler.apply_orbital_element_constraint(
         asset_phase,
         constraints.semi_major_axis(8_400e3, where="Back"),
         MU,
     )
-    composable._apply_orbital_element_constraint(
+    constraint_compiler.apply_orbital_element_constraint(
         asset_phase,
         constraints.eccentricity(0.18, where="Back"),
         MU,
     )
-    composable._apply_orbital_element_constraint(
+    constraint_compiler.apply_orbital_element_constraint(
         asset_phase,
         constraints.inclination_deg(28.5, where="Back"),
         MU,
@@ -139,24 +139,24 @@ def test_compiler_adds_tolerance_bands_for_orbital_element_constraints(
         mu_m3ps2=MU,
     )
     monkeypatch.setattr(
-        composable,
+        constraint_compiler,
         "vf",
         SimpleNamespace(Arguments=lambda _: _FakeArgs(r_m, v_mps), stack=lambda values: float(values[0])),
         raising=True,
     )
 
     asset_phase = _FakeAssetPhase()
-    composable._apply_orbital_element_constraint(
+    constraint_compiler.apply_orbital_element_constraint(
         asset_phase,
         constraints.semi_major_axis(8_900e3, where="Path", tol_m=500.0),
         MU,
     )
-    composable._apply_orbital_element_constraint(
+    constraint_compiler.apply_orbital_element_constraint(
         asset_phase,
         constraints.eccentricity(0.22, where="Path", tol=0.02),
         MU,
     )
-    composable._apply_orbital_element_constraint(
+    constraint_compiler.apply_orbital_element_constraint(
         asset_phase,
         constraints.inclination_deg(32.0, where="Path", tol_deg=0.5),
         MU,
@@ -248,7 +248,7 @@ def test_terminal_shell_moves_only_orbital_constraints() -> None:
         variables=[ImpulsiveDeltaV(where="Front"), ImpulsiveDeltaV(where="Back")],
     )
 
-    compile_last, shell_phase = composable._make_terminal_shell(phase)  # type: ignore[misc]
+    compile_last, shell_phase = constraint_compiler.make_terminal_shell(phase)  # type: ignore[misc]
 
     assert compile_last is not None
     assert shell_phase is not None
@@ -286,7 +286,7 @@ def test_constraint_report_row_uses_constrained_boundary_state() -> None:
         ],
         dtype=float,
     )
-    report = composable._orbital_constraint_report_row(
+    report = constraint_compiler.orbital_constraint_report_row(
         phase_name="transfer_post_burn",
         constraint=constraints.semi_major_axis(8_400e3, where="Front"),
         phase_traj=phase_traj,

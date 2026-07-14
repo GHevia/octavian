@@ -14,7 +14,7 @@ want a compact mission script and do not need to manage every phase yourself.
 | `nsegs` | Mesh segment count for the optimized transfer. |
 | `lambert_grid_size` | Number of time-of-flight samples used while finding Lambert initial guesses. |
 | `nrevs_to_try` | Lambert revolution counts to consider. Use `(0,)` for the simplest transfer family. |
-| `solver_options` | ASSET solver controls such as `print_level`. |
+| `solver_options` | ASSET solver controls such as `print_level`; pass `SolverOptions(asset_threads=(1, 1))` for deterministic single-threaded ASSET solves in regression tests. |
 | `name` | Label used in solution summaries and plot titles. |
 
 ## 01: Hohmann Transfer Between Circular Orbits

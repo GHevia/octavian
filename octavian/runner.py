@@ -9,7 +9,7 @@ from .models import RetryPolicy, RunPlan, SolveConfig
 from .solution import AttemptLog, Solution
 from .solvers import SolverOptions
 from .solvers.composable import solve_composable_mission
-from .solvers.rendezvous import solve as solve_rendezvous
+from .solvers.preconfigured import solve as solve_preconfigured
 from .specs import TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec
 
 if TYPE_CHECKING:
@@ -254,8 +254,8 @@ def _solve_stage_problem(problem: _StageProblem, options: SolverOptions):
     if problem.backend == "composable":
         return solve_composable_mission(problem.mission, options=options)
     if problem.rendezvous_spec is None:
-        raise MissionBuildError("Rendezvous backend requires a rendezvous specification.")
-    return solve_rendezvous(problem.rendezvous_spec, options=options)
+        raise MissionBuildError("Preconfigured backend requires a transfer specification.")
+    return solve_preconfigured(problem.rendezvous_spec, options=options)
 
 
 def _retry_stage_problem(problem: _StageProblem, attempt_index: int, message: str) -> _StageProblem:
@@ -286,7 +286,14 @@ def _retry_stage_problem(problem: _StageProblem, attempt_index: int, message: st
 def _mission_to_rendezvous_spec(
     mission: Mission,
 ) -> TwoImpulseFreeTimeSpec | TwoImpulsePreCoastSpec:
-    """Map a mission into one of the built-in impulsive rendezvous specs."""
+    """Map a mission into one of the built-in preconfigured transfer specs.
+
+    This is the adapter between the mission-script API and the older fixed-shape
+    two-impulse solvers. Only simple one-phase and two-phase mission structures
+    can be represented here. Anything with explicit composable variables,
+    finite burns, perturbations, or richer constraints should be routed to the
+    composable backend instead.
+    """
     phases = list(mission.phases)
 
     minimize_delta_v = True
@@ -418,7 +425,14 @@ def _apply_simple_retry(
     attempt: int,
     message: str,
 ) -> TwoImpulseFreeTimeSpec | TwoImpulsePreCoastSpec:
-    """Apply a conservative retry update to a rendezvous spec."""
+    """Apply a conservative retry update to a preconfigured transfer spec.
+
+    The runner retry layer works above ASSET compilation, so it can only adjust
+    problem specifications. Mesh inconsistency messages reduce mesh density,
+    convergence messages perturb free-time guesses, and generic failures expand
+    the Lambert seed search grid. ASSET-internal mesh-time failures are handled
+    lower down in `_asset.solve_with_standard_sequence`.
+    """
     error_message = (message or "").lower()
 
     if "mesh" in error_message and "inconsistent" in error_message:
@@ -448,7 +462,13 @@ def _apply_simple_retry(
 
 
 def _is_composable_mission(mission: Mission) -> bool:
-    """Return whether a mission should use the composable backend."""
+    """Return whether a mission needs the general composable backend.
+
+    The preconfigured backend is kept for simple quick-start rendezvous shapes.
+    This detector upgrades to the composable compiler when the mission uses
+    features that require explicit phase compilation: finite burns, J2,
+    user-declared variables, or direct boundary constraint objects.
+    """
     for phase in getattr(mission, "phases", []) or []:
         normalized_mode = (getattr(phase, "mode", "") or "").lower().replace("-", "_")
         if normalized_mode in ("burn", "chemical_burn", "finite_burn"):

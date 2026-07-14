@@ -22,7 +22,14 @@ MOON_MU_M3PS2 = 4.9048695e12
 
 @dataclass(frozen=True)
 class ThirdBodyTable:
-    """ASSET interpolation table and gravity parameter for a third body."""
+    """Interpolated third-body ephemeris used by ASSET dynamics.
+
+    Attributes:
+        name: Normalized body name, currently ``"sun"`` or ``"moon"``.
+        mu_m3ps2: Gravitational parameter for the third body in SI units.
+        position_table: ASSET vector function that returns the body's
+            Earth-centered position in meters at the current phase time.
+    """
 
     name: str
     mu_m3ps2: float
@@ -35,7 +42,12 @@ def _require_asset() -> None:
 
 
 def _point_mass_acceleration(position_vec, mu_m3ps2: float):
-    """Return central-body point-mass acceleration for an ASSET position vector."""
+    """Return central-body point-mass acceleration for an ASSET position vector.
+
+    ASSET vector objects expose ``normalized_power3()``, which evaluates
+    ``r / |r|^3``. Multiplying by ``-mu`` gives the standard two-body
+    acceleration toward the frame origin.
+    """
     return (-float(mu_m3ps2)) * position_vec.normalized_power3()
 
 
@@ -67,7 +79,11 @@ def j2_acceleration_components(
 
 
 def _j2_acceleration(position_vec, *, mu_m3ps2: float, radius_m: float, j2: float):
-    """Return J2 acceleration as an ASSET vector-function expression."""
+    """Return J2 acceleration as an ASSET vector-function expression.
+
+    This mirrors :func:`j2_acceleration_components`, but it is built from ASSET
+    symbolic vector operations so it can be embedded directly in an ODE.
+    """
     radius_sq = position_vec.dot(position_vec)
     radius = position_vec.norm()
     z = position_vec[2]
@@ -114,7 +130,13 @@ def third_body_acceleration_components(
 
 
 def _third_body_acceleration(position_vec, body_position_vec, *, mu_m3ps2: float):
-    """Return third-body acceleration in an Earth-centered ASSET expression."""
+    """Return third-body acceleration in an Earth-centered ASSET expression.
+
+    The spacecraft feels gravity from the third body at ``body - spacecraft``.
+    Because Octavian's frame is Earth-centered and non-inertial under the third
+    body's pull, the acceleration of the Earth-centered frame origin is
+    subtracted as ``body / |body|^3``.
+    """
     relative_to_spacecraft = body_position_vec - position_vec
     spacecraft_acceleration = relative_to_spacecraft.normalized_power3()
     frame_origin_acceleration = body_position_vec.normalized_power3()
@@ -197,6 +219,10 @@ class PerturbedECI(oc.ODEBase if oc is not None else object):
 
     Currently implemented perturbations:
         - J2 zonal harmonic
+        - Sun and Moon third-body point-mass gravity through interpolation tables
+
+    The state is ``[r(3), v(3)]``. Time remains ASSET's phase time variable, not
+    a state, which is why third-body tables are sampled with ``XtU.TVar()``.
     """
 
     def __init__(
@@ -237,7 +263,13 @@ class PerturbedECI(oc.ODEBase if oc is not None else object):
 
 
 class MassCoastECI(oc.ODEBase if oc is not None else object):
-    """Ballistic coast dynamics carrying spacecraft mass as a constant state."""
+    """Ballistic coast dynamics carrying spacecraft mass as a constant state.
+
+    This ODE is used between finite-burn phases so ASSET continuity links can
+    preserve the spacecraft mass state across burn-coast-burn transfers. The
+    mass derivative is identically zero; translational acceleration still uses
+    the configured gravity and perturbation model.
+    """
 
     def __init__(
         self,
@@ -284,6 +316,8 @@ class ChemicalBurnECI(oc.ODEBase if oc is not None else object):
 
     ODE state is ``[r(3), v(3), m]`` and controls are a dimensionless thrust
     direction/throttle vector. The compiler bounds the control norm to one.
+    Mass flow is proportional to ``|U|`` so a zero control vector coasts without
+    consuming propellant while any partial throttle consumes proportionally.
     """
 
     def __init__(

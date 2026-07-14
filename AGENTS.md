@@ -103,6 +103,9 @@ Notes:
 
 - `asset_asrl` is installed at
   `C:\Users\19145\AppData\Roaming\Python\Python312\site-packages\asset_asrl\__init__.py`.
+- A local ASSET source checkout is available at
+  `C:\Users\19145\Desktop\Personal\PROJECTS\CODING\GTOC13\asset_asrl`. Use it
+  when debugging ASSET behavior, exception text, or backend API details.
 - Plain `python` may find that package but fail to import ASSET with a missing DLL.
 - Prefer `conda run -n asset_env ...` in non-interactive automation instead of `conda activate asset_env`,
   because activation does not persist across separate shell tool calls.

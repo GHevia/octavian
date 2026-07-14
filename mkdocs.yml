@@ -24,6 +24,7 @@ nav:
   - Getting Started: tutorials/getting-started.md
   - Mission Patterns: tutorials/mission-patterns.md
   - Concepts: concepts.md
+  - Developer Architecture: developer-architecture.md
   - Project Principles: project-principles.md
   - Examples:
       - Quick API: examples/quick.md

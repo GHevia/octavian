@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from octavian.solution import Solution
-from octavian.solvers.rendezvous import RendezvousResult
+from octavian.solvers.preconfigured import RendezvousResult
 from octavian.types import Maneuver
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,4 +67,3 @@ def test_quick_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script
         assert float(missions[1].w_time) > 0.0
     elif script_rel.endswith("04_batch_targets.py"):
         assert all(len(m.phases) == 2 for m in missions)
-

@@ -26,7 +26,7 @@ changing the compilation model.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -37,22 +37,11 @@ from .._asset import (
     fix_front_time,
     oc,
     require_asset,
+    set_ocp_threads,
     solve_with_standard_sequence,
     vf,
 )
-from ..constraints import Constraint, OrbitalElementConstraint, Position, State
-from ..links import impulsive as impulsive_link
-from ..phase import Phase
-from ..types import Maneuver
-from ..variables import ImpulsiveDeltaV
-from .options import SolverOptions
-from .rendezvous import RendezvousResult  # reuse stable result type
-
-if TYPE_CHECKING:  # pragma: no cover
-    from ..mission import Mission
-
 from ..astro.kepler import (
-    cartesian_to_classic,
     estimate_orbital_period_s,
     kepler_dense_guess,
     propagate_cartesian_rv,
@@ -60,6 +49,7 @@ from ..astro.kepler import (
 from ..astro.lambert import select_best_lambert_seed
 from ..astro.types import as_vec3
 from ..astro.units import default_units
+from ..constraints import OrbitalElementConstraint
 from ..dynamics import (
     ChemicalBurnECI,
     MassCoastECI,
@@ -67,8 +57,17 @@ from ..dynamics import (
     ThirdBodyTable,
     TwoBodyECI,
 )
+from ..phase import Phase
 from ..time import normalize_time_bounds
+from ..types import Maneuver
+from ..variables import ImpulsiveDeltaV
+from . import constraint_compiler
+from .options import SolverOptions
+from .preconfigured import RendezvousResult  # reuse stable result type
 from .third_bodies import build_third_body_tables, phase_perturbations, tables_for_phase
+
+if TYPE_CHECKING:  # pragma: no cover
+    from ..mission import Mission
 
 
 def _require_asset() -> None:
@@ -78,7 +77,14 @@ def _require_asset() -> None:
 
 @dataclass
 class _PhaseBuild:
-    """Bookkeeping for one compiled ASSET phase."""
+    """Bookkeeping for one compiled ASSET phase.
+
+    User-facing phases and compiled phases can diverge when the compiler adds
+    internal helper phases, such as the post-burn shell used for terminal
+    orbital-element targets. This record keeps the ASSET phase, original phase,
+    compile-time phase override, dimensions, and time bounds together for the
+    later constraint, link, solve, and result-extraction passes.
+    """
 
     ph: Phase
     asset_phase: Any
@@ -88,6 +94,7 @@ class _PhaseBuild:
     state_dim: int = 6
     control_dim: int = 0
     is_chemical_burn: bool = False
+    enable_adaptive_mesh: bool = True
 
 
 def _has_impulsive_var(phase: Phase, where: str) -> bool:
@@ -170,7 +177,13 @@ def _ode_for_phase(
     carries_mass: bool = False,
     third_body_tables: Sequence[ThirdBodyTable] = (),
 ):
-    """Build the ASSET ODE for one phase."""
+    """Build the ASSET ODE for one phase.
+
+    Phase mode, mass bookkeeping, and perturbation flags jointly select the ODE
+    class. Chemical burns need controls and mass, coasts between burns may carry
+    mass without controls, and ordinary coast-like phases use either two-body or
+    perturbed translational dynamics.
+    """
     dynamics = phase.dynamics
     if dynamics is None:
         raise ValueError(f"Phase {phase.name!r} is missing dynamics.")
@@ -243,7 +256,13 @@ def _augment_guess_for_chemical_burn(
     thrust_N: float,
     isp_s: float,
 ) -> list[np.ndarray]:
-    """Convert an impulsive-style ``[R,V,t]`` guess into burn state/control rows."""
+    """Convert an impulsive-style ``[R,V,t]`` guess into burn state/control rows.
+
+    The shared guess builders work in public trajectory rows, while chemical
+    burn ASSET phases require ``[R,V,M,t,U]`` rows. This helper adds a plausible
+    mass history and a constant thrust direction inferred from the velocity
+    change across the base guess. The throttle estimate is capped to ``[0, 1]``.
+    """
     rows = [np.asarray(row, dtype=float).reshape(-1) for row in base_guess]
     if not rows:
         return []
@@ -283,215 +302,14 @@ def _augment_guess_for_mass_coast(
     return augmented
 
 
-def _get_constraint_of_type(
-    phase: Phase, constraint_type: type[Constraint], where: str
-) -> Constraint | None:
-    """Return the first constraint of ``constraint_type`` at a boundary."""
-    loc = "Front" if where.lower().startswith("f") else "Back"
-    for constraint in getattr(phase, "constraints", []) or []:
-        if isinstance(constraint, constraint_type) and getattr(constraint, "where", "") == loc:
-            return constraint
-    return None
-
-
-def _get_state_constraint(phase: Phase, where: str) -> Constraint | None:
-    """Return the first state constraint at a phase boundary, if present."""
-    return _get_constraint_of_type(phase, State, where)
-
-
-def _get_position_constraint(phase: Phase, where: str) -> Constraint | None:
-    """Return the first position constraint at a phase boundary, if present."""
-    return _get_constraint_of_type(phase, Position, where)
-
-
-def _orbital_element_constraints(phase: Phase, where: str | None = None) -> tuple[OrbitalElementConstraint, ...]:
-    """Return orbital-element constraints, optionally filtered by boundary."""
-    if where is None:
-        expected_where = None
-    else:
-        expected_where = "Front" if where.lower().startswith("f") else "Back" if where.lower().startswith("b") else "Path"
-
-    matches: list[OrbitalElementConstraint] = []
-    for constraint in getattr(phase, "constraints", []) or []:
-        if not isinstance(constraint, OrbitalElementConstraint):
-            continue
-        if expected_where is not None and constraint.where != expected_where:
-            continue
-        matches.append(constraint)
-    return tuple(matches)
-
-
-def _state_boundary_value(c: Constraint | None) -> Any:
-    """Return the boundary-state payload stored by a state constraint."""
-    if c is None:
-        return None
-    return getattr(c, "value", {}).get("x")
-
-
-def _state_groups(c: Constraint | None) -> tuple[str, ...]:
-    """Return state groups constrained by a state constraint."""
-    if c is None:
-        return tuple()
-    groups = getattr(c, "value", {}).get("groups", ("R", "V"))
-    return tuple(str(g) for g in groups)
-
-
-def _position_boundary_value(c: Constraint | None) -> np.ndarray | None:
-    """Return the Cartesian position payload stored by a position constraint."""
-    if c is None:
-        return None
-    return np.asarray(c.value, dtype=float).reshape(3)
-
-
-def _has_terminal_post_burn_orbital_target(phase: Phase) -> bool:
-    """Return whether a terminal shell is needed after a back impulse."""
-    return _has_impulsive_var(phase, "Back") and bool(_orbital_element_constraints(phase, "Back"))
-
-
-def _make_terminal_shell(last_phase: Phase) -> tuple[Phase, Phase] | None:
-    """Create an internal post-burn shell phase for terminal orbital targets.
-
-    The shell phase gives the state *after* the back impulse its own boundary so
-    orbital-element constraints can be applied without turning ``final_state``
-    into a hidden hard constraint.
-    """
-    if not _has_terminal_post_burn_orbital_target(last_phase):
-        return None
-
-    moved_constraints = list(_orbital_element_constraints(last_phase, "Back"))
-    compile_last = replace(
-        last_phase,
-        constraints=[
-            constraint
-            for constraint in (last_phase.constraints or [])
-            if constraint not in moved_constraints
-        ],
-        variables=[
-            variable
-            for variable in (last_phase.variables or [])
-            if not (isinstance(variable, ImpulsiveDeltaV) and getattr(variable, "where", "") == "Back")
-        ],
-    )
-    shell_phase = Phase(
-        name=f"{last_phase.name}_post_burn",
-        mode="coast",
-        spacecraft=last_phase.spacecraft,
-        dynamics=last_phase.dynamics,
-        previous=last_phase,
-        link=impulsive_link(name="post_burn"),
-        tof_bounds_s=(0.1, 1.0),
-        tof_is_relative=True,
-        constraints=[replace(constraint, where="Front") for constraint in moved_constraints],
-        variables=[ImpulsiveDeltaV(where="Front")],
-    )
-    return compile_last, shell_phase
-
-
-@dataclass(frozen=True)
-class _OrbitalElementExpressions:
-    """ASSET scalar expressions used by orbital-element constraints."""
-
-    semi_major_axis_m: Any
-    eccentricity_sq: Any
-    inclination_cosine: Any
-
-
-def _orbital_element_expressions(mu_m3ps2: float) -> _OrbitalElementExpressions:
-    """Build ASSET expressions for the orbital elements used by Octavian."""
-    arguments = vf.Arguments(6)
-    position_vec, velocity_vec = arguments.tolist([(0, 3), (3, 3)])
-    angular_momentum_vec = position_vec.cross(velocity_vec)
-    radius_norm = position_vec.norm()
-    speed_norm = velocity_vec.norm()
-    specific_energy = 0.5 * (speed_norm**2) - float(mu_m3ps2) / radius_norm
-    angular_momentum_sq = angular_momentum_vec.dot(angular_momentum_vec)
-    return _OrbitalElementExpressions(
-        semi_major_axis_m=-0.5 * float(mu_m3ps2) / specific_energy,
-        eccentricity_sq=1.0
-        + (2.0 * specific_energy * angular_momentum_sq) / (float(mu_m3ps2) ** 2),
-        inclination_cosine=angular_momentum_vec.normalized()[2],
-    )
-
-
-def _apply_orbital_element_constraint(
-    asset_phase: Any, constraint: OrbitalElementConstraint, mu_m3ps2: float
-) -> None:
-    """Apply one orbital-element constraint to an ASSET phase."""
-    expressions = _orbital_element_expressions(mu_m3ps2)
-    where = getattr(constraint, "where", "Path")
-    values = constraint.value
-
-    if constraint.kind == "semi_major_axis":
-        target = float(values["a_m"])
-        tolerance = values["tol_m"]
-        if tolerance is None:
-            asset_phase.addEqualCon(
-                where, vf.stack([expressions.semi_major_axis_m - target]), range(0, 6)
-            )
-            return
-        tolerance = float(tolerance)
-        asset_phase.addInequalCon(
-            where,
-            vf.stack([expressions.semi_major_axis_m - (target + tolerance)]),
-            range(0, 6),
-        )
-        asset_phase.addInequalCon(
-            where,
-            vf.stack([(target - tolerance) - expressions.semi_major_axis_m]),
-            range(0, 6),
-        )
-        return
-
-    if constraint.kind == "eccentricity":
-        target = float(values["e"])
-        tolerance = values["tol"]
-        if tolerance is None:
-            asset_phase.addEqualCon(
-                where, vf.stack([expressions.eccentricity_sq - target**2]), range(0, 6)
-            )
-            return
-        tolerance = float(tolerance)
-        asset_phase.addInequalCon(
-            where,
-            vf.stack([expressions.eccentricity_sq - (target + tolerance) ** 2]),
-            range(0, 6),
-        )
-        asset_phase.addInequalCon(
-            where,
-            vf.stack([(target - tolerance) ** 2 - expressions.eccentricity_sq]),
-            range(0, 6),
-        )
-        return
-
-    if constraint.kind == "inclination_deg":
-        target_deg = float(values["inc_deg"])
-        tolerance_deg = values["tol_deg"]
-        target_cosine = float(np.cos(np.deg2rad(target_deg)))
-        if tolerance_deg is None:
-            asset_phase.addEqualCon(
-                where, vf.stack([expressions.inclination_cosine - target_cosine]), range(0, 6)
-            )
-            return
-        tolerance_deg = float(tolerance_deg)
-        upper_cosine = float(np.cos(np.deg2rad(target_deg - tolerance_deg)))
-        lower_cosine = float(np.cos(np.deg2rad(target_deg + tolerance_deg)))
-        asset_phase.addInequalCon(
-            where,
-            vf.stack([expressions.inclination_cosine - upper_cosine]),
-            range(0, 6),
-        )
-        asset_phase.addInequalCon(
-            where,
-            vf.stack([lower_cosine - expressions.inclination_cosine]),
-            range(0, 6),
-        )
-        return
-
-    raise ValueError(f"Unsupported orbital-element constraint kind: {constraint.kind!r}")
-
-
 def _objective_weights(mission: Mission) -> tuple[bool, float, bool, float]:
-    """Return normalized delta-v and final-time objective switches and weights."""
+    """Return normalized delta-v and final-time objective switches and weights.
+
+    Older mission scripts can still use ``Mission.w_time`` directly. Newer
+    scripts can provide explicit objective declarations. This normalizer
+    preserves the default delta-v objective while letting explicit objectives
+    decide which costs are active and how they are weighted.
+    """
     # minimize_dv, w_dv, minimize_time, w_time
     minimize_dv = True
     w_dv = 1.0
@@ -526,26 +344,31 @@ def _build_guess_two_phase_precoast_transfer(
     lambert_grid_size: int,
     nrevs_to_try: Sequence[int],
 ) -> tuple[list[np.ndarray], list[np.ndarray]]:
-    """Specialized guess builder for (precoast, transfer) with terminal position.
+    """Build a Lambert-seeded guess for a precoast plus transfer pair.
 
-    This is used only for guesses; the compiled problem is still generic.
+    This helper sweeps candidate precoast end times, propagates the initial
+    orbit to each candidate, and scores Lambert transfers from that propagated
+    state to the terminal position. The specialized work is only for seeding;
+    the compiled OCP still uses the generic composable phase/link model. If no
+    Lambert candidate is viable, midpoint Kepler guesses are returned so the
+    solver can still attempt the problem.
     """
-    if p0.initial_state is None and _get_state_constraint(p0, "Front") is None:
+    if p0.initial_state is None and constraint_compiler.get_state_constraint(p0, "Front") is None:
         raise ValueError(
             "Precoast phase requires an initial state (phase.initial_state or State constraint at Front)."
         )
 
-    x0 = p0.initial_state or _state_boundary_value(_get_state_constraint(p0, "Front"))  # type: ignore[union-attr]
-    xf_state = _get_state_constraint(p1, "Back")
-    xf_pos = _get_position_constraint(p1, "Back")
+    x0 = p0.initial_state or constraint_compiler.state_boundary_value(constraint_compiler.get_state_constraint(p0, "Front"))  # type: ignore[union-attr]
+    xf_state = constraint_compiler.get_state_constraint(p1, "Back")
+    xf_pos = constraint_compiler.get_position_constraint(p1, "Back")
 
     if xf_state is None and xf_pos is None and p1.final_state is None:
         raise ValueError(
             "Transfer phase requires a terminal position (State/Position constraint or phase.final_state)."
         )
 
-    xf_state_val = _state_boundary_value(xf_state)
-    xf_pos_val = _position_boundary_value(xf_pos)
+    xf_state_val = constraint_compiler.state_boundary_value(xf_state)
+    xf_pos_val = constraint_compiler.position_boundary_value(xf_pos)
     rf = as_vec3(xf_state_val.r_m if xf_state_val is not None else (p1.final_state.r_m if p1.final_state is not None else xf_pos_val))  # type: ignore[arg-type]
     vf_target = as_vec3(
         xf_state_val.v_mps
@@ -673,17 +496,17 @@ def _build_guess_single_phase_terminal_position(
     reach the terminal position, and lets boundary delta-v objectives account
     for the impulsive mismatch.
     """
-    x0 = phase.initial_state or _state_boundary_value(_get_state_constraint(phase, "Front"))  # type: ignore[union-attr]
-    xf_state = _get_state_constraint(phase, "Back")
-    xf_pos = _get_position_constraint(phase, "Back")
+    x0 = phase.initial_state or constraint_compiler.state_boundary_value(constraint_compiler.get_state_constraint(phase, "Front"))  # type: ignore[union-attr]
+    xf_state = constraint_compiler.get_state_constraint(phase, "Back")
+    xf_pos = constraint_compiler.get_position_constraint(phase, "Back")
 
     if x0 is None:
         raise ValueError(
             "Single-phase Lambert seeding requires an initial state or State constraint at Front."
         )
 
-    xf_state_val = _state_boundary_value(xf_state)
-    xf_pos_val = _position_boundary_value(xf_pos)
+    xf_state_val = constraint_compiler.state_boundary_value(xf_state)
+    xf_pos_val = constraint_compiler.position_boundary_value(xf_pos)
 
     if xf_state_val is None and xf_pos_val is None and phase.final_state is None:
         raise ValueError(
@@ -735,10 +558,10 @@ def _build_guess_single_phase_terminal_position(
 
 def _phase_terminal_target(phase: Phase) -> tuple[np.ndarray, np.ndarray | None] | None:
     """Return the phase's terminal position target and optional velocity target."""
-    xf_state = _get_state_constraint(phase, "Back")
-    xf_pos = _get_position_constraint(phase, "Back")
-    xf_state_val = _state_boundary_value(xf_state)
-    xf_pos_val = _position_boundary_value(xf_pos)
+    xf_state = constraint_compiler.get_state_constraint(phase, "Back")
+    xf_pos = constraint_compiler.get_position_constraint(phase, "Back")
+    xf_state_val = constraint_compiler.state_boundary_value(xf_state)
+    xf_pos_val = constraint_compiler.position_boundary_value(xf_pos)
 
     if xf_state_val is not None:
         return as_vec3(xf_state_val.r_m), as_vec3(xf_state_val.v_mps)
@@ -839,7 +662,14 @@ def _build_continuous_chain_guesses(
     lambert_grid_size: int,
     nrevs_to_try: Sequence[int],
 ) -> tuple[dict[int, list[np.ndarray]], dict[int, dict[str, float | int | bool | str]]]:
-    """Build one Lambert arc and split it across continuous coast phases."""
+    """Build one Lambert arc and split it across continuous coast phases.
+
+    A continuous chain can span several phases before the next explicit
+    terminal target. Seeding each phase independently tends to create boundary
+    mismatch. This helper computes one downstream Lambert arc, splits its end
+    time monotonically across phase bounds, and propagates each phase from the
+    previous guess endpoint.
+    """
     end_idx = _continuous_chain_end(phases, start_idx)
     if end_idx <= start_idx:
         return {}, {}
@@ -1010,12 +840,12 @@ def _boundary_velocity_target(phase: Phase, where: str) -> np.ndarray | None:
 
 def _explicit_boundary_velocity_target(phase: Phase, where: str) -> np.ndarray | None:
     """Return an explicitly constrained boundary velocity target from State constraints."""
-    st = _get_state_constraint(phase, where)
+    st = constraint_compiler.get_state_constraint(phase, where)
     if st is None:
         return None
-    if "V" not in _state_groups(st):
+    if "V" not in constraint_compiler.state_groups(st):
         return None
-    st_val = _state_boundary_value(st)
+    st_val = constraint_compiler.state_boundary_value(st)
     if st_val is None:
         return None
     return as_vec3(st_val.v_mps)
@@ -1031,58 +861,6 @@ def _guess_boundary_velocity_target(phase: Phase, where: str) -> np.ndarray | No
     if where.lower().startswith("b") and phase.final_state is not None:
         return as_vec3(phase.final_state.v_mps)
     return None
-
-
-def _boundary_state_from_traj(traj: np.ndarray, where: str) -> tuple[np.ndarray, np.ndarray]:
-    """Extract a Cartesian boundary state from one phase trajectory."""
-    row = np.asarray(traj[0], dtype=float) if where == "Front" else np.asarray(traj[-1], dtype=float)
-    return as_vec3(row[0:3]), as_vec3(row[3:6])
-
-
-def _orbital_constraint_report_row(
-    phase_name: str,
-    constraint: OrbitalElementConstraint,
-    phase_traj: np.ndarray,
-    mu_m3ps2: float,
-) -> dict[str, float | str | bool]:
-    """Summarize one orbital-element constraint against the solved trajectory."""
-    position_m, velocity_mps = _boundary_state_from_traj(phase_traj, constraint.where)
-    actual_elements = cartesian_to_classic(
-        r_m=position_m,
-        v_mps=velocity_mps,
-        mu_m3ps2=mu_m3ps2,
-    )
-
-    if constraint.kind == "semi_major_axis":
-        target = float(constraint.a_m)
-        tolerance = constraint.tol_m
-        actual = float(actual_elements["a_m"])
-    elif constraint.kind == "eccentricity":
-        target = float(constraint.e)
-        tolerance = constraint.tol
-        actual = float(actual_elements["e"])
-    elif constraint.kind == "inclination_deg":
-        target = float(constraint.inc_deg)
-        tolerance = constraint.tol_deg
-        actual = float(actual_elements["inc_deg"])
-    else:
-        raise ValueError(f"Unsupported orbital-element constraint kind: {constraint.kind!r}")
-
-    error = actual - target
-    base_tolerance = float(tolerance) if tolerance is not None else 1e-6
-    report_tolerance = base_tolerance + max(1e-9, 1e-7 * max(1.0, abs(target)))
-    satisfied = abs(error) <= report_tolerance
-    return {
-        "phase": phase_name,
-        "where": constraint.where,
-        "family": constraint.family,
-        "constraint": constraint.kind,
-        "target": target,
-        "tolerance": base_tolerance,
-        "actual": actual,
-        "error": error,
-        "satisfied": satisfied,
-    }
 
 
 def _midpoint(bounds: tuple[float, float] | None, fallback: float) -> float:
@@ -1119,7 +897,12 @@ def _rocket_mass_after_impulse(
     dv_mps: float,
     isp_s: float,
 ) -> float:
-    """Return post-impulse mass using the ideal rocket equation."""
+    """Return post-impulse mass using the ideal rocket equation.
+
+    This is a seed-generation estimate, not a solver constraint. It turns a
+    Lambert-derived impulsive delta-v into a plausible post-burn mass so
+    finite-burn phases start with a reasonable mass trajectory.
+    """
     if float(isp_s) <= 0.0:
         return float(mass0_kg)
     return float(mass0_kg) * float(np.exp(-max(float(dv_mps), 0.0) / (float(isp_s) * 9.80665)))
@@ -1135,7 +918,14 @@ def _build_guess_three_phase_chemical_transfer(
     lambert_grid_size: int,
     nrevs_to_try: Sequence[int],
 ) -> tuple[dict[int, list[np.ndarray]], dict[int, dict[str, float | int | bool | str]]]:
-    """Seed burn-coast-burn from the equivalent two-impulse Lambert transfer."""
+    """Seed burn-coast-burn from the equivalent two-impulse Lambert transfer.
+
+    The optimizer solves finite thrust controls, but the initial guess is easier
+    to construct from an impulsive approximation. This helper estimates
+    departure and arrival impulses, converts them into short linear burn arcs,
+    propagates the coast between them, and stores per-phase mass guesses in
+    ``Phase.info`` for later row augmentation.
+    """
     if len(phases) != 3:
         return {}, {}
 
@@ -1143,7 +933,9 @@ def _build_guess_three_phase_chemical_transfer(
     if not (_phase_is_chemical_burn(burn0) and _is_coast_like(coast) and _phase_is_chemical_burn(burn1)):
         return {}, {}
 
-    x0 = burn0.initial_state or _state_boundary_value(_get_state_constraint(burn0, "Front"))
+    x0 = burn0.initial_state or constraint_compiler.state_boundary_value(
+        constraint_compiler.get_state_constraint(burn0, "Front")
+    )
     terminal = _phase_terminal_target(burn1)
     if x0 is None or terminal is None:
         return {}, {}
@@ -1284,7 +1076,13 @@ def _fallback_phase_tf_guess(
     v_start_mps: np.ndarray,
     mu_m3ps2: float,
 ) -> float:
-    """Choose a practical fallback Back-time guess for a phase."""
+    """Choose a practical fallback Back-time guess for a phase.
+
+    When Lambert seeding is not available, the compiler still needs a strictly
+    increasing end time inside the absolute phase bounds. This heuristic uses a
+    moderate fraction of the local orbital period when one can be estimated,
+    otherwise it falls back to the midpoint of the configured time window.
+    """
     if bounds_abs is None:
         return float(t_start + 3600.0)
 
@@ -1318,7 +1116,13 @@ def _prepare_phase_guess(
     *,
     carries_mass: bool = False,
 ) -> tuple[list[np.ndarray], int, int, bool]:
-    """Return a guess with the row shape required by the phase dynamics."""
+    """Return a guess with the row shape required by the phase dynamics.
+
+    Public guess builders produce ``[R,V,t]`` rows. ASSET phase construction
+    needs rows matching the selected ODE state/control dimensions. This helper
+    dispatches to burn or mass-coast augmentation and returns the dimensions for
+    downstream time bounds, trajectory extraction, and mass bookkeeping.
+    """
     state_dim, control_dim, is_burn = _compile_phase_dimensions(phase, carries_mass=carries_mass)
     if not carries_mass:
         return [np.asarray(row, dtype=float) for row in guess], state_dim, control_dim, is_burn
@@ -1363,7 +1167,13 @@ def _make_asset_phase(
     carries_mass: bool = False,
     third_body_tables: dict[str, ThirdBodyTable] | None = None,
 ):
-    """Create an ASSET phase and return dimensional metadata."""
+    """Create an ASSET phase and return dimensional metadata.
+
+    This is the final boundary between Octavian mission objects and ASSET phase
+    objects. It chooses the concrete ODE, reshapes the guess rows, applies
+    third-body tables for the phase, and returns the metadata needed by later
+    compiler passes.
+    """
     prepared_guess, state_dim, control_dim, is_burn = _prepare_phase_guess(
         phase,
         guess,
@@ -1382,7 +1192,14 @@ def solve_composable_mission(
     *,
     options: SolverOptions | None = None,
 ) -> RendezvousResult:
-    """Solve a composable mission via ASSET compilation."""
+    """Solve a composable mission via ASSET compilation.
+
+    The compiler validates phase structure, normalizes absolute phase time
+    bounds, builds initial guesses, instantiates ASSET phases, applies
+    constraints/links/objectives, runs the protected ASSET solve sequence, and
+    finally extracts trajectories, maneuvers, burn summaries, and constraint
+    reports.
+    """
     _require_asset()
 
     phases = list(mission.phases)
@@ -1413,13 +1230,21 @@ def solve_composable_mission(
 
     x0_for_units = (
         first.initial_state
-        or _state_boundary_value(_get_state_constraint(first, "Front"))
-        or _state_boundary_value(_get_state_constraint(first, "Back"))
+        or constraint_compiler.state_boundary_value(
+            constraint_compiler.get_state_constraint(first, "Front")
+        )
+        or constraint_compiler.state_boundary_value(
+            constraint_compiler.get_state_constraint(first, "Back")
+        )
     )
     xf_for_units = (
         last.final_state
-        or _state_boundary_value(_get_state_constraint(last, "Back"))
-        or _state_boundary_value(_get_state_constraint(last, "Front"))
+        or constraint_compiler.state_boundary_value(
+            constraint_compiler.get_state_constraint(last, "Back")
+        )
+        or constraint_compiler.state_boundary_value(
+            constraint_compiler.get_state_constraint(last, "Front")
+        )
     )
 
     if x0_for_units is None or xf_for_units is None:
@@ -1505,7 +1330,7 @@ def solve_composable_mission(
         guesses[1] = ig1
 
     front_impulse_v_targets = _build_front_impulse_velocity_targets(phases)
-    terminal_shell = _make_terminal_shell(phases[-1])
+    terminal_shell = constraint_compiler.make_terminal_shell(phases[-1])
     last_compile_phase = terminal_shell[0] if terminal_shell is not None else None
     shell_phase = terminal_shell[1] if terminal_shell is not None else None
 
@@ -1522,7 +1347,9 @@ def solve_composable_mission(
         else:
             nsegs = nsegs0 if idx == 0 else nsegs1
             if idx == 0:
-                x0_chain = ph.initial_state or _state_boundary_value(_get_state_constraint(ph, "Front"))
+                x0_chain = ph.initial_state or constraint_compiler.state_boundary_value(
+                    constraint_compiler.get_state_constraint(ph, "Front")
+                )
                 if x0_chain is None:
                     raise ValueError(
                         "First phase must have an initial_state or State constraint at Front."
@@ -1727,6 +1554,7 @@ def solve_composable_mission(
                 state_dim=state_dim,
                 control_dim=control_dim,
                 is_chemical_burn=is_burn,
+                enable_adaptive_mesh=False,
             )
         )
 
@@ -1735,14 +1563,15 @@ def solve_composable_mission(
     ocp.optimizer.PrintLevel = int(opts.print_level)
     ocp.optimizer.MaxLSIters = int(opts.max_ls_iters)
     ocp.optimizer.set_QPOrderingMode(str(opts.qp_ordering_mode))
+    set_ocp_threads(ocp, opts.asset_threads)
 
     for b in built:
         b.asset_phase.setAutoScaling(bool(opts.enable_auto_scaling))
         b.asset_phase.setUnits(R=r_unit, V=v_unit, t=t_unit)
-        b.asset_phase.setAdaptiveMesh(bool(opts.enable_adaptive_mesh))
+        b.asset_phase.setAdaptiveMesh(bool(opts.enable_adaptive_mesh and b.enable_adaptive_mesh))
 
     ocp.setAutoScaling(True, True)
-    ocp.setAdaptiveMesh(True)
+    ocp.setAdaptiveMesh(bool(opts.enable_adaptive_mesh))
     ocp.PrintMeshInfo = False
 
     # Apply constraints and time bounds per phase
@@ -1776,18 +1605,23 @@ def solve_composable_mission(
 
         # Apply State/Position boundary constraints with impulsive-variable override logic
         for loc in ("Front", "Back"):
-            st = _get_state_constraint(ph, loc)
-            pos = _get_position_constraint(ph, loc)
+            st = constraint_compiler.get_state_constraint(ph, loc)
+            pos = constraint_compiler.get_position_constraint(ph, loc)
 
             # Position constraint always applied (if present)
             if pos is not None:
                 ap.addBoundaryValue(
-                    loc, ["R"], np.asarray(as_vec3(_position_boundary_value(pos)), dtype=float)
+                    loc,
+                    ["R"],
+                    np.asarray(
+                        as_vec3(constraint_compiler.position_boundary_value(pos)),
+                        dtype=float,
+                    ),
                 )
 
             if st is not None:
-                st_val = _state_boundary_value(st)
-                groups = _state_groups(st)
+                st_val = constraint_compiler.state_boundary_value(st)
+                groups = constraint_compiler.state_groups(st)
 
                 # If an impulsive Δv is declared at this boundary, we drop V from the constraint
                 if _has_impulsive_var(ph, loc) and "V" in groups:
@@ -1831,7 +1665,7 @@ def solve_composable_mission(
                 )
                 ap.addLowerNormBound(location, "R", minimum_radius_m)
             elif isinstance(constraint, OrbitalElementConstraint):
-                _apply_orbital_element_constraint(ap, constraint, mu)
+                constraint_compiler.apply_orbital_element_constraint(ap, constraint, mu)
 
         # Time bounds: normalize tof_bounds_s to absolute Back-time bounds.
         bounds = b.t_bounds
@@ -1915,12 +1749,12 @@ def solve_composable_mission(
         first_ph = built[0].ph
         first_ap = built[0].asset_phase
         if _has_impulsive_var(first_ph, "Front"):
-            st = _get_state_constraint(first_ph, "Front")
+            st = constraint_compiler.get_state_constraint(first_ph, "Front")
             if st is None and first_ph.initial_state is None:
                 raise ValueError(
                     "ImpulsiveDeltaV at mission start requires a desired initial velocity (State constraint or initial_state)."
                 )
-            st_val = _state_boundary_value(st)
+            st_val = constraint_compiler.state_boundary_value(st)
             v_target = as_vec3(st_val.v_mps if st_val is not None else first_ph.initial_state.v_mps)  # type: ignore[union-attr]
             a0 = vf.Arguments(3)
             dv0 = vf.sqrt((a0 - v_target).dot(a0 - v_target))
@@ -1955,7 +1789,10 @@ def solve_composable_mission(
         )
 
     # Solve
-    converged = solve_with_standard_sequence(ocp)
+    converged = solve_with_standard_sequence(
+        ocp,
+        phases=tuple(build.asset_phase for build in built),
+    )
 
     # Extract trajectory (stitch)
     raw_trajs = [np.asarray(b.asset_phase.returnTraj(), dtype=float) for b in built]
@@ -1968,8 +1805,8 @@ def solve_composable_mission(
     maneuvers: list[Maneuver] = []
     # start maneuver (mission start boundary)
     if built and _has_impulsive_var(built[0].ph, "Front"):
-        st0 = _get_state_constraint(built[0].ph, "Front")
-        st0_val = _state_boundary_value(st0)
+        st0 = constraint_compiler.get_state_constraint(built[0].ph, "Front")
+        st0_val = constraint_compiler.state_boundary_value(st0)
         v_target0 = as_vec3(st0_val.v_mps if st0_val is not None else built[0].ph.initial_state.v_mps)  # type: ignore[union-attr]
         v_start = trajs[0][0, 3:6]
         dv0 = v_start - v_target0
@@ -2015,11 +1852,11 @@ def solve_composable_mission(
     constraint_report: list[dict[str, float | str | bool]] = []
     for build, phase_traj in zip(built, trajs, strict=True):
         constraint_phase = build.compile_phase or build.ph
-        for constraint in _orbital_element_constraints(constraint_phase):
+        for constraint in constraint_compiler.orbital_element_constraints(constraint_phase):
             if constraint.where not in {"Front", "Back"}:
                 continue
             constraint_report.append(
-                _orbital_constraint_report_row(
+                constraint_compiler.orbital_constraint_report_row(
                     phase_name=constraint_phase.name,
                     constraint=constraint,
                     phase_traj=phase_traj,

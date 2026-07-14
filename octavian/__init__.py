@@ -12,7 +12,7 @@ from .phase import Phase
 from .quick import state, two_burn_rendezvous
 from .solution import Solution
 from .solvers import SolverOptions
-from .solvers.rendezvous import (
+from .solvers.preconfigured import (
     RendezvousResult,
     solve,
     solve_two_impulse_free_time,

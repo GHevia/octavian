@@ -26,6 +26,7 @@ optimization, then inspect summaries and Plotly trajectory views.
 - [Getting Started](tutorials/getting-started.md) covers installation, ASSET, and the basic mission workflow.
 - [Mission Patterns](tutorials/mission-patterns.md) shows how to combine the current options into real scripts.
 - [Concepts](concepts.md) explains the mission, phase, constraint, variable, link, and solution model.
+- [Developer Architecture](developer-architecture.md) maps the codebase, object model, and backend flow for contributors.
 - [Project Principles](project-principles.md) explains the design philosophy behind the API.
 - [Quick API Examples](examples/quick.md) documents the high-level helper scripts.
 - [Composable API Examples](examples/composable.md) documents each lower-level mission-building example.

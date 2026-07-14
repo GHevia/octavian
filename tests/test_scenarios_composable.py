@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from octavian.solution import Solution
-from octavian.solvers.rendezvous import RendezvousResult
+from octavian.solvers.preconfigured import RendezvousResult
 from octavian.types import Maneuver
 
 ROOT = Path(__file__).resolve().parents[1]

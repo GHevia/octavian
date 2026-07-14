@@ -1,7 +1,7 @@
 """Optimization solvers."""
 
 from .options import SolverOptions
-from .rendezvous import (
+from .preconfigured import (
     RendezvousResult,
     solve,
     solve_two_impulse_free_time,
