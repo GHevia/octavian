@@ -13,6 +13,7 @@ shape directly.
 | `Phase(...)` | One segment of the trajectory. |
 | `mode="coast"` | Ballistic two-body or perturbed coast dynamics. |
 | `mode="chemical_burn"` | Finite burn dynamics with mass and thrust-direction controls. |
+| `mode="relative_coast"` | CWH coast dynamics in a chief-centered LVLH frame. |
 | `previous=...` | Connects a phase to the phase before it. |
 | `link=links.continuous()` | Enforces continuous position, velocity, and time at the boundary. |
 | `link=links.impulsive()` | Enforces continuous position and time while allowing velocity to jump. |
@@ -333,3 +334,33 @@ Important choices:
 Expected output: `traj_composable_sun_moon_perturbations.html`.
 
 Screenshot placeholder: `docs/assets/screenshots/composable-10-sun-moon-perturbations.png`.
+
+## 11: CWH Relative Rendezvous
+
+Path: `examples/composable/11_cwh_relative_rendezvous.py`
+
+Run:
+
+```bash
+conda run -n asset_env python examples/composable/11_cwh_relative_rendezvous.py
+```
+
+Capability showcased:
+
+- Chief-centered LVLH/RTN state and result metadata.
+- CWH dynamics derived from a 400 km circular Earth orbit.
+- Analytic CWH position-targeted initial guess.
+- Optimized departure and arrival impulses for a one-kilometer rendezvous.
+
+Important choices:
+
+| Code | Purpose |
+| --- | --- |
+| `Dynamics.cwh(...)` | Couples mean motion, LVLH frame, and relative scaling. |
+| `mode="relative_coast"` | Selects the relative coast phase semantics. |
+| relative `constraints.state(...)` | Fixes deputy state values in meters and meters per second. |
+| front/back `impulsive_delta_v` | Frees boundary velocities and reports both maneuvers. |
+
+The example prints the solution, frame, and selected dynamics model without
+creating a plot. Existing inertial trajectory plots are not labeled for LVLH
+geometry yet.

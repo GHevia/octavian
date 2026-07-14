@@ -40,6 +40,10 @@ The API reference is generated from source docstrings with `mkdocstrings`.
 
 ::: octavian.coordinates.scaling
 
+::: octavian.relative.cwh
+
+::: octavian.relative.transforms
+
 ## Quick Builders And Specs
 
 ::: octavian.quick

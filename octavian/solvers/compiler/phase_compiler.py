@@ -14,6 +14,7 @@ from ...coordinates import (
     CARTESIAN,
     CARTESIAN_MASS,
     CARTESIAN_MASS_THRUST,
+    RELATIVE_CARTESIAN,
     StateLayout,
 )
 from ...dynamics import (
@@ -24,6 +25,8 @@ from ...dynamics import (
     TwoBodyECI,
 )
 from ...phase import Phase
+from ...relative import ClohessyWiltshire
+from ...relative.dynamics import ClohessyWiltshireODE
 from ...variables import ImpulsiveDeltaV
 from ..third_bodies import phase_perturbations, tables_for_phase
 
@@ -90,7 +93,14 @@ def is_chemical_burn(phase: Phase) -> bool:
 def is_coast_like(phase: Phase) -> bool:
     """Return whether a phase uses coast-like translational dynamics."""
     normalized_mode = (getattr(phase, "mode", "") or "").strip().lower().replace("-", "_")
-    return normalized_mode in ("coast", "transfer", "rendezvous")
+    return normalized_mode in ("coast", "transfer", "rendezvous", "relative_coast", "cwh")
+
+
+def cwh_model(phase: Phase) -> ClohessyWiltshire | None:
+    """Return the phase's CWH model, when configured."""
+    dynamics = phase.dynamics
+    model = dynamics.model if dynamics is not None else None
+    return model if isinstance(model, ClohessyWiltshire) else None
 
 
 def mass_state_phase_indices(phases: Sequence[Phase]) -> set[int]:
@@ -153,6 +163,28 @@ def ode_for_phase(
     if dynamics is None:
         raise ValueError(f"Phase {phase.name!r} is missing dynamics.")
     perturbations = phase_perturbations(phase)
+    relative_model = cwh_model(phase)
+    if relative_model is not None:
+        if is_chemical_burn(phase) or carries_mass:
+            raise ValueError("CWH phases do not yet support finite-thrust or mass states.")
+        if any(
+            (
+                perturbations.j2,
+                perturbations.moon,
+                perturbations.sun,
+                perturbations.srp,
+                perturbations.drag,
+                bool(perturbations.third_bodies),
+                bool(third_body_tables),
+            )
+        ):
+            raise ValueError(
+                "CWH phases currently support the unforced linear model only; "
+                "relative-frame perturbations require an explicit acceleration model."
+            )
+        return ClohessyWiltshireODE(
+            mean_motion_radps=relative_model.mean_motion_radps
+        )
     if is_chemical_burn(phase):
         thruster = first_thruster(phase)
         return ChemicalBurnECI(
@@ -191,6 +223,8 @@ def phase_dimensions(phase: Phase) -> tuple[int, int, bool]:
 
 def layout_for_phase(phase: Phase, *, carries_mass: bool = False) -> StateLayout:
     """Return the named state/control layout required by a phase."""
+    if cwh_model(phase) is not None:
+        return RELATIVE_CARTESIAN
     if is_chemical_burn(phase):
         return CARTESIAN_MASS_THRUST
     if carries_mass:

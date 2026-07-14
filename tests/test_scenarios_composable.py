@@ -23,6 +23,7 @@ def _fake_solution() -> Solution:
         maneuvers=maneuvers,
         last_obj=2.0,
         info={
+            "dynamics_model": "cwh",
             "chemical_burns": [
                 {
                     "phase": "burn",
@@ -52,6 +53,7 @@ def _fake_solution() -> Solution:
         ("examples/composable/08_chemical_burn_j2.py", 1),
         ("examples/composable/09_impulse_vs_chemical_burn.py", 1),
         ("examples/composable/10_sun_moon_perturbations.py", 1),
+        ("examples/composable/11_cwh_relative_rendezvous.py", 1),
     ],
 )
 def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int) -> None:
@@ -75,7 +77,8 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
     runpy.run_path(str(ROOT / script_rel), run_name="__main__")
 
     assert len(missions) == expected_solve_calls
-    assert len(plotted) >= 1
+    if not script_rel.endswith("11_cwh_relative_rendezvous.py"):
+        assert len(plotted) >= 1
 
     if script_rel.endswith("01_single_phase_terminal_dv_objective.py"):
         assert len(missions[0].phases) == 1
@@ -111,6 +114,12 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
         assert perturbations.j2 is True
         assert perturbations.active_third_bodies() == ("moon", "sun")
         assert plotted == ["traj_composable_sun_moon_perturbations.html"]
+    elif script_rel.endswith("11_cwh_relative_rendezvous.py"):
+        mission = missions[0]
+        assert mission.phases[0].mode == "relative_coast"
+        assert mission.phases[0].dynamics.frame.kind == "relative"
+        assert mission.phases[0].dynamics.model.mean_motion_radps > 0.0
+        assert plotted == []
     elif script_rel.endswith("07_terminal_orbital_elements.py"):
         assert len(missions[0].phases) == 1
         kinds = [getattr(c, "kind", "") for c in missions[0].phases[0].constraints]
