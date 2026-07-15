@@ -202,3 +202,24 @@ compatibility or `third_bodies.py` for third-body table construction.
   structure is part of the API.
 - Do not make a helper public until more than one module needs the same concept.
 - Update examples and docs in the same PR as user-facing behavior changes.
+
+## Robustness Campaigns
+
+Solver robustness tests live under `tests/robustness`. The orbit-transfer
+campaign generates valid elliptic endpoint orbits from a fixed master seed and
+stores a separate seed for every case. This makes any optimizer failure
+reproducible without relying on global NumPy random state.
+
+The regular solver suite runs a small representative sample. Run a larger
+campaign sequentially in the ASSET conda environment with:
+
+```powershell
+conda run -n asset_env python tests/robustness/run_orbit_transfer_campaign.py --cases 100
+```
+
+The runner writes a JSON report containing every scenario, selected API knobs,
+runtime, result metrics, and exception details. To expand the pytest sample
+without using the report runner, set `OCTAVIAN_ROBUSTNESS_CASES` before invoking
+pytest. Keep the master seed fixed for release qualification; use a different
+seed for exploratory campaigns and preserve any failing case seed as a
+regression test.
