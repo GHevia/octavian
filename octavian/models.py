@@ -10,6 +10,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from .coordinates import EARTH_INERTIAL, CoordinateFrame, SolverScaling
+
 
 @dataclass(frozen=True, slots=True)
 class Perturbations:
@@ -46,7 +48,12 @@ class Perturbations:
 
 @dataclass(slots=True)
 class Dynamics:
-    """Environment and dynamics configuration."""
+    """Environment and dynamics configuration.
+
+    ``frame`` records the meaning of Cartesian states throughout compilation
+    and reporting. ``scaling`` optionally overrides the solver's automatic
+    characteristic units while preserving SI inputs and outputs.
+    """
 
     mu_m3ps2: float = 3.986004418e14
     central_body_radius_m: float = 6_378_136.3
@@ -60,6 +67,8 @@ class Dynamics:
     srp: bool = False
     drag: bool = False
     perturbations: Perturbations | None = None
+    frame: CoordinateFrame = EARTH_INERTIAL
+    scaling: SolverScaling | None = None
     info: dict[str, Any] = field(default_factory=dict)
 
     def active_perturbations(self) -> Perturbations:

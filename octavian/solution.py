@@ -15,6 +15,7 @@ from typing import Any
 
 import numpy as np
 
+from .coordinates import CoordinateFrame, SolverScaling
 from .solvers.preconfigured import RendezvousResult
 
 
@@ -72,6 +73,30 @@ class Solution:
         if self.result is None:
             return np.empty((0, 0), dtype=float)
         return np.asarray(self.result.traj, dtype=float)
+
+    @property
+    def frame(self) -> CoordinateFrame | None:
+        """Return the reference frame declared by the solver result."""
+        if self.result is None:
+            return None
+        value = self.result.info.get("frame")
+        if isinstance(value, CoordinateFrame):
+            return value
+        if isinstance(value, dict):
+            return CoordinateFrame.from_dict(value)
+        return None
+
+    @property
+    def scaling(self) -> SolverScaling | None:
+        """Return characteristic units used by the solver, when available."""
+        if self.result is None:
+            return None
+        value = self.result.info.get("scaling")
+        if isinstance(value, SolverScaling):
+            return value
+        if isinstance(value, dict):
+            return SolverScaling(**value)
+        return None
 
     def viz(self):
         """Namespace-style access to visualization helpers."""

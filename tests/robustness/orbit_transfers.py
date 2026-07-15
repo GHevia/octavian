@@ -293,7 +293,7 @@ def build_transfer_mission(
     )
 
 
-def solution_checks(scenario: TransferScenario, solution) -> dict[str, float | int | bool]:
+def solution_checks(scenario: TransferScenario, solution) -> dict[str, float | int | bool | str]:
     """Validate solver-independent physical and boundary-result invariants."""
     if not solution.ok or solution.result is None or not solution.result.converged:
         raise AssertionError("mission did not converge")
@@ -318,6 +318,12 @@ def solution_checks(scenario: TransferScenario, solution) -> dict[str, float | i
     total_dv_mps = float(solution.result.total_dv_mps())
     if not np.isfinite(total_dv_mps) or total_dv_mps < 0.0:
         raise AssertionError("total delta-v is not finite and non-negative")
+    if solution.frame is None:
+        raise AssertionError("solution is missing coordinate-frame metadata")
+    if solution.scaling is None:
+        raise AssertionError("solution is missing solver-scaling metadata")
+    if not solution.result.info.get("state_layouts"):
+        raise AssertionError("solution is missing state-layout metadata")
 
     return {
         "converged": True,
@@ -326,6 +332,7 @@ def solution_checks(scenario: TransferScenario, solution) -> dict[str, float | i
         "total_dv_mps": total_dv_mps,
         "final_time_s": float(trajectory[-1, 6]),
         "attempt_count": int(len(solution.attempts)),
+        "frame": solution.frame.name,
     }
 
 

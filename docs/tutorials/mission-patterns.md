@@ -185,3 +185,31 @@ save_trajectory_html(
 Use maneuver markers for impulsive examples. Use `phase_segments` for
 burn-coast-burn examples so the plot shows which part of the trajectory belongs
 to each phase.
+
+## Pattern 10: Declare Frame And Scaling
+
+```python
+from octavian import Dynamics, SolverScaling
+from octavian.coordinates import inertial
+
+dynamics = Dynamics(
+    mu_m3ps2=MU,
+    frame=inertial("earth", orientation="ECI"),
+    scaling=SolverScaling(
+        length_m=7_000e3,
+        velocity_mps=7_500.0,
+        time_s=1_000.0,
+        mass_kg=500.0,
+    ),
+)
+```
+
+Explicit scaling is useful when a problem spans very different distance, time,
+or mass scales. It does not change the units of mission inputs or solution
+arrays. Leave `scaling=None` to use Octavian's endpoint-derived defaults. The
+result records both declarations:
+
+```python
+print(solution.frame)
+print(solution.scaling)
+```

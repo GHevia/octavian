@@ -10,6 +10,12 @@ import numpy as np
 
 from ..._asset import Tmodes
 from ...astro.types import as_vec3
+from ...coordinates import (
+    CARTESIAN,
+    CARTESIAN_MASS,
+    CARTESIAN_MASS_THRUST,
+    StateLayout,
+)
 from ...dynamics import (
     ChemicalBurnECI,
     MassCoastECI,
@@ -37,10 +43,19 @@ class PhaseBuild:
     t_bounds: tuple[float, float]
     index: int
     compile_phase: Phase | None = None
-    state_dim: int = 6
-    control_dim: int = 0
+    layout: StateLayout = CARTESIAN
     is_chemical_burn: bool = False
     enable_adaptive_mesh: bool = True
+
+    @property
+    def state_dim(self) -> int:
+        """Return the compiled differential-state dimension."""
+        return self.layout.state_dim
+
+    @property
+    def control_dim(self) -> int:
+        """Return the compiled control dimension."""
+        return self.layout.control_dim
 
 
 def has_impulsive_variable(phase: Phase, where: str) -> bool:
@@ -170,9 +185,17 @@ def ode_for_phase(
 
 def phase_dimensions(phase: Phase) -> tuple[int, int, bool]:
     """Return user-visible state and control dimensions for a phase."""
+    layout = layout_for_phase(phase)
+    return layout.state_dim, layout.control_dim, is_chemical_burn(phase)
+
+
+def layout_for_phase(phase: Phase, *, carries_mass: bool = False) -> StateLayout:
+    """Return the named state/control layout required by a phase."""
     if is_chemical_burn(phase):
-        return 7, 3, True
-    return 6, 0, False
+        return CARTESIAN_MASS_THRUST
+    if carries_mass:
+        return CARTESIAN_MASS
+    return CARTESIAN
 
 
 def compile_phase_dimensions(
@@ -181,20 +204,22 @@ def compile_phase_dimensions(
     carries_mass: bool = False,
 ) -> tuple[int, int, bool]:
     """Return the state/control dimensions required by the compiled ODE."""
-    if is_chemical_burn(phase):
-        return 7, 3, True
-    if carries_mass:
-        return 7, 0, False
-    return 6, 0, False
+    layout = layout_for_phase(phase, carries_mass=carries_mass)
+    return layout.state_dim, layout.control_dim, is_chemical_burn(phase)
 
 
-def trajectory_rvt(raw_traj: np.ndarray, state_dim: int) -> np.ndarray:
+def trajectory_rvt(raw_traj: np.ndarray, layout: StateLayout | int) -> np.ndarray:
     """Return the public ``[R, V, t]`` view of an ASSET trajectory."""
     raw = np.asarray(raw_traj, dtype=float)
-    time_column = int(state_dim)
+    if isinstance(layout, StateLayout):
+        columns = layout.public_rvt_columns()
+        time_column = layout.time_column
+    else:
+        time_column = int(layout)
+        columns = (0, 1, 2, 3, 4, 5, time_column)
     if raw.shape[1] <= time_column:
         raise ValueError("ASSET trajectory is missing the phase time column.")
-    return raw[:, [0, 1, 2, 3, 4, 5, time_column]]
+    return raw[:, columns]
 
 
 def augment_chemical_burn_guess(
@@ -257,14 +282,15 @@ def prepare_phase_guess(
     guess: Sequence[np.ndarray],
     *,
     carries_mass: bool = False,
-) -> tuple[list[np.ndarray], int, int, bool]:
+) -> tuple[list[np.ndarray], StateLayout, bool]:
     """Shape public guess rows for the selected dynamics implementation."""
-    state_dim, control_dim, is_burn = compile_phase_dimensions(
+    layout = layout_for_phase(
         phase,
         carries_mass=carries_mass,
     )
+    is_burn = is_chemical_burn(phase)
     if not carries_mass:
-        return [np.asarray(row, dtype=float) for row in guess], state_dim, control_dim, is_burn
+        return [np.asarray(row, dtype=float) for row in guess], layout, is_burn
 
     spacecraft = phase.spacecraft
     if isinstance(spacecraft, str) or spacecraft is None:
@@ -276,8 +302,7 @@ def prepare_phase_guess(
                 phase=phase,
                 mass0_kg=float(spacecraft.initial_mass_kg),
             ),
-            state_dim,
-            control_dim,
+            layout,
             is_burn,
         )
 
@@ -294,8 +319,7 @@ def prepare_phase_guess(
             thrust_N=float(thruster.thrust_N),
             isp_s=float(thruster.isp_s),
         ),
-        state_dim,
-        control_dim,
+        layout,
         is_burn,
     )
 
@@ -309,7 +333,7 @@ def make_asset_phase(
     third_body_tables: dict[str, ThirdBodyTable] | None = None,
 ):
     """Compile one user phase into an ASSET phase plus dimensional metadata."""
-    prepared_guess, state_dim, control_dim, is_burn = prepare_phase_guess(
+    prepared_guess, layout, is_burn = prepare_phase_guess(
         phase,
         guess,
         carries_mass=carries_mass,
@@ -320,4 +344,4 @@ def make_asset_phase(
         third_body_tables=tables_for_phase(phase, third_body_tables or {}),
     )
     asset_phase = ode.phase(Tmodes.LGL3, prepared_guess, int(nsegs))
-    return asset_phase, state_dim, control_dim, is_burn
+    return asset_phase, layout, is_burn

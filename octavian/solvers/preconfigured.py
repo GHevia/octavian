@@ -34,6 +34,7 @@ from ..astro.kepler import estimate_orbital_period_s, kepler_dense_guess, propag
 from ..astro.lambert import LambertSeed, select_best_lambert_seed
 from ..astro.types import as_vec3
 from ..astro.units import default_units
+from ..coordinates import EARTH_INERTIAL, SolverScaling
 from ..dynamics import TwoBodyECI
 from ..specs import TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec
 from ..types import Maneuver
@@ -410,6 +411,9 @@ def solve_two_impulse_free_time(
             "r_unit_m": r_unit,
             "v_unit_mps": v_unit,
             "t_unit_s": t_unit,
+            "scaling": SolverScaling(r_unit, v_unit, t_unit).to_dict(),
+            "frame": EARTH_INERTIAL.to_dict(),
+            "state_layouts": ["cartesian"],
             "seed_tof_s": seed.tof_s,
             "seed_longway": seed.longway,
             "seed_nrev": seed.nrev,
@@ -679,6 +683,9 @@ def solve_two_impulse_precoast(
             "r_unit_m": r_unit,
             "v_unit_mps": v_unit,
             "t_unit_s": t_unit,
+            "scaling": SolverScaling(r_unit, v_unit, t_unit).to_dict(),
+            "frame": EARTH_INERTIAL.to_dict(),
+            "state_layouts": ["cartesian", "cartesian"],
             "seed_dt_s": seed.tof_s,
             "seed_longway": seed.longway,
             "seed_nrev": seed.nrev,
