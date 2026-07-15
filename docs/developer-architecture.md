@@ -112,8 +112,10 @@ of the phase definition.
   preconfigured two-impulse free-time and precoast-transfer specs.
 - `octavian/solvers/rendezvous.py`: compatibility shim for the old
   preconfigured backend import path.
-- `octavian/solvers/composable.py`: main composable mission compiler. It builds
-  ASSET phases, links, objectives, guesses, and result metadata.
+- `octavian/solvers/composable.py`: stable composable-solver entry point and
+  compilation orchestrator.
+- `octavian/solvers/compiler/phase_compiler.py`: phase classification, state
+  dimensions, dynamics selection, guess shaping, and ASSET phase construction.
 - `octavian/solvers/constraint_compiler.py`: composable-backend constraint
   lookup, orbital-element ASSET expressions, terminal post-burn shell handling,
   and orbital-element result reports.
@@ -166,11 +168,15 @@ failure without hiding unrelated optimizer failures.
 
 ## Current Design Seams
 
-The largest remaining cleanup target is `octavian/solvers/composable.py`. It
-still owns several responsibilities:
+The composable compiler is being split by compilation responsibility. Phase
+classification, phase dimensions, dynamics selection, mass/burn guess shaping,
+and ASSET phase construction now live in
+`octavian/solvers/compiler/phase_compiler.py`. Private aliases remain in
+`octavian.solvers.composable` during the transition so existing internal tools
+and focused tests do not break.
 
-- mission-to-ASSET phase compilation,
-- phase dimension selection,
+The orchestrator still owns several responsibilities:
+
 - guess construction,
 - objective compilation,
 - phase linking,
@@ -180,12 +186,12 @@ The first split is already in place: constraint lookup, orbital-element
 constraint compilation, terminal post-burn shell handling, and constraint
 reporting live in `octavian/solvers/constraint_compiler.py`.
 
-Future restructuring should keep splitting by compiler responsibility rather
-than by arbitrary helper buckets. Good candidate modules are:
+Future restructuring should continue splitting by compiler responsibility
+rather than by arbitrary helper buckets. The next candidate modules are:
 
-- `solvers/phase_compiler.py` for ASSET phase construction and dimensions,
-- `solvers/guessing.py` for Kepler, Lambert, burn, and mass-coast guesses,
-- `solvers/result_extraction.py` for trajectories, maneuvers, chemical-burn
+- `solvers/compiler/guessing.py` for Kepler, Lambert, and powered-arc seeds,
+- `solvers/compiler/objective_compiler.py` for objective normalization and ASSET costs,
+- `solvers/compiler/result_extraction.py` for trajectories, maneuvers, chemical-burn
   summaries, and constraint reports.
 
 Avoid creating a broad `utils.py` for unrelated helpers. Shared code should move
