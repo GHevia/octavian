@@ -233,7 +233,10 @@ campaign generates valid elliptic endpoint orbits from a fixed master seed and
 stores a separate seed for every case. This makes any optimizer failure
 reproducible without relying on global NumPy random state.
 
-The regular solver suite runs a small representative sample. Run a larger
+The regular solver suite runs a small representative sample. Every fifth
+scenario transfers between low orbit and an endpoint at least 500 km above
+GEO. Raising and lowering cases exercise both quick and composable backends
+across direct, continuous-link, and impulsive-link layouts. Run the larger
 campaign sequentially in the ASSET conda environment with:
 
 ```powershell
