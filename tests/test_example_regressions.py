@@ -9,6 +9,7 @@ import pytest
 pytest.importorskip("asset_asrl", exc_type=ImportError)
 
 from octavian import (
+    SUN,
     Dynamics,
     Mission,
     Phase,
@@ -51,6 +52,44 @@ def _hohmann_reference() -> tuple[float, float]:
     dv_mps = float((transfer_perigee_mps - v0_mps) + (vf_mps - transfer_apogee_mps))
     tof_s = float(np.pi * np.sqrt((transfer_a_m**3) / MU))
     return dv_mps, tof_s
+
+
+def _sun_centered_hohmann_mission() -> tuple[Mission, float, float]:
+    astronomical_unit_m = 149_597_870_700.0
+    initial_radius_m = astronomical_unit_m
+    final_radius_m = 1.523679 * astronomical_unit_m
+    transfer_a_m = 0.5 * (initial_radius_m + final_radius_m)
+    expected_tof_s = float(np.pi * np.sqrt(transfer_a_m**3 / SUN.mu_m3ps2))
+    expected_dv_mps = float(
+        np.sqrt(SUN.mu_m3ps2 / initial_radius_m)
+        * (np.sqrt(2.0 * final_radius_m / (initial_radius_m + final_radius_m)) - 1.0)
+        + np.sqrt(SUN.mu_m3ps2 / final_radius_m)
+        * (1.0 - np.sqrt(2.0 * initial_radius_m / (initial_radius_m + final_radius_m)))
+    )
+    x0 = state(
+        [initial_radius_m, 0.0, 0.0],
+        [0.0, np.sqrt(SUN.mu_m3ps2 / initial_radius_m), 0.0],
+    )
+    target_anomaly_rad = np.pi - 1e-6
+    xf = state(
+        final_radius_m
+        * np.array([np.cos(target_anomaly_rad), np.sin(target_anomaly_rad), 0.0]),
+        np.sqrt(SUN.mu_m3ps2 / final_radius_m)
+        * np.array([-np.sin(target_anomaly_rad), np.cos(target_anomaly_rad), 0.0]),
+    )
+    from octavian import two_burn_rendezvous
+
+    mission = two_burn_rendezvous(
+        x0,
+        xf,
+        central_body=SUN,
+        tf_bounds_s=(0.8 * expected_tof_s, 1.2 * expected_tof_s),
+        nsegs=60,
+        lambert_grid_size=60,
+        nrevs_to_try=(0,),
+        solver_options=DEFAULT_OPTS,
+    )
+    return mission, expected_dv_mps, expected_tof_s
 
 
 def _solve_ok(mission: Mission):
@@ -525,6 +564,16 @@ def test_example_01_matches_hohmann_reference_solution() -> None:
 
     assert quick.tf_s() == pytest.approx(expected_tof_s, rel=2.0e-2, abs=30.0)
     assert quick.total_dv_mps() == pytest.approx(expected_dv_mps, rel=2.0e-2, abs=10.0)
+
+
+def test_sun_centered_transfer_matches_hohmann_reference_solution() -> None:
+    mission, expected_dv_mps, expected_tof_s = _sun_centered_hohmann_mission()
+    result = _solve_ok(mission)
+
+    assert result.tf_s() == pytest.approx(expected_tof_s, rel=2.0e-2)
+    assert result.total_dv_mps() == pytest.approx(expected_dv_mps, rel=2.0e-2)
+    assert result.info["central_body"] == "sun"
+    assert result.info["frame"]["origin"] == "sun"
 
 
 def test_example_02_quick_and_equivalent_composable_match() -> None:

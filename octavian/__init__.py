@@ -1,7 +1,8 @@
 """Octavian: trajectory optimization and astrodynamics in Python using ASSET."""
 
 # Public, config-like objects
-from . import constraints, coordinates, events, links, objectives, variables
+from . import bodies, constraints, coordinates, events, links, objectives, variables
+from .bodies import EARTH, MOON, SUN, CelestialBody
 from .conops import rendezvous_precoast_then_transfer, rendezvous_two_impulse
 from .coordinates import CoordinateFrame, SolverScaling, StateLayout
 from .events import BoundaryEvent
@@ -41,6 +42,10 @@ __all__ = [
     "CoordinateFrame",
     "SolverScaling",
     "StateLayout",
+    "CelestialBody",
+    "EARTH",
+    "MOON",
+    "SUN",
     # quick + conops
     "two_burn_rendezvous",
     "state",
@@ -69,6 +74,7 @@ __all__ = [
     "events",
     "objectives",
     "constraints",
+    "bodies",
     "coordinates",
     "variables",
 ]

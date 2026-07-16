@@ -1649,6 +1649,11 @@ def solve_composable_mission(
             "t_unit_s": t_unit,
             "scaling": solver_scaling.to_dict(),
             "frame": first.dynamics.frame.to_dict(),  # type: ignore[union-attr]
+            "central_body": (
+                first.dynamics.central_body.name  # type: ignore[union-attr]
+                if first.dynamics.central_body is not None  # type: ignore[union-attr]
+                else first.dynamics.frame.origin  # type: ignore[union-attr]
+            ),
             "state_layouts": [build.layout.name for build in built],
             "constraint_report": constraint_report,
             "chemical_burns": chemical_burns,

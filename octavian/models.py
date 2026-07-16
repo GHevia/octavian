@@ -10,6 +10,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from .bodies import CelestialBody
+from .bodies import resolve as resolve_body
 from .coordinates import EARTH_INERTIAL, CoordinateFrame, SolverScaling
 
 
@@ -67,9 +69,31 @@ class Dynamics:
     srp: bool = False
     drag: bool = False
     perturbations: Perturbations | None = None
+    central_body: CelestialBody | str | None = None
     frame: CoordinateFrame = EARTH_INERTIAL
     scaling: SolverScaling | None = None
     info: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.central_body is None:
+            return
+        body = resolve_body(self.central_body)
+        self.central_body = body
+        self.mu_m3ps2 = body.mu_m3ps2
+        self.central_body_radius_m = body.mean_radius_m
+        self.j2_coefficient = body.j2_coefficient
+        if self.frame.origin != body.name:
+            self.frame = body.inertial_frame()
+
+    @classmethod
+    def for_body(cls, body: CelestialBody | str, **kwargs: Any) -> Dynamics:
+        """Create dynamics from a built-in or custom central body.
+
+        Body constants intentionally override raw ``mu_m3ps2``, radius, and J2
+        keyword values so a named body cannot silently become inconsistent.
+        """
+        resolved = resolve_body(body)
+        return cls(central_body=resolved, **kwargs)
 
     def active_perturbations(self) -> Perturbations:
         """Return normalized perturbation flags for solver compilation."""

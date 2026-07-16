@@ -171,7 +171,10 @@ def select_best_lambert_seed(
                     except Exception:
                         continue
 
-                    if not np.all(np.isfinite(v1)) or not np.all(np.isfinite(v2)):
+                    if not (np.all(np.isfinite(v1)) and np.all(np.isfinite(v2))):
+                        # Some Lambert backends return NaNs instead of raising
+                        # for singular geometries such as exactly antipodal
+                        # endpoints. A non-finite candidate is not a seed.
                         continue
                     tot = _total_dv(v1, v2, v0, vf)
                     if not np.isfinite(tot):

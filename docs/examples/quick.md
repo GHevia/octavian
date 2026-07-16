@@ -9,7 +9,8 @@ want a compact mission script and do not need to manage every phase yourself.
 | Setting | What it controls |
 | --- | --- |
 | `x0`, `xf` | Initial and target Cartesian boundary states created with `state(...)`. |
-| `mu_m3ps2` | Central-body gravitational parameter. The examples use Earth. |
+| `mu_m3ps2` | Raw central-body gravitational parameter for backward-compatible or custom-body use. |
+| `central_body` | A consistent body preset such as `EARTH`, `MOON`, or `SUN`; body constants override `mu_m3ps2`. |
 | `tf_bounds_s` | Allowed final transfer time. This is absolute mission time in the quick API. |
 | `nsegs` | Mesh segment count for the optimized transfer. |
 | `lambert_grid_size` | Number of time-of-flight samples used while finding Lambert initial guesses. |
@@ -157,6 +158,26 @@ Expected output:
 - `traj_quick_batch_best.html`.
 
 Screenshot placeholder: `docs/assets/screenshots/quick-04-batch-best.png`.
+
+## 05: Idealized Sun-Centered Transfer
+
+Path: `examples/quick/05_sun_centered_transfer.py`
+
+Run:
+
+```bash
+python examples/quick/05_sun_centered_transfer.py
+```
+
+Capability showcased:
+
+- Selecting the built-in `SUN` central body.
+- An idealized circular Earth-orbit to circular Mars-orbit Hohmann transfer.
+- Heliocentric frame and characteristic scaling metadata in the solution.
+
+The endpoints are synthetic circular heliocentric states. This example does not
+yet use planetary ephemerides or patch planet-centered departure and arrival
+arcs.
 
 ## When to Leave the Quick API
 
