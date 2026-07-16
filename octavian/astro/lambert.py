@@ -8,6 +8,9 @@ import numpy as np
 from .._asset import ast, require_asset
 from .types import Vec3, as_vec3
 
+_COLLINEAR_GEOMETRY_TOL = 1.0e-12
+_COLLINEAR_ROTATION_RAD = 1.0e-8
+
 
 @dataclass(frozen=True)
 class LambertSeed:
@@ -36,6 +39,58 @@ def _call_lambert_izzo(
 
 def _total_dv(v1: Vec3, v2: Vec3, v0: Vec3, vf: Vec3) -> float:
     return float(np.linalg.norm(v1 - v0) + np.linalg.norm(vf - v2))
+
+
+def _lambert_target_position(
+    r0: Vec3,
+    rf: Vec3,
+    v0: Vec3,
+    vf: Vec3,
+) -> Vec3:
+    """Return a numerically safe Lambert target for collinear endpoints.
+
+    Lambert's transfer plane is undefined when the endpoint position vectors
+    are exactly parallel or antiparallel. The mission's boundary constraint is
+    still applied to the original target; this function only rotates the seed
+    target by a tiny angle in the plane suggested by the endpoint velocities.
+    """
+    r0_norm = float(np.linalg.norm(r0))
+    rf_norm = float(np.linalg.norm(rf))
+    if r0_norm <= 0.0 or rf_norm <= 0.0:
+        raise ValueError("Lambert endpoint position vectors must be nonzero.")
+
+    sine_of_angle = float(np.linalg.norm(np.cross(r0, rf)) / (r0_norm * rf_norm))
+    if sine_of_angle > _COLLINEAR_GEOMETRY_TOL:
+        return rf
+
+    plane_normal = _preferred_transfer_plane_normal(r0, rf, v0, vf)
+    angle = _COLLINEAR_ROTATION_RAD
+    rotated = (
+        rf * np.cos(angle)
+        + np.cross(plane_normal, rf) * np.sin(angle)
+        + plane_normal * np.dot(plane_normal, rf) * (1.0 - np.cos(angle))
+    )
+    return as_vec3(rotated)
+
+
+def _preferred_transfer_plane_normal(
+    r0: Vec3,
+    rf: Vec3,
+    v0: Vec3,
+    vf: Vec3,
+) -> Vec3:
+    """Choose a deterministic transfer-plane normal from boundary motion."""
+    for candidate in (np.cross(r0, v0), np.cross(rf, vf)):
+        magnitude = float(np.linalg.norm(candidate))
+        if magnitude > 0.0:
+            return as_vec3(candidate / magnitude)
+
+    # Radial or stationary boundary states do not identify a plane. Choose the
+    # Cartesian axis least aligned with r0, then form a stable perpendicular.
+    r0_direction = r0 / np.linalg.norm(r0)
+    basis = np.eye(3)[int(np.argmin(np.abs(r0_direction)))]
+    normal = np.cross(r0_direction, basis)
+    return as_vec3(normal / np.linalg.norm(normal))
 
 
 def select_best_lambert_seed(
@@ -77,6 +132,12 @@ def select_best_lambert_seed(
     Raises:
         ValueError: If bounds are invalid.
         RuntimeError: If no Lambert solution succeeds over the sweep.
+
+    Notes:
+        Exactly parallel or antiparallel positions do not define a unique
+        Lambert plane. For seed generation only, Octavian rotates the target
+        by a tiny deterministic angle in the plane suggested by the boundary
+        velocities. The optimization boundary remains the original position.
     """
     tmin = float(tmin_s)
     tmax = float(tmax_s)
@@ -89,6 +150,7 @@ def select_best_lambert_seed(
     rf = as_vec3(rf_m)
     v0 = as_vec3(v0_mps)
     vf = as_vec3(vf_mps)
+    lambert_rf = _lambert_target_position(r0, rf, v0, vf)
 
     best: LambertSeed | None = None
     for tof in np.linspace(tmin, tmax, int(n_tofs)):
@@ -99,7 +161,7 @@ def select_best_lambert_seed(
                     try:
                         v1, v2 = _call_lambert_izzo(
                             r0,
-                            rf,
+                            lambert_rf,
                             float(tof),
                             float(mu_m3ps2),
                             bool(longway),
@@ -109,7 +171,11 @@ def select_best_lambert_seed(
                     except Exception:
                         continue
 
+                    if not np.all(np.isfinite(v1)) or not np.all(np.isfinite(v2)):
+                        continue
                     tot = _total_dv(v1, v2, v0, vf)
+                    if not np.isfinite(tot):
+                        continue
                     cand = LambertSeed(
                         tof_s=float(tof),
                         longway=bool(longway),
@@ -123,5 +189,5 @@ def select_best_lambert_seed(
                         best = cand
 
     if best is None:
-        raise RuntimeError("No Lambert solution succeeded for any TOF/branch.")
+        raise RuntimeError("No finite Lambert solution succeeded for any TOF/branch.")
     return best
