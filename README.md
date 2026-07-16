@@ -15,6 +15,9 @@ This MVP includes:
 - Terminal state, terminal delta-v, path, and orbital-element constraints.
 - Finite chemical-burn phases with mass depletion and three thrust-direction controls.
 - J2 perturbation support in the composable ASSET backend.
+- Central-body selection, CWH relative motion, and relative safety geometry.
+- Finite-thrust and low-thrust phases with mass depletion and spiral seeding.
+- Optional schema-versioned JSON and YAML mission configuration.
 - Lambert-Izzo seed sweeps across time of flight, longway, and multi-rev cases.
 - Plotly HTML visualization with maneuver markers.
 
@@ -49,7 +52,12 @@ python -c "import asset_asrl; print(asset_asrl.__file__)"
 python examples/quick/01_two_impulse_free_time.py
 python examples/quick/02_two_impulse_precoast_impulsive_link.py
 python examples/composable/08_chemical_burn_j2.py
+python -m octavian.config examples/config/01_two_impulse_transfer.json
 ```
+
+JSON works without another dependency. Install `octavian[yaml]` to load YAML
+mission files. Both formats construct the same Python mission objects and use
+the same solvers as ordinary mission scripts.
 
 See the MkDocs site for tutorial-style walkthroughs of every example and mission
 pattern.

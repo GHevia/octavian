@@ -34,3 +34,17 @@ constraints:
 
 All mission inputs use SI units unless a parameter name explicitly says
 otherwise. Generated Plotly HTML files are written to the current directory.
+
+## Literal Config Files
+
+`config/01_two_impulse_transfer.json` expresses the same first composable
+mission without Python syntax. Run it with:
+
+```bash
+python -m octavian.config examples/config/01_two_impulse_transfer.json
+```
+
+JSON and YAML use the same versioned schema and construct the same public
+`Mission`, `Phase`, and model objects as Python scripts. Python remains the
+most expressive interface; config files are useful when a plain declarative
+artifact is easier to generate, review, or exchange.

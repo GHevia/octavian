@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "octavian"
-version = "0.2.5"
+version = "0.3.0"
 description = "Trajectory optimization and astrodynamics in Python using ASSET, with mission-script APIs."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -35,6 +35,9 @@ Repository = "https://github.com/GHevia/octavian"
 Issues = "https://github.com/GHevia/octavian/issues"
 
 [project.optional-dependencies]
+yaml = [
+  "PyYAML>=6.0",
+]
 dev = [
   "build>=1.2",
   "pytest>=7.4",
@@ -43,6 +46,7 @@ dev = [
   "pre-commit>=3.6",
   "mkdocs>=1.6",
   "mkdocstrings[python]>=0.25",
+  "PyYAML>=6.0",
 ]
 
 [tool.hatch.build]

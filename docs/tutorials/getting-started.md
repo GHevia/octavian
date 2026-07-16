@@ -84,11 +84,11 @@ MU = 3.986004418e14
 R_INITIAL_M = 7_000e3
 R_FINAL_M = 12_000e3
 
-x0 = state(
+initial_state = state(
     r_m=[R_INITIAL_M, 0.0, 0.0],
     v_mps=[0.0, float(np.sqrt(MU / R_INITIAL_M)), 0.0],
 )
-xf = state(
+target_state = state(
     r_m=[-R_FINAL_M, 0.0, 0.0],
     v_mps=[0.0, -float(np.sqrt(MU / R_FINAL_M)), 0.0],
 )
@@ -98,8 +98,8 @@ Then it asks Octavian to solve a two-impulse transfer:
 
 ```python
 mission = two_burn_rendezvous(
-    x0,
-    xf,
+    initial_state,
+    target_state,
     mu_m3ps2=MU,
     tf_bounds_s=(3_000.0, 7_000.0),
     nsegs=60,
@@ -135,6 +135,18 @@ save_trajectory_html(
     title=mission.name,
 )
 ```
+
+## Prefer A Literal Config File?
+
+The same mission is available as a schema-versioned JSON example:
+
+```bash
+python -m octavian.config examples/config/01_two_impulse_transfer.json
+```
+
+See [JSON And YAML Mission Files](config-files.md) for the full schema,
+optional YAML installation, strict validation behavior, and guidance on when a
+Python mission script is the better fit.
 
 ## Validate a Development Checkout
 
