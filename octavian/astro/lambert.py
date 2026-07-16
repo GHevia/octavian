@@ -176,7 +176,6 @@ def select_best_lambert_seed(
                         # for singular geometries such as exactly antipodal
                         # endpoints. A non-finite candidate is not a seed.
                         continue
-
                     tot = _total_dv(v1, v2, v0, vf)
                     if not np.isfinite(tot):
                         continue
