@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from .orbit_transfers import (
+    ABOVE_GEO_MIN_PERIGEE_M,
     DEFAULT_CAMPAIGN_SEED,
     EARTH_RADIUS_M,
     MIN_PERIGEE_ALTITUDE_M,
@@ -49,6 +50,35 @@ def test_hundred_case_campaign_covers_public_transfer_knobs() -> None:
     assert {case.nrevs_to_try for case in scenarios} == {(0,), (0, 1)}
     assert {case.tof_is_relative for case in scenarios} == {False, True}
     assert {case.time_weight for case in scenarios} == {0.0, 0.05}
+
+
+def test_hundred_case_campaign_includes_above_geo_transfers() -> None:
+    scenarios = generate_transfer_scenarios(100)
+    high_orbit_cases = [case for case in scenarios if case.orbit_regime == "above_geo"]
+
+    assert len(high_orbit_cases) == 20
+    assert {case.backend for case in high_orbit_cases} == {"quick", "composable"}
+    assert {case.link_kind for case in high_orbit_cases} == {
+        "direct",
+        "continuous",
+        "impulsive",
+    }
+    assert all(
+        max(
+            case.initial_orbit.perigee_radius_m,
+            case.final_orbit.perigee_radius_m,
+        )
+        >= ABOVE_GEO_MIN_PERIGEE_M
+        for case in high_orbit_cases
+    )
+    assert any(
+        case.initial_orbit.perigee_radius_m >= ABOVE_GEO_MIN_PERIGEE_M
+        for case in high_orbit_cases
+    )
+    assert any(
+        case.final_orbit.perigee_radius_m >= ABOVE_GEO_MIN_PERIGEE_M
+        for case in high_orbit_cases
+    )
 
 
 def test_campaign_rejects_non_positive_case_count() -> None:
