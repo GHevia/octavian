@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import runpy
-from pathlib import Path
-
 import numpy as np
 import pytest
 
@@ -30,7 +27,6 @@ HOHMANN_R0_M = 7_000e3
 HOHMANN_RF_M = 12_000e3
 LINK_R_FINAL_M = 10_000e3
 LINK_TARGET_ANOMALY_RAD = np.deg2rad(140.0)
-ROOT = Path(__file__).resolve().parents[1]
 
 
 def _circular_state(radius_m: float, *, true_anomaly_rad: float = 0.0):
@@ -118,13 +114,51 @@ def _demo_spacecraft() -> Spacecraft:
     return Spacecraft(name="DemoSat", dry_mass_kg=150.0, thrusters=[Thruster(name="main")])
 
 
-def _load_example_mission(relative_path: str) -> Mission:
-    """Load the mission object declared by an example without running its CLI."""
-    namespace = runpy.run_path(str(ROOT / relative_path))
-    mission = namespace.get("mission")
-    if not isinstance(mission, Mission):
-        raise AssertionError(f"{relative_path} does not declare a Mission named 'mission'")
-    return mission
+def _quick01_mission() -> Mission:
+    """Build the bread-and-butter quick transfer independently of the example."""
+    from octavian import two_burn_rendezvous
+
+    return two_burn_rendezvous(
+        _circular_state(HOHMANN_R0_M),
+        _circular_state(HOHMANN_RF_M, true_anomaly_rad=np.pi),
+        mu_m3ps2=MU,
+        tf_bounds_s=(3_000.0, 7_000.0),
+        nsegs=60,
+        lambert_grid_size=60,
+        nrevs_to_try=(0,),
+        solver_options=DEFAULT_OPTS,
+        name="Regression fixture: quick Hohmann transfer",
+    )
+
+
+def _composable01_mission() -> Mission:
+    """Build the equivalent composable transfer as a solver regression fixture."""
+    spacecraft = _demo_spacecraft()
+    initial_state = _circular_state(HOHMANN_R0_M)
+    target_state = _circular_state(HOHMANN_RF_M, true_anomaly_rad=np.pi)
+    transfer = Phase(
+        name="transfer",
+        mode="coast",
+        spacecraft=spacecraft,
+        dynamics=Dynamics(mu_m3ps2=MU),
+        tof_bounds_s=(3_000.0, 7_000.0),
+        constraints=[
+            constraints.state(initial_state, where="Front"),
+            constraints.state(target_state, where="Back"),
+        ],
+        variables=[
+            variables.ImpulsiveDeltaV(where="Front"),
+            variables.ImpulsiveDeltaV(where="Back"),
+        ],
+    )
+    return Mission(
+        name="Regression fixture: composable Hohmann transfer",
+        phases=[transfer],
+        objectives=[objectives.minimize_total_delta_v()],
+        solver_options=DEFAULT_OPTS,
+        lambert_grid_size=60,
+        nrevs_to_try=(0,),
+    )
 
 
 def _quick02_mission() -> Mission:
@@ -545,22 +579,14 @@ def _composable09_mission(*, use_terminal_burn: bool) -> Mission:
 
 
 def test_example_01_quick_and_composable_match() -> None:
-    quick = _solve_ok(
-        _load_example_mission("examples/quick/01_two_impulse_free_time.py")
-    )
-    composable = _solve_ok(
-        _load_example_mission(
-            "examples/composable/01_single_phase_terminal_dv_objective.py"
-        )
-    )
+    quick = _solve_ok(_quick01_mission())
+    composable = _solve_ok(_composable01_mission())
     _assert_results_close(quick, composable, tf_rtol=3e-2, dv_rtol=3e-2, tf_atol_s=20.0, dv_atol_mps=2.0)
 
 
 def test_example_01_matches_hohmann_reference_solution() -> None:
     expected_dv_mps, expected_tof_s = _hohmann_reference()
-    quick = _solve_ok(
-        _load_example_mission("examples/quick/01_two_impulse_free_time.py")
-    )
+    quick = _solve_ok(_quick01_mission())
 
     assert quick.tf_s() == pytest.approx(expected_tof_s, rel=2.0e-2, abs=30.0)
     assert quick.total_dv_mps() == pytest.approx(expected_dv_mps, rel=2.0e-2, abs=10.0)

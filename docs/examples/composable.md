@@ -5,6 +5,11 @@ The composable examples expose the lower-level mission pieces: `Mission`,
 these scripts as templates when the quick helper does not describe the mission
 shape directly.
 
+Each file is a flat Python-as-configuration tutorial: declarations appear in
+solver order and the solve/report statements stay visible at the bottom. Tests
+exercise these scripts as scenarios, while numerical regression fixtures live
+under `tests/` so test import mechanics do not shape the user examples.
+
 ## Shared Composable API Terms
 
 | Setting | What it controls |
@@ -46,8 +51,8 @@ Important choices:
 
 | Code | Purpose |
 | --- | --- |
-| `constraints.state(x0, where="Front")` | Fixes the departure Cartesian state. |
-| `constraints.state(xf, where="Back")` | Fixes the target position and supplies target velocity. |
+| `constraints.state(initial_state, where="Front")` | Fixes the departure Cartesian state. |
+| `constraints.state(target_state, where="Back")` | Fixes the target position and supplies target velocity. |
 | `ImpulsiveDeltaV(where="Front")` | Allows a departure burn. |
 | `ImpulsiveDeltaV(where="Back")` | Relaxes terminal velocity and charges the arrival burn. |
 | `lambert_grid_size=60` | Seeds the coast arc with a Lambert search. |

@@ -67,15 +67,16 @@ mission = Mission(
     nrevs_to_try=(0,),
 )
 
-if __name__ == "__main__":
-    solution = mission.solve()
-    if solution.result is not None:
-        print(solution.result.summary())
-        out_html = "traj_composable_sun_moon_perturbations.html"
-        save_trajectory_html(
-            solution.result.traj,
-            out_html,
-            maneuvers=solution.result.maneuvers,
-            title=mission.name,
-        )
-        print(f"Wrote: {out_html}")
+solution = mission.solve()
+if solution.result is None:
+    raise RuntimeError("The perturbed transfer did not return a result.")
+
+print(solution.result.summary())
+output_path = "traj_composable_sun_moon_perturbations.html"
+save_trajectory_html(
+    solution.result.traj,
+    output_path,
+    maneuvers=solution.result.maneuvers,
+    title=mission.name,
+)
+print(f"Wrote: {output_path}")

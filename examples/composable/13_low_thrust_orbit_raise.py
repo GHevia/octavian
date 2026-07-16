@@ -87,35 +87,34 @@ mission = Mission(
 )
 
 
-if __name__ == "__main__":
-    solution = mission.solve()
-    if solution.result is None:
-        raise RuntimeError("The low-thrust orbit-raising mission did not return a result.")
+solution = mission.solve()
+if solution.result is None:
+    raise RuntimeError("The low-thrust orbit-raising mission did not return a result.")
 
-    print(solution.result.summary())
-    seed_info = solution.result.info["phase_guess_info"][0]
-    powered = solution.result.info["powered_phases"][0]
+print(solution.result.summary())
+seed_info = solution.result.info["phase_guess_info"][0]
+powered = solution.result.info["powered_phases"][0]
+print(
+    "Spiral seed: "
+    f"tof={seed_info['seed_tof_s'] / 3_600.0:.3f} h, "
+    f"final radius={seed_info['seed_final_radius_m'] / 1_000.0:.3f} km"
+)
+print(
+    "Optimized propulsion: "
+    f"propellant={powered['propellant_used_kg']:.3f} kg, "
+    f"equivalent dv={powered['equivalent_dv_mps']:.3f} m/s"
+)
+for row in solution.result.info["constraint_report"]:
     print(
-        "Spiral seed: "
-        f"tof={seed_info['seed_tof_s'] / 3_600.0:.3f} h, "
-        f"final radius={seed_info['seed_final_radius_m'] / 1_000.0:.3f} km"
+        f"{row['constraint']}: actual={row['actual']:.6f}, "
+        f"target={row['target']:.6f}, ok={row['satisfied']}"
     )
-    print(
-        "Optimized propulsion: "
-        f"propellant={powered['propellant_used_kg']:.3f} kg, "
-        f"equivalent dv={powered['equivalent_dv_mps']:.3f} m/s"
-    )
-    for row in solution.result.info["constraint_report"]:
-        print(
-            f"{row['constraint']}: actual={row['actual']:.6f}, "
-            f"target={row['target']:.6f}, ok={row['satisfied']}"
-        )
 
-    output_path = "traj_composable_low_thrust_orbit_raise.html"
-    save_trajectory_html(
-        solution.result.traj,
-        output_path,
-        phase_segments=solution.result.info["phase_segments"],
-        title=mission.name,
-    )
-    print(f"Wrote: {output_path}")
+output_path = "traj_composable_low_thrust_orbit_raise.html"
+save_trajectory_html(
+    solution.result.traj,
+    output_path,
+    phase_segments=solution.result.info["phase_segments"],
+    title=mission.name,
+)
+print(f"Wrote: {output_path}")

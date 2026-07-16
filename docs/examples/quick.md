@@ -4,11 +4,15 @@ The quick examples use `octavian.two_burn_rendezvous` for common impulsive
 transfer and rendezvous workflows. They are the best starting point when you
 want a compact mission script and do not need to manage every phase yourself.
 
+The files are deliberately flat scripts rather than importable application
+modules. Read them from constants to states to mission to solution, then copy
+one and edit it as a Python configuration file.
+
 ## Shared Quick API Terms
 
 | Setting | What it controls |
 | --- | --- |
-| `x0`, `xf` | Initial and target Cartesian boundary states created with `state(...)`. |
+| `initial_state`, `target_state` | Initial and target Cartesian boundary states created with `state(...)`. |
 | `mu_m3ps2` | Raw central-body gravitational parameter for backward-compatible or custom-body use. |
 | `central_body` | A consistent body preset such as `EARTH`, `MOON`, or `SUN`; body constants override `mu_m3ps2`. |
 | `tf_bounds_s` | Allowed final transfer time. This is absolute mission time in the quick API. |
@@ -41,7 +45,7 @@ Important choices:
 | --- | --- |
 | `R_INITIAL_M = 7_000e3` | Sets the departure circular orbit radius. |
 | `R_FINAL_M = 12_000e3` | Sets the arrival circular orbit radius. |
-| `xf` at `[-R_FINAL_M, 0, 0]` | Places the target opposite the start so the transfer resembles a Hohmann half-ellipse. |
+| `target_state` at `[-R_FINAL_M, 0, 0]` | Places the target opposite the start so the transfer resembles a Hohmann half-ellipse. |
 | `tf_bounds_s=(3_000.0, 7_000.0)` | Brackets the expected Hohmann transfer time without forcing it exactly. |
 | `nsegs=60` | Gives a moderate mesh for a smooth coast arc. |
 | `lambert_grid_size=60` | Searches enough Lambert seeds to robustly initialize the optimizer. |

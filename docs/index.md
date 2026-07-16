@@ -33,6 +33,10 @@ optimization, then inspect summaries and Plotly trajectory views.
 - [GitHub Pages](publishing.md) explains how this site is deployed.
 - [API Reference](api.md) is generated from numpy-style docstrings with mkdocstrings.
 
+The files under `examples/` are intentionally flat, executable mission
+configurations. They are designed to be copied and edited from top to bottom,
+without application entry-point boilerplate around the mission declaration.
+
 ## Local Docs
 
 ```bash
