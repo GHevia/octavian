@@ -33,49 +33,67 @@ MU = 3.986004418e14
 R_INITIAL_M = 7_000e3
 R_FINAL_M = 12_000e3
 
-spacecraft = Spacecraft(name="DemoSat", dry_mass_kg=150.0, thrusters=[Thruster(name="main")])
-dynamics = Dynamics(mu_m3ps2=MU)
+def build_mission() -> Mission:
+    """Build the canonical composable two-impulse Hohmann transfer."""
+    spacecraft = Spacecraft(
+        name="DemoSat",
+        dry_mass_kg=150.0,
+        thrusters=[Thruster(name="main")],
+    )
+    dynamics = Dynamics(mu_m3ps2=MU)
 
-x0 = state(
-    r_m=[R_INITIAL_M, 0.0, 0.0],
-    v_mps=[0.0, float(np.sqrt(MU / R_INITIAL_M)), 0.0],
-)
+    initial_state = state(
+        r_m=[R_INITIAL_M, 0.0, 0.0],
+        v_mps=[0.0, float(np.sqrt(MU / R_INITIAL_M)), 0.0],
+    )
+    final_state = state(
+        r_m=[-R_FINAL_M, 0.0, 0.0],
+        v_mps=[0.0, -float(np.sqrt(MU / R_FINAL_M)), 0.0],
+    )
 
-# Opposite-side circular target: this is the Hohmann reference case used in tests.
-xf = state(
-    r_m=[-R_FINAL_M, 0.0, 0.0],
-    v_mps=[0.0, -float(np.sqrt(MU / R_FINAL_M)), 0.0],
-)
+    transfer = Phase(
+        name="transfer",
+        mode="coast",
+        spacecraft=spacecraft,
+        dynamics=dynamics,
+        tof_bounds_s=(3_000.0, 7_000.0),
+        constraints=[
+            constraints.state(initial_state, where="Front"),
+            constraints.state(final_state, where="Back"),
+        ],
+        variables=[
+            variables.ImpulsiveDeltaV(where="Front"),
+            variables.ImpulsiveDeltaV(where="Back"),
+        ],
+    )
 
-phase = Phase(
-    name="transfer",
-    mode="coast",
-    spacecraft=spacecraft,
-    dynamics=dynamics,
-    tof_bounds_s=(3_000.0, 7_000.0),
-    constraints=[
-        constraints.state(x0, where="Front"),
-        constraints.state(xf, where="Back"),
-        # constraints.min_radius(6000e3, where="Path"),
-    ],
-    variables=[
-        variables.ImpulsiveDeltaV(where="Front"),
-        variables.ImpulsiveDeltaV(where="Back"),
-    ],
-)
+    return Mission(
+        name="Composable: Hohmann transfer with terminal dv objective",
+        phases=[transfer],
+        objectives=[objectives.minimize_total_delta_v()],
+        solver_options=SolverOptions(print_level=3),
+        lambert_grid_size=60,
+        nrevs_to_try=(0,),
+    )
 
-mission = Mission(
-    name="Composable: Hohmann transfer with terminal dv objective",
-    phases=[phase],
-    objectives=[objectives.minimize_total_delta_v()],
-    solver_options=SolverOptions(print_level=3),
-    lambert_grid_size=60,
-    nrevs_to_try=(0,),
-)
 
-sol = mission.solve()
-print(sol.summary())
+mission = build_mission()
 
-out_html = "traj_composable_hohmann_terminal_dv_objective.html"
-save_trajectory_html(sol.result.traj, out_html, maneuvers=sol.result.maneuvers, title=mission.name)
-print(f"Wrote: {out_html}")
+
+def main() -> None:
+    """Solve the example and write its interactive trajectory plot."""
+    solution = mission.solve()
+    print(solution.summary())
+
+    output_path = "traj_composable_hohmann_terminal_dv_objective.html"
+    save_trajectory_html(
+        solution.result.traj,
+        output_path,
+        maneuvers=solution.result.maneuvers,
+        title=mission.name,
+    )
+    print(f"Wrote: {output_path}")
+
+
+if __name__ == "__main__":
+    main()

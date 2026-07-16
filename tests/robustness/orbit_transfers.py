@@ -26,10 +26,15 @@ from octavian.solvers import SolverOptions
 EARTH_MU_M3PS2 = 3.986004418e14
 EARTH_RADIUS_M = 6_378_136.3
 MIN_PERIGEE_ALTITUDE_M = 300_000.0
+GEO_ORBIT_RADIUS_M = 42_164_000.0
+ABOVE_GEO_MIN_PERIGEE_M = GEO_ORBIT_RADIUS_M + 500_000.0
+ABOVE_GEO_MAX_PERIGEE_M = GEO_ORBIT_RADIUS_M + 8_000_000.0
+HIGH_ORBIT_CASE_INTERVAL = 5
 DEFAULT_CAMPAIGN_SEED = 20260714
 
 Backend = Literal["quick", "composable"]
 LinkKind = Literal["direct", "continuous", "impulsive"]
+OrbitRegime = Literal["low", "above_geo"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +55,14 @@ class OrbitElements:
 
 
 @dataclass(frozen=True, slots=True)
+class _OrbitShape:
+    """Semi-major axis and eccentricity sampled before orbit orientation."""
+
+    a_m: float
+    e: float
+
+
+@dataclass(frozen=True, slots=True)
 class TransferScenario:
     """A reproducible transfer problem plus selected public API knobs."""
 
@@ -57,6 +70,7 @@ class TransferScenario:
     case_seed: int
     initial_orbit: OrbitElements
     final_orbit: OrbitElements
+    orbit_regime: OrbitRegime
     backend: Backend
     link_kind: LinkKind
     tof_bounds_s: tuple[float, float]
@@ -101,7 +115,9 @@ def generate_transfer_scenarios(
     Each case uses its own stored seed so a failure can be reproduced without
     regenerating all preceding cases. Endpoint orbits remain elliptic, stay at
     least 300 km above the Earth at perigee, and limit plane and shape changes
-    to ranges appropriate for an impulsive transfer robustness campaign.
+    to ranges appropriate for an impulsive transfer robustness campaign. Every
+    fifth case transfers between a low orbit and an orbit whose perigee is at
+    least 500 km above GEO, in alternating raising and lowering directions.
     """
     if count < 1:
         raise ValueError("count must be at least one")
@@ -117,16 +133,11 @@ def generate_transfer_scenarios(
 def _generate_transfer_scenario(case_index: int, case_seed: int) -> TransferScenario:
     rng = np.random.default_rng(case_seed)
     minimum_perigee_m = EARTH_RADIUS_M + MIN_PERIGEE_ALTITUDE_M
-
-    initial_e = float(rng.uniform(0.0, 0.22))
-    initial_perigee_m = float(rng.uniform(minimum_perigee_m, 13_000e3))
-    initial_a_m = initial_perigee_m / (1.0 - initial_e)
-
-    final_e = float(np.clip(initial_e + rng.uniform(-0.10, 0.10), 0.0, 0.30))
-    final_perigee_m = float(
-        np.clip(initial_perigee_m * rng.uniform(0.88, 1.45), minimum_perigee_m, 18_000e3)
+    orbit_regime, initial_shape, final_shape = _sample_endpoint_shapes(
+        case_index,
+        rng,
+        minimum_perigee_m=minimum_perigee_m,
     )
-    final_a_m = final_perigee_m / (1.0 - final_e)
 
     initial_inc_deg = float(rng.uniform(0.0, 55.0))
     final_inc_deg = float(np.clip(initial_inc_deg + rng.uniform(-12.0, 12.0), 0.0, 70.0))
@@ -138,16 +149,16 @@ def _generate_transfer_scenario(case_index: int, case_seed: int) -> TransferScen
     final_anomaly_deg = float((initial_anomaly_deg + rng.uniform(50.0, 310.0)) % 360.0)
 
     initial_orbit = OrbitElements(
-        a_m=initial_a_m,
-        e=initial_e,
+        a_m=initial_shape.a_m,
+        e=initial_shape.e,
         inc_deg=initial_inc_deg,
         raan_deg=initial_raan_deg,
         argp_deg=initial_argp_deg,
         true_anomaly_deg=initial_anomaly_deg,
     )
     final_orbit = OrbitElements(
-        a_m=final_a_m,
-        e=final_e,
+        a_m=final_shape.a_m,
+        e=final_shape.e,
         inc_deg=final_inc_deg,
         raan_deg=final_raan_deg,
         argp_deg=final_argp_deg,
@@ -155,8 +166,8 @@ def _generate_transfer_scenario(case_index: int, case_seed: int) -> TransferScen
     )
 
     reference_period_s = max(
-        _orbital_period_s(initial_a_m),
-        _orbital_period_s(final_a_m),
+        _orbital_period_s(initial_shape.a_m),
+        _orbital_period_s(final_shape.a_m),
     )
     uses_precoast = case_index % 3 != 0
     precoast_bounds_s = (
@@ -178,6 +189,7 @@ def _generate_transfer_scenario(case_index: int, case_seed: int) -> TransferScen
         case_seed=int(case_seed),
         initial_orbit=initial_orbit,
         final_orbit=final_orbit,
+        orbit_regime=orbit_regime,
         backend=backend,
         link_kind=link_kind,
         tof_bounds_s=(float(tof_lower_s), float(tof_upper_s)),
@@ -190,6 +202,64 @@ def _generate_transfer_scenario(case_index: int, case_seed: int) -> TransferScen
     )
 
 
+def _sample_endpoint_shapes(
+    case_index: int,
+    rng: np.random.Generator,
+    *,
+    minimum_perigee_m: float,
+) -> tuple[OrbitRegime, _OrbitShape, _OrbitShape]:
+    """Sample endpoint orbit sizes, including regular above-GEO cases."""
+    if case_index % HIGH_ORBIT_CASE_INTERVAL == 0:
+        low_orbit = _sample_orbit_shape(
+            rng,
+            perigee_bounds_m=(minimum_perigee_m, 14_000e3),
+            eccentricity_bounds=(0.0, 0.18),
+        )
+        above_geo_orbit = _sample_orbit_shape(
+            rng,
+            perigee_bounds_m=(ABOVE_GEO_MIN_PERIGEE_M, ABOVE_GEO_MAX_PERIGEE_M),
+            eccentricity_bounds=(0.0, 0.15),
+        )
+        if case_index % 2 == 0:
+            return "above_geo", low_orbit, above_geo_orbit
+        return "above_geo", above_geo_orbit, low_orbit
+
+    initial_e = float(rng.uniform(0.0, 0.22))
+    initial_perigee_m = float(rng.uniform(minimum_perigee_m, 13_000e3))
+    initial_shape = _shape_from_perigee(initial_perigee_m, initial_e)
+
+    final_e = float(np.clip(initial_e + rng.uniform(-0.10, 0.10), 0.0, 0.30))
+    final_perigee_m = float(
+        np.clip(
+            initial_perigee_m * rng.uniform(0.88, 1.45),
+            minimum_perigee_m,
+            18_000e3,
+        )
+    )
+    final_shape = _shape_from_perigee(final_perigee_m, final_e)
+    return "low", initial_shape, final_shape
+
+
+def _sample_orbit_shape(
+    rng: np.random.Generator,
+    *,
+    perigee_bounds_m: tuple[float, float],
+    eccentricity_bounds: tuple[float, float],
+) -> _OrbitShape:
+    """Sample a bound orbit shape from explicit perigee and eccentricity ranges."""
+    eccentricity = float(rng.uniform(*eccentricity_bounds))
+    perigee_m = float(rng.uniform(*perigee_bounds_m))
+    return _shape_from_perigee(perigee_m, eccentricity)
+
+
+def _shape_from_perigee(perigee_m: float, eccentricity: float) -> _OrbitShape:
+    """Construct an orbit shape while making the perigee guarantee explicit."""
+    return _OrbitShape(
+        a_m=float(perigee_m) / (1.0 - float(eccentricity)),
+        e=float(eccentricity),
+    )
+
+
 def build_transfer_mission(
     scenario: TransferScenario,
     *,
@@ -197,7 +267,11 @@ def build_transfer_mission(
 ) -> Mission:
     """Build a quick or composable mission for one generated scenario."""
     initial_state, final_state = scenario.boundary_states()
-    options = solver_options or SolverOptions(print_level=0, max_ls_iters=5, asset_threads=(1, 1))
+    options = solver_options or SolverOptions(
+        print_level=0,
+        max_ls_iters=5,
+        asset_threads=(1, 1),
+    )
 
     if scenario.backend == "quick":
         return two_burn_rendezvous(
