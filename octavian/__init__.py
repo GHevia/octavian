@@ -3,6 +3,7 @@
 # Public, config-like objects
 from . import (
     bodies,
+    config,
     constraints,
     coordinates,
     events,
@@ -13,6 +14,7 @@ from . import (
     variables,
 )
 from .bodies import EARTH, MOON, SUN, CelestialBody
+from .config import MissionConfigError, load_mission, load_mission_mapping, mission_from_dict
 from .conops import rendezvous_precoast_then_transfer, rendezvous_two_impulse
 from .coordinates import CoordinateFrame, SolverScaling, StateLayout
 from .events import BoundaryEvent
@@ -57,9 +59,13 @@ __all__ = [
     "CelestialBody",
     "ClohessyWiltshire",
     "LowThrustSpiralGuess",
+    "MissionConfigError",
     "EARTH",
     "MOON",
     "SUN",
+    "load_mission",
+    "load_mission_mapping",
+    "mission_from_dict",
     # quick + conops
     "two_burn_rendezvous",
     "state",
@@ -90,6 +96,7 @@ __all__ = [
     "objectives",
     "constraints",
     "bodies",
+    "config",
     "coordinates",
     "relative",
     "variables",

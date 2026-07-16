@@ -10,6 +10,8 @@ The API reference is generated from source docstrings with `mkdocstrings`.
 
 ::: octavian.solution
 
+::: octavian.config
+
 ## Mission Building Blocks
 
 ::: octavian.phase
