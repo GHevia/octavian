@@ -31,6 +31,13 @@ class MinimizeTime(Objective):
     kind: str = "time"
 
 
+@dataclass(frozen=True, slots=True)
+class MinimizePropellant(Objective):
+    """Minimize propellant consumed by finite-thrust phases."""
+
+    kind: str = "propellant"
+
+
 def minimize_total_delta_v(weight: float = 1.0) -> MinimizeDeltaV:
     """Create a total delta-v objective.
 
@@ -53,3 +60,19 @@ def minimize_total_time(weight: float = 1.0) -> MinimizeTime:
         A time objective declaration.
     """
     return MinimizeTime(weight=float(weight))
+
+
+def minimize_propellant(weight: float = 1.0) -> MinimizePropellant:
+    """Create a total propellant-use objective.
+
+    The compiler applies this objective once, to the final mass state in the
+    powered phase chain. This avoids double-counting mass across multiple burn
+    phases while remaining equivalent to maximizing final spacecraft mass.
+
+    Args:
+        weight: Scalar weight applied by the solver backend.
+
+    Returns:
+        A propellant objective declaration.
+    """
+    return MinimizePropellant(weight=float(weight))

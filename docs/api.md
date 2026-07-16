@@ -10,6 +10,8 @@ The API reference is generated from source docstrings with `mkdocstrings`.
 
 ::: octavian.solution
 
+::: octavian.config
+
 ## Mission Building Blocks
 
 ::: octavian.phase
@@ -19,6 +21,8 @@ The API reference is generated from source docstrings with `mkdocstrings`.
 ::: octavian.variables
 
 ::: octavian.objectives
+
+::: octavian.guesses
 
 ::: octavian.links
 
@@ -39,6 +43,10 @@ The API reference is generated from source docstrings with `mkdocstrings`.
 ::: octavian.coordinates.layouts
 
 ::: octavian.coordinates.scaling
+
+::: octavian.relative.cwh
+
+::: octavian.relative.transforms
 
 ## Quick Builders And Specs
 

@@ -107,6 +107,12 @@ CARTESIAN = StateLayout(
     state_groups=_CARTESIAN_GROUPS,
 )
 
+RELATIVE_CARTESIAN = StateLayout(
+    name="relative_cartesian",
+    state_names=("x", "y", "z", "xdot", "ydot", "zdot"),
+    state_groups=_CARTESIAN_GROUPS,
+)
+
 CARTESIAN_MASS = StateLayout(
     name="cartesian_mass",
     state_names=(*_CARTESIAN_STATES, "mass"),

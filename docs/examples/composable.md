@@ -5,6 +5,11 @@ The composable examples expose the lower-level mission pieces: `Mission`,
 these scripts as templates when the quick helper does not describe the mission
 shape directly.
 
+Each file is a flat Python-as-configuration tutorial: declarations appear in
+solver order and the solve/report statements stay visible at the bottom. Tests
+exercise these scripts as scenarios, while numerical regression fixtures live
+under `tests/` so test import mechanics do not shape the user examples.
+
 ## Shared Composable API Terms
 
 | Setting | What it controls |
@@ -12,7 +17,10 @@ shape directly.
 | `Mission(phases=[...])` | The complete optimization problem. |
 | `Phase(...)` | One segment of the trajectory. |
 | `mode="coast"` | Ballistic two-body or perturbed coast dynamics. |
-| `mode="chemical_burn"` | Finite burn dynamics with mass and thrust-direction controls. |
+| `mode="finite_thrust"` | Propulsion-neutral finite-thrust dynamics with mass and vector-throttle controls. |
+| `mode="chemical_burn"` | Compatibility spelling for a chemical finite-thrust phase. |
+| `mode="low_thrust"` | Finite-thrust dynamics with an integrated low-thrust seed workflow. |
+| `mode="relative_coast"` | CWH coast dynamics in a chief-centered LVLH frame. |
 | `previous=...` | Connects a phase to the phase before it. |
 | `link=links.continuous()` | Enforces continuous position, velocity, and time at the boundary. |
 | `link=links.impulsive()` | Enforces continuous position and time while allowing velocity to jump. |
@@ -20,6 +28,7 @@ shape directly.
 | `constraints.min_radius(..., where="Path")` | Keeps the trajectory above a radius floor along the phase. |
 | `variables.ImpulsiveDeltaV(...)` | Exposes a boundary velocity jump as a decision variable and maneuver. |
 | `objectives.minimize_total_delta_v()` | Minimizes the sum of declared impulsive delta-v terms. |
+| `objectives.minimize_propellant()` | Maximizes final mass after the last powered phase. |
 
 ## 01: Single-Phase Terminal Delta-v Objective
 
@@ -42,8 +51,8 @@ Important choices:
 
 | Code | Purpose |
 | --- | --- |
-| `constraints.state(x0, where="Front")` | Fixes the departure Cartesian state. |
-| `constraints.state(xf, where="Back")` | Fixes the target position and supplies target velocity. |
+| `constraints.state(initial_state, where="Front")` | Fixes the departure Cartesian state. |
+| `constraints.state(target_state, where="Back")` | Fixes the target position and supplies target velocity. |
 | `ImpulsiveDeltaV(where="Front")` | Allows a departure burn. |
 | `ImpulsiveDeltaV(where="Back")` | Relaxes terminal velocity and charges the arrival burn. |
 | `lambert_grid_size=60` | Seeds the coast arc with a Lambert search. |
@@ -259,6 +268,11 @@ Capability showcased:
 - Mass depletion state.
 - Three thrust-direction controls.
 - J2 perturbation enabled in every phase.
+- Explicit propellant objective and powered-phase mass reporting.
+
+The compiler does not require this exact three-phase shape. A finite-thrust
+phase can stand alone, and longer powered/coast chains carry mass continuously
+from the first powered phase through the last.
 
 The same coast and burn EOM path supports `Perturbations(moon=True, sun=True)`
 when the mission sets `initial_epoch`; Octavian samples the bundled reduced
@@ -333,3 +347,87 @@ Important choices:
 Expected output: `traj_composable_sun_moon_perturbations.html`.
 
 Screenshot placeholder: `docs/assets/screenshots/composable-10-sun-moon-perturbations.png`.
+
+## 11: CWH Relative Rendezvous
+
+Path: `examples/composable/11_cwh_relative_rendezvous.py`
+
+Run:
+
+```bash
+conda run -n asset_env python examples/composable/11_cwh_relative_rendezvous.py
+```
+
+Capability showcased:
+
+- Chief-centered LVLH/RTN state and result metadata.
+- CWH dynamics derived from a 400 km circular Earth orbit.
+- Analytic CWH position-targeted initial guess.
+- Optimized departure and arrival impulses for a one-kilometer rendezvous.
+
+Important choices:
+
+| Code | Purpose |
+| --- | --- |
+| `Dynamics.cwh(...)` | Couples mean motion, LVLH frame, and relative scaling. |
+| `mode="relative_coast"` | Selects the relative coast phase semantics. |
+| relative `constraints.state(...)` | Fixes deputy state values in meters and meters per second. |
+| front/back `impulsive_delta_v` | Frees boundary velocities and reports both maneuvers. |
+
+The example prints the solution, frame, and selected dynamics model without
+creating a plot. Existing inertial trajectory plots are not labeled for LVLH
+geometry yet.
+
+## 12: CWH Safety Corridor
+
+Path: `examples/composable/12_cwh_safety_corridor.py`
+
+Run:
+
+```bash
+conda run -n asset_env python examples/composable/12_cwh_safety_corridor.py
+```
+
+Capability showcased:
+
+- A 75 m spherical keep-out zone around the chief.
+- A one-sided 30° approach cone along the negative LVLH y axis.
+- An 85°–121° angle bound to a fixed illumination direction.
+- Geometry-aware CWH seed selection and post-solve satisfaction reporting.
+
+The unconstrained minimum-delta-v arc falls outside the 30° corridor. The
+constraint therefore moves the optimized transfer to the cone boundary,
+demonstrating that the geometry changes the solution rather than only checking
+it afterward.
+
+## 13: Low-Thrust Orbit Raise
+
+Path: `examples/composable/13_low_thrust_orbit_raise.py`
+
+Run:
+
+```bash
+conda run -n asset_env python examples/composable/13_low_thrust_orbit_raise.py
+```
+
+Capability showcased:
+
+- A single `mode="low_thrust"` phase using the common mass/throttle ODE.
+- A typed, dynamics-integrated prograde spiral initial guess.
+- Free terminal orbital phase through semi-major-axis and near-circular
+  eccentricity constraints.
+- Explicit final-mass optimization and powered-phase reporting.
+
+Important choices:
+
+| Code | Purpose |
+| --- | --- |
+| `guesses.low_thrust_spiral(throttle=0.85)` | Integrates a prograde seed and initializes the control history. |
+| `final_state=terminal_seed_anchor` | Supplies target radius and scaling without fixing terminal longitude. |
+| `objectives.minimize_propellant()` | Maximizes final spacecraft mass. |
+| `tof_bounds_s=(14 h, 24 h)` | Brackets the seed's 17.59-hour burn estimate. |
+
+The reference solve raises a 560 kg spacecraft from a 7,000 km to an 8,000 km
+near-circular orbit in about 17.72 hours using about 15.05 kg of propellant.
+
+Expected output: `traj_composable_low_thrust_orbit_raise.html`.

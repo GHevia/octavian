@@ -23,6 +23,7 @@ def _fake_solution() -> Solution:
         maneuvers=maneuvers,
         last_obj=2.0,
         info={
+            "dynamics_model": "cwh",
             "chemical_burns": [
                 {
                     "phase": "burn",
@@ -30,6 +31,21 @@ def _fake_solution() -> Solution:
                     "equivalent_dv_mps": 143.98885710585398,
                 }
             ],
+            "powered_phases": [
+                {
+                    "phase": "burn",
+                    "kind": "low_thrust",
+                    "propellant_used_kg": 1.0,
+                    "equivalent_dv_mps": 143.98885710585398,
+                }
+            ],
+            "phase_guess_info": {
+                0: {
+                    "seed_tof_s": 3_600.0,
+                    "seed_final_radius_m": 8_000_000.0,
+                }
+            },
+            "constraint_report": [],
             "phase_segments": [
                 {"name": "burn", "t_start_s": 0.0, "t_end_s": 100.0, "color": "red"},
                 {"name": "coast", "t_start_s": 100.0, "t_end_s": 200.0, "color": "blue"},
@@ -52,6 +68,9 @@ def _fake_solution() -> Solution:
         ("examples/composable/08_chemical_burn_j2.py", 1),
         ("examples/composable/09_impulse_vs_chemical_burn.py", 1),
         ("examples/composable/10_sun_moon_perturbations.py", 1),
+        ("examples/composable/11_cwh_relative_rendezvous.py", 1),
+        ("examples/composable/12_cwh_safety_corridor.py", 1),
+        ("examples/composable/13_low_thrust_orbit_raise.py", 1),
     ],
 )
 def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int) -> None:
@@ -75,7 +94,10 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
     runpy.run_path(str(ROOT / script_rel), run_name="__main__")
 
     assert len(missions) == expected_solve_calls
-    assert len(plotted) >= 1
+    if not script_rel.endswith(
+        ("11_cwh_relative_rendezvous.py", "12_cwh_safety_corridor.py")
+    ):
+        assert len(plotted) >= 1
 
     if script_rel.endswith("01_single_phase_terminal_dv_objective.py"):
         assert len(missions[0].phases) == 1
@@ -111,6 +133,26 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
         assert perturbations.j2 is True
         assert perturbations.active_third_bodies() == ("moon", "sun")
         assert plotted == ["traj_composable_sun_moon_perturbations.html"]
+    elif script_rel.endswith("11_cwh_relative_rendezvous.py"):
+        mission = missions[0]
+        assert mission.phases[0].mode == "relative_coast"
+        assert mission.phases[0].dynamics.frame.kind == "relative"
+        assert mission.phases[0].dynamics.model.mean_motion_radps > 0.0
+        assert plotted == []
+    elif script_rel.endswith("12_cwh_safety_corridor.py"):
+        mission = missions[0]
+        kinds = [constraint.kind for constraint in mission.phases[0].constraints]
+        assert "keep_out_sphere" in kinds
+        assert "approach_cone" in kinds
+        assert "lighting_angle" in kinds
+        assert plotted == []
+    elif script_rel.endswith("13_low_thrust_orbit_raise.py"):
+        mission = missions[0]
+        phase = mission.phases[0]
+        assert phase.mode == "low_thrust"
+        assert phase.initial_guess.throttle == pytest.approx(0.85)
+        assert mission.objectives[0].kind == "propellant"
+        assert plotted == ["traj_composable_low_thrust_orbit_raise.html"]
     elif script_rel.endswith("07_terminal_orbital_elements.py"):
         assert len(missions[0].phases) == 1
         kinds = [getattr(c, "kind", "") for c in missions[0].phases[0].constraints]

@@ -14,16 +14,19 @@ from ...coordinates import (
     CARTESIAN,
     CARTESIAN_MASS,
     CARTESIAN_MASS_THRUST,
+    RELATIVE_CARTESIAN,
     StateLayout,
 )
 from ...dynamics import (
-    ChemicalBurnECI,
+    FiniteThrustECI,
     MassCoastECI,
     PerturbedECI,
     ThirdBodyTable,
     TwoBodyECI,
 )
 from ...phase import Phase
+from ...relative import ClohessyWiltshire
+from ...relative.dynamics import ClohessyWiltshireODE
 from ...variables import ImpulsiveDeltaV
 from ..third_bodies import phase_perturbations, tables_for_phase
 
@@ -44,7 +47,7 @@ class PhaseBuild:
     index: int
     compile_phase: Phase | None = None
     layout: StateLayout = CARTESIAN
-    is_chemical_burn: bool = False
+    powered_kind: str | None = None
     enable_adaptive_mesh: bool = True
 
     @property
@@ -56,6 +59,16 @@ class PhaseBuild:
     def control_dim(self) -> int:
         """Return the compiled control dimension."""
         return self.layout.control_dim
+
+    @property
+    def is_powered(self) -> bool:
+        """Return whether this compiled phase has finite-thrust controls."""
+        return self.powered_kind is not None
+
+    @property
+    def is_chemical_burn(self) -> bool:
+        """Return whether this is a legacy chemical-burn phase."""
+        return self.powered_kind == "chemical_burn"
 
 
 def has_impulsive_variable(phase: Phase, where: str) -> bool:
@@ -83,56 +96,99 @@ def has_impulsive_variable(phase: Phase, where: str) -> bool:
 
 def is_chemical_burn(phase: Phase) -> bool:
     """Return whether a phase uses finite chemical-burn dynamics."""
+    return powered_phase_kind(phase) == "chemical_burn"
+
+
+def powered_phase_kind(phase: Phase) -> str | None:
+    """Return the normalized propulsion kind for a finite-thrust phase."""
     normalized_mode = (getattr(phase, "mode", "") or "").strip().lower().replace("-", "_")
-    return normalized_mode in ("burn", "chemical_burn", "finite_burn")
+    if normalized_mode in ("burn", "chemical_burn", "finite_burn"):
+        return "chemical_burn"
+    if normalized_mode in ("powered", "finite_thrust"):
+        return "finite_thrust"
+    if normalized_mode == "low_thrust":
+        return "low_thrust"
+    return None
+
+
+def is_powered_phase(phase: Phase) -> bool:
+    """Return whether a phase uses the finite-thrust state and control model."""
+    return powered_phase_kind(phase) is not None
 
 
 def is_coast_like(phase: Phase) -> bool:
     """Return whether a phase uses coast-like translational dynamics."""
     normalized_mode = (getattr(phase, "mode", "") or "").strip().lower().replace("-", "_")
-    return normalized_mode in ("coast", "transfer", "rendezvous")
+    return normalized_mode in ("coast", "transfer", "rendezvous", "relative_coast", "cwh")
+
+
+def cwh_model(phase: Phase) -> ClohessyWiltshire | None:
+    """Return the phase's CWH model, when configured."""
+    dynamics = phase.dynamics
+    model = dynamics.model if dynamics is not None else None
+    return model if isinstance(model, ClohessyWiltshire) else None
 
 
 def mass_state_phase_indices(phases: Sequence[Phase]) -> set[int]:
-    """Return phase indices that carry mass between finite burns."""
-    burn_indices = [idx for idx, phase in enumerate(phases) if is_chemical_burn(phase)]
-    if not burn_indices:
+    """Return phases that carry mass across a continuous powered chain."""
+    powered_indices = [idx for idx, phase in enumerate(phases) if is_powered_phase(phase)]
+    if not powered_indices:
         return set()
 
-    mass_indices = set(burn_indices)
-    first_burn = burn_indices[0]
-    last_burn = burn_indices[-1]
-    for idx in range(first_burn + 1, last_burn):
-        if is_coast_like(phases[idx]):
-            mass_indices.add(idx)
-    return mass_indices
+    first_powered = powered_indices[0]
+    last_powered = powered_indices[-1]
+    return set(range(first_powered, last_powered + 1))
+
+
+def validate_powered_phase_chain(phases: Sequence[Phase]) -> None:
+    """Validate spacecraft and phase continuity for finite-thrust phases.
+
+    Powered phases may appear alone or in any coast/powered sequence. Coast
+    phases between the first and last powered phases carry mass so continuity
+    links preserve propellant depletion across the chain.
+    """
+    powered_indices = [idx for idx, phase in enumerate(phases) if is_powered_phase(phase)]
+    if not powered_indices:
+        return
+
+    reference_spacecraft = None
+    for idx in range(powered_indices[0], powered_indices[-1] + 1):
+        phase = phases[idx]
+        if not (is_powered_phase(phase) or is_coast_like(phase)):
+            raise ValueError(
+                "Phases between powered phases must use powered or coast-like dynamics; "
+                f"phase {phase.name!r} has mode={phase.mode!r}."
+            )
+        spacecraft = getattr(phase, "spacecraft", None)
+        if isinstance(spacecraft, str) or spacecraft is None:
+            raise ValueError(
+                f"Mass-carrying phase {phase.name!r} requires a Spacecraft object."
+            )
+        if reference_spacecraft is None:
+            reference_spacecraft = spacecraft
+        elif spacecraft != reference_spacecraft:
+            raise ValueError(
+                "A powered phase chain must use one Spacecraft configuration so mass continuity "
+                f"is unambiguous; phase {phase.name!r} uses {spacecraft.name!r}."
+            )
+        if is_powered_phase(phase):
+            thruster = first_thruster(phase)
+            if float(thruster.thrust_N) <= 0.0 or float(thruster.isp_s) <= 0.0:
+                raise ValueError(
+                    f"Powered phase {phase.name!r} requires thrust_N > 0 and isp_s > 0."
+                )
 
 
 def validate_chemical_burn_transfer(phases: Sequence[Phase]) -> None:
-    """Validate the currently supported burn-coast-burn mission shape."""
-    burn_indices = [idx for idx, phase in enumerate(phases) if is_chemical_burn(phase)]
-    if not burn_indices:
-        return
-    if len(phases) < 3 or len(burn_indices) < 2:
-        raise ValueError(
-            "Chemical burn transfers require at least three phases: "
-            "a departure burn, a coast, and an arrival burn."
-        )
-    first_burn = burn_indices[0]
-    last_burn = burn_indices[-1]
-    if first_burn != 0 or last_burn != len(phases) - 1:
-        raise ValueError(
-            "Chemical burn transfers must start with a burn phase and end with a burn phase."
-        )
-    if not any(is_coast_like(phases[idx]) for idx in range(first_burn + 1, last_burn)):
-        raise ValueError("Chemical burn transfers require a coast phase between the burns.")
+    """Compatibility alias for :func:`validate_powered_phase_chain`."""
+    validate_powered_phase_chain(phases)
 
 
 def first_thruster(phase: Phase):
     """Return the configured thruster for a powered phase."""
     spacecraft = getattr(phase, "spacecraft", None)
     if isinstance(spacecraft, str) or spacecraft is None:
-        raise ValueError(f"Chemical burn phase {phase.name!r} requires a Spacecraft object.")
+        raise ValueError(f"Powered phase {phase.name!r} requires a Spacecraft object.")
     thruster_name = str(getattr(phase, "info", {}).get("thruster", "main"))
     thruster = spacecraft.get_thruster(thruster_name)
     if thruster is not None:
@@ -153,9 +209,31 @@ def ode_for_phase(
     if dynamics is None:
         raise ValueError(f"Phase {phase.name!r} is missing dynamics.")
     perturbations = phase_perturbations(phase)
-    if is_chemical_burn(phase):
+    relative_model = cwh_model(phase)
+    if relative_model is not None:
+        if is_powered_phase(phase) or carries_mass:
+            raise ValueError("CWH phases do not yet support finite-thrust or mass states.")
+        if any(
+            (
+                perturbations.j2,
+                perturbations.moon,
+                perturbations.sun,
+                perturbations.srp,
+                perturbations.drag,
+                bool(perturbations.third_bodies),
+                bool(third_body_tables),
+            )
+        ):
+            raise ValueError(
+                "CWH phases currently support the unforced linear model only; "
+                "relative-frame perturbations require an explicit acceleration model."
+            )
+        return ClohessyWiltshireODE(
+            mean_motion_radps=relative_model.mean_motion_radps
+        )
+    if is_powered_phase(phase):
         thruster = first_thruster(phase)
-        return ChemicalBurnECI(
+        return FiniteThrustECI(
             mu_m3ps2=float(dynamics.mu_m3ps2),
             thrust_N=float(thruster.thrust_N),
             isp_s=float(thruster.isp_s),
@@ -186,12 +264,14 @@ def ode_for_phase(
 def phase_dimensions(phase: Phase) -> tuple[int, int, bool]:
     """Return user-visible state and control dimensions for a phase."""
     layout = layout_for_phase(phase)
-    return layout.state_dim, layout.control_dim, is_chemical_burn(phase)
+    return layout.state_dim, layout.control_dim, is_powered_phase(phase)
 
 
 def layout_for_phase(phase: Phase, *, carries_mass: bool = False) -> StateLayout:
     """Return the named state/control layout required by a phase."""
-    if is_chemical_burn(phase):
+    if cwh_model(phase) is not None:
+        return RELATIVE_CARTESIAN
+    if is_powered_phase(phase):
         return CARTESIAN_MASS_THRUST
     if carries_mass:
         return CARTESIAN_MASS
@@ -205,7 +285,7 @@ def compile_phase_dimensions(
 ) -> tuple[int, int, bool]:
     """Return the state/control dimensions required by the compiled ODE."""
     layout = layout_for_phase(phase, carries_mass=carries_mass)
-    return layout.state_dim, layout.control_dim, is_chemical_burn(phase)
+    return layout.state_dim, layout.control_dim, is_powered_phase(phase)
 
 
 def trajectory_rvt(raw_traj: np.ndarray, layout: StateLayout | int) -> np.ndarray:
@@ -222,7 +302,7 @@ def trajectory_rvt(raw_traj: np.ndarray, layout: StateLayout | int) -> np.ndarra
     return raw[:, columns]
 
 
-def augment_chemical_burn_guess(
+def augment_powered_guess(
     base_guess: Sequence[np.ndarray],
     *,
     phase: Phase,
@@ -230,7 +310,7 @@ def augment_chemical_burn_guess(
     thrust_N: float,
     isp_s: float,
 ) -> list[np.ndarray]:
-    """Convert public ``[R,V,t]`` rows into ``[R,V,M,t,U]`` burn rows."""
+    """Convert public ``[R,V,t]`` rows into ``[R,V,M,t,U]`` powered rows."""
     rows = [np.asarray(row, dtype=float).reshape(-1) for row in base_guess]
     if not rows:
         return []
@@ -262,6 +342,10 @@ def augment_chemical_burn_guess(
     return augmented
 
 
+# Compatibility name retained for focused downstream tests and imports.
+augment_chemical_burn_guess = augment_powered_guess
+
+
 def augment_mass_coast_guess(
     base_guess: Sequence[np.ndarray],
     *,
@@ -282,20 +366,25 @@ def prepare_phase_guess(
     guess: Sequence[np.ndarray],
     *,
     carries_mass: bool = False,
-) -> tuple[list[np.ndarray], StateLayout, bool]:
+) -> tuple[list[np.ndarray], StateLayout, str | None]:
     """Shape public guess rows for the selected dynamics implementation."""
     layout = layout_for_phase(
         phase,
         carries_mass=carries_mass,
     )
-    is_burn = is_chemical_burn(phase)
-    if not carries_mass:
-        return [np.asarray(row, dtype=float) for row in guess], layout, is_burn
+    propulsion_kind = powered_phase_kind(phase)
+    if propulsion_kind is None and not carries_mass:
+        return [np.asarray(row, dtype=float) for row in guess], layout, None
+
+    rows = [np.asarray(row, dtype=float).reshape(-1) for row in guess]
+    compiled_width = layout.state_dim + 1 + layout.control_dim
+    if propulsion_kind is not None and rows and all(row.size == compiled_width for row in rows):
+        return rows, layout, propulsion_kind
 
     spacecraft = phase.spacecraft
     if isinstance(spacecraft, str) or spacecraft is None:
         raise ValueError(f"Mass-carrying phase {phase.name!r} requires a Spacecraft object.")
-    if not is_burn:
+    if propulsion_kind is None:
         return (
             augment_mass_coast_guess(
                 guess,
@@ -303,16 +392,16 @@ def prepare_phase_guess(
                 mass0_kg=float(spacecraft.initial_mass_kg),
             ),
             layout,
-            is_burn,
+            None,
         )
 
     thruster = first_thruster(phase)
     if float(thruster.thrust_N) <= 0.0 or float(thruster.isp_s) <= 0.0:
         raise ValueError(
-            f"Chemical burn phase {phase.name!r} requires thrust_N > 0 and isp_s > 0."
+            f"Powered phase {phase.name!r} requires thrust_N > 0 and isp_s > 0."
         )
     return (
-        augment_chemical_burn_guess(
+        augment_powered_guess(
             guess,
             phase=phase,
             mass0_kg=float(spacecraft.initial_mass_kg),
@@ -320,7 +409,7 @@ def prepare_phase_guess(
             isp_s=float(thruster.isp_s),
         ),
         layout,
-        is_burn,
+        propulsion_kind,
     )
 
 
@@ -333,7 +422,7 @@ def make_asset_phase(
     third_body_tables: dict[str, ThirdBodyTable] | None = None,
 ):
     """Compile one user phase into an ASSET phase plus dimensional metadata."""
-    prepared_guess, layout, is_burn = prepare_phase_guess(
+    prepared_guess, layout, propulsion_kind = prepare_phase_guess(
         phase,
         guess,
         carries_mass=carries_mass,
@@ -344,4 +433,4 @@ def make_asset_phase(
         third_body_tables=tables_for_phase(phase, third_body_tables or {}),
     )
     asset_phase = ode.phase(Tmodes.LGL3, prepared_guess, int(nsegs))
-    return asset_phase, layout, is_burn
+    return asset_phase, layout, propulsion_kind

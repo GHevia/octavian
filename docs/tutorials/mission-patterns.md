@@ -23,6 +23,7 @@ Use `Mission` and `Phase` directly when you need:
 - finite chemical-burn phases,
 - J2 perturbations,
 - custom objectives or per-phase mesh settings.
+- chief-centered CWH relative motion.
 
 ## Pattern 1: Standard Two-Impulse Transfer
 
@@ -141,7 +142,7 @@ dynamics = Dynamics(mu_m3ps2=MU, perturbations=Perturbations(j2=True))
 J2 is currently implemented in the composable ASSET backend. Other perturbation
 flags are reserved for future extensions and fail clearly if requested.
 
-## Pattern 8: Finite Chemical Burns
+## Pattern 8: Finite-Thrust Phases
 
 ```python
 spacecraft = Spacecraft(
@@ -158,18 +159,35 @@ spacecraft = Spacecraft(
 )
 ```
 
-Chemical-burn phases use `mode="chemical_burn"` and require a thruster with
-positive thrust and specific impulse. The state includes mass, and the solver
-tracks propellant usage through mass depletion.
+Powered phases use `mode="finite_thrust"` and require a thruster with positive
+thrust and specific impulse. The chemical-specific compatibility spelling is
+`mode="chemical_burn"`. The state includes mass, and the solver tracks
+propellant usage through mass depletion.
 
-A typical finite-burn transfer uses:
+```python
+powered = Phase(
+    name="injection",
+    mode="finite_thrust",
+    spacecraft=spacecraft,
+    dynamics=dynamics,
+)
+
+mission = Mission(
+    phases=[powered],
+    objectives=[objectives.minimize_propellant()],
+)
+```
+
+A common finite-burn transfer uses:
 
 1. departure chemical burn,
 2. coast,
 3. arrival chemical burn.
 
-Keep the first chemical-burn examples as feasibility solves if the main goal is
-to validate structure and report propellant usage rather than optimize fuel.
+This is a mission pattern, not a compiler restriction. Standalone powered
+phases and longer powered/coast sequences are supported. Coast phases between
+powered phases carry mass automatically; all phases in that chain must use the
+same spacecraft configuration.
 
 ## Pattern 9: Plot the Result
 
@@ -231,3 +249,96 @@ The body declaration supplies gravitational parameter, reference radius, J2
 coefficient, and inertial frame origin together. Named body constants override
 raw `mu_m3ps2` values so the configuration cannot silently mix Earth and Sun
 properties. For a custom object, construct `CelestialBody` explicitly.
+
+## Pattern 12: Optimize Relative Motion With CWH
+
+```python
+dynamics = Dynamics.cwh(
+    chief_orbit_radius_m=EARTH.mean_radius_m + 400_000.0,
+    central_body=EARTH,
+    chief_name="Chief",
+    reference_length_m=1_000.0,
+)
+
+phase = Phase(
+    mode="relative_coast",
+    spacecraft=deputy,
+    dynamics=dynamics,
+    initial_state=initial_relative_state,
+    final_state=final_relative_state,
+    tof_bounds_s=(1_200.0, 2_400.0),
+    constraints=[
+        constraints.state(initial_relative_state, where="Front"),
+        constraints.state(final_relative_state, where="Back"),
+    ],
+    variables=[
+        variables.impulsive_delta_v(at="Front"),
+        variables.impulsive_delta_v(at="Back"),
+    ],
+)
+```
+
+Relative positions and velocities use the chief LVLH/RTN frame. Use
+`relative.inertial_to_relative_state(...)` and
+`relative.relative_to_inertial_state(...)` to transform analysis states at a
+known chief state. CWH assumes a circular chief and small deputy separation;
+use a nonlinear model when those assumptions are not appropriate.
+
+## Pattern 13: Add Relative Safety And Lighting Geometry
+
+```python
+constraints.keep_out_sphere(
+    radius_m=75.0,
+    center_m=[0.0, 0.0, 0.0],
+)
+constraints.approach_cone(
+    axis=[0.0, -1.0, 0.0],
+    half_angle_deg=30.0,
+)
+constraints.lighting_angle(
+    sun_direction=[1.0, 0.0, 0.0],
+    min_angle_deg=85.0,
+    max_angle_deg=121.0,
+)
+```
+
+All vectors and origins use the phase's declared frame. The approach cone is
+one-sided, so the opposite direction does not satisfy it. Lighting bounds use
+a fixed direction over the phase; transform or update that direction when a
+longer arc needs time-varying Sun geometry. Constraint extrema and satisfaction
+flags are included in `solution.result.info["constraint_report"]`.
+
+## Pattern 14: Seed A Low-Thrust Spiral
+
+```python
+from octavian import guesses
+
+phase = Phase(
+    mode="low_thrust",
+    spacecraft=electric_spacecraft,
+    dynamics=dynamics,
+    initial_state=initial_circular_state,
+    final_state=terminal_radius_anchor,
+    tof_bounds_s=(14 * 3_600.0, 24 * 3_600.0),
+    initial_guess=guesses.low_thrust_spiral(
+        throttle=0.85,
+        direction="auto",
+    ),
+    constraints=[
+        constraints.state(initial_circular_state, where="Front"),
+        constraints.semi_major_axis(target_radius_m, where="Back", tol_m=10_000.0),
+        constraints.eccentricity(0.01, where="Back", tol=0.0099),
+    ],
+)
+```
+
+The seed estimates tangential spiral delta-v, converts it to burn time through
+the rocket equation, and integrates gravity, thrust, and mass at the requested
+seed throttle. `direction="auto"` selects prograde for a larger target radius
+and retrograde for a smaller one. The optimizer does not retain this steering
+law; the vector throttle at every collocation point remains free.
+
+Use a final Cartesian state only as the target-radius and scaling anchor, then
+constrain terminal orbital elements to leave longitude free. This built-in seed
+assumes a near-circular, approximately coplanar transfer. Adjust `time_scale`
+or provide a future custom seed for strongly eccentric or plane-changing arcs.

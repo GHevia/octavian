@@ -22,6 +22,7 @@ plugins:
 nav:
   - Home: index.md
   - Getting Started: tutorials/getting-started.md
+  - JSON And YAML Missions: tutorials/config-files.md
   - Mission Patterns: tutorials/mission-patterns.md
   - Concepts: concepts.md
   - Developer Architecture: developer-architecture.md

@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import runpy
-from pathlib import Path
-
 import numpy as np
 import pytest
 
@@ -13,7 +10,6 @@ from octavian.runner import _is_composable_mission
 from octavian.solvers import composable, third_bodies
 
 MU = 3.986004418e14
-ROOT = Path(__file__).resolve().parents[1]
 
 
 def _burn_phase() -> Phase:
@@ -69,12 +65,13 @@ def test_chemical_burn_mode_uses_composable_backend() -> None:
     assert composable._phase_dimensions(mission.phases[0]) == (7, 3, True)
 
 
-def test_chemical_burn_transfer_requires_burn_coast_burn_shape() -> None:
-    with pytest.raises(ValueError, match="departure burn, a coast, and an arrival burn"):
-        composable._validate_chemical_burn_transfer([_burn_phase()])
+def test_powered_phase_chain_supports_standalone_and_burn_coast_burn_shapes() -> None:
+    standalone = [_burn_phase()]
+    composable._validate_powered_phase_chain(standalone)
+    assert composable._mass_state_phase_indices(standalone) == {0}
 
     phases = _burn_coast_burn_phases()
-    composable._validate_chemical_burn_transfer(phases)
+    composable._validate_powered_phase_chain(phases)
     assert composable._mass_state_phase_indices(phases) == {0, 1, 2}
 
 
@@ -201,10 +198,22 @@ def test_zero_weight_objective_remains_zero() -> None:
     assert time_weight == pytest.approx(0.0)
 
 
-def test_example_08_configures_burn_coast_burn_with_j2() -> None:
-    namespace = runpy.run_path(str(ROOT / "examples/composable/08_chemical_burn_j2.py"))
-    mission = namespace["mission"]
-    phases = mission.phases
+def test_propellant_objective_has_an_independent_weight() -> None:
+    mission = Mission(objectives=[objectives.minimize_propellant(weight=0.25)])
+
+    assert composable._propellant_objective_weight(mission) == pytest.approx(0.25)
+    minimize_dv, _, _, _ = composable._objective_weights(mission)
+    assert minimize_dv is False
+
+
+def test_burn_coast_burn_fixture_supports_j2() -> None:
+    phases = _burn_coast_burn_phases()
+    for phase in phases:
+        phase.dynamics = Dynamics(mu_m3ps2=MU, perturbations=Perturbations(j2=True))
+    mission = Mission(
+        phases=phases,
+        objectives=[objectives.minimize_propellant(weight=0.0)],
+    )
 
     assert [phase.mode for phase in phases] == ["chemical_burn", "coast", "chemical_burn"]
     assert all(phase.dynamics.active_perturbations().j2 for phase in phases)
@@ -212,12 +221,12 @@ def test_example_08_configures_burn_coast_burn_with_j2() -> None:
     composable._validate_chemical_burn_transfer(phases)
 
 
-def test_example_09_compares_impulse_and_chemical_transfers() -> None:
-    namespace = runpy.run_path(str(ROOT / "examples/composable/09_impulse_vs_chemical_burn.py"))
+def test_burn_coast_burn_fixture_accepts_a_reference_coast_window() -> None:
+    phases = _burn_coast_burn_phases()
+    phases[1].tof_bounds_s = (1_800.0, 3_000.0)
+    chemical_mission = Mission(phases=phases)
 
-    chemical_mission = namespace["chemical_mission"]
-
-    assert namespace["COAST_BOUNDS_S"] == (1_800.0, 3_000.0)
+    assert chemical_mission.phases[1].tof_bounds_s == (1_800.0, 3_000.0)
     assert [phase.mode for phase in chemical_mission.phases] == [
         "chemical_burn",
         "coast",

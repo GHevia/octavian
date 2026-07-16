@@ -22,11 +22,14 @@ Octavian currently supports:
 - continuous and impulsive phase links,
 - boundary state and position constraints,
 - minimum-radius path constraints,
+- relative keep-out, approach-cone, and fixed lighting-angle constraints,
 - terminal orbital-element constraints for semi-major axis, eccentricity, and
   inclination,
 - finite chemical burns with mass depletion and thrust-direction controls,
 - Earth two-body, J2, Sun, and Moon gravity perturbations in the composable
   backend,
+- single-phase CWH relative-motion optimization with analytic seeding and
+  inertial/LVLH transforms,
 - ASSET-backed optimization with a targeted retry path for non-monotonic mesh
   time failures,
 - `Solution` and `RendezvousResult` reporting,
@@ -73,13 +76,14 @@ of the phase definition.
 - `octavian/models.py`: `Dynamics`, `Perturbations`, solve config, run plans,
   stages, and retry policy.
 - `octavian/spacecraft.py`: spacecraft and thruster data models.
+- `octavian/guesses.py`: typed user declarations for phase initial guesses.
 - `octavian/constraints.py`: constraint class hierarchy and factory helpers.
 - `octavian/variables.py`: user-facing optimization variables such as
   `ImpulsiveDeltaV`.
 - `octavian/events.py`: boundary events such as impulses.
 - `octavian/links.py`: continuous and impulsive phase link declarations.
-- `octavian/objectives.py`: objective declarations such as total delta-v and
-  final time.
+- `octavian/objectives.py`: objective declarations such as total delta-v,
+  propellant, and final time.
 - `octavian/conops.py`: reusable concept-of-operations mission builders.
 - `octavian/quick.py`: high-level quick-start problem builders.
 - `octavian/specs.py`: lower-level problem specifications used by legacy quick
@@ -88,12 +92,14 @@ of the phase definition.
 ### Astrodynamics And Data
 
 - `octavian/dynamics.py`: ASSET vector-function ODEs for two-body, J2,
-  third-body, mass-coast, and chemical-burn dynamics.
+  third-body, mass-coast, and propulsion-neutral finite-thrust dynamics.
 - `octavian/astro/kepler.py`: Kepler propagation, orbital element conversion,
   and dense initial guesses.
 - `octavian/astro/lambert.py`: Lambert seed generation and selection.
 - `octavian/astro/types.py`: vector normalization helpers.
 - `octavian/astro/units.py`: default unit scaling for ASSET phases.
+- `octavian/relative/`: CWH configuration, analytic propagation and seeding,
+  ASSET EOM, and inertial/LVLH state transforms.
 - `octavian/time.py`: time-bound normalization.
 - `octavian/data/ephemeris.py`: bundled reduced Sun/Moon ephemeris access,
   epoch conversion, and SPICE sampling.
@@ -116,6 +122,11 @@ of the phase definition.
   compilation orchestrator.
 - `octavian/solvers/compiler/phase_compiler.py`: phase classification, state
   dimensions, dynamics selection, guess shaping, and ASSET phase construction.
+- `octavian/solvers/compiler/powered_guessing.py`: pure numerical low-thrust
+  spiral estimates and dynamics-integrated powered guess rows.
+- `octavian/solvers/compiler/relative_constraint_compiler.py`: Cartesian
+  keep-out, approach-cone, and lighting inequality compilation plus result
+  reports.
 - `octavian/coordinates/`: immutable frame, state-layout, and characteristic
   scaling declarations shared by configuration, compilation, and reporting.
 - `octavian/bodies/`: immutable central-body constants and case-insensitive
@@ -144,8 +155,9 @@ The normal mission flow is:
 3. `MissionRunner.solve()` validates the mission and chooses a backend.
 4. Quick rendezvous-like missions compile to `TwoImpulseFreeTimeSpec` or
    `TwoImpulsePreCoastSpec` and run through `octavian.solvers.preconfigured`.
-5. Missions with explicit composable features, perturbations, variables, or
-   chemical burns run through `octavian.solvers.composable`.
+5. Missions with explicit composable features, alternate dynamics models,
+   perturbations, variables, or chemical burns run through
+   `octavian.solvers.composable`.
 6. Backends construct ASSET OCPs and call
    `octavian._asset.solve_with_standard_sequence()`.
 7. The backend extracts a `RendezvousResult`.
@@ -191,11 +203,12 @@ constraint compilation, terminal post-burn shell handling, and constraint
 reporting live in `octavian/solvers/constraint_compiler.py`.
 
 Future restructuring should continue splitting by compiler responsibility
-rather than by arbitrary helper buckets. The next candidate modules are:
+rather than by arbitrary helper buckets. Powered guess construction now has a
+dedicated compiler module. The next candidate modules are:
 
-- `solvers/compiler/guessing.py` for Kepler, Lambert, and powered-arc seeds,
+- `solvers/compiler/inertial_guessing.py` for remaining Kepler and Lambert seeds,
 - `solvers/compiler/objective_compiler.py` for objective normalization and ASSET costs,
-- `solvers/compiler/result_extraction.py` for trajectories, maneuvers, chemical-burn
+- `solvers/compiler/result_extraction.py` for trajectories, maneuvers, powered
   summaries, and constraint reports.
 
 Avoid creating a broad `utils.py` for unrelated helpers. Shared code should move

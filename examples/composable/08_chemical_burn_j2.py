@@ -84,7 +84,7 @@ mission = Mission(
     phases=[departure_burn, coast, arrival_burn],
     # Keep this first chemical-burn example as a feasibility solve. Propellant
     # usage is reported from the mass state after convergence.
-    objectives=[objectives.minimize_total_delta_v(weight=0.0)],
+    objectives=[objectives.minimize_propellant(weight=0.0)],
     solver_options=SolverOptions(print_level=0, max_ls_iters=2, enable_adaptive_mesh=False),
     mesh_nsegs_precoast=8,
     mesh_nsegs_transfer=16,
@@ -92,21 +92,23 @@ mission = Mission(
     nrevs_to_try=(0,),
 )
 
-if __name__ == "__main__":
-    solution = mission.solve()
-    if solution.result is not None:
-        print(solution.result.summary())
-        for burn_summary in solution.result.info.get("chemical_burns", []):
-            print(
-                f"{burn_summary['phase']}: "
-                f"propellant={burn_summary['propellant_used_kg']:.3f} kg, "
-                f"equivalent dv={burn_summary['equivalent_dv_mps']:.3f} m/s"
-            )
-        out_html = "traj_composable_chemical_burn_j2.html"
-        save_trajectory_html(
-            solution.result.traj,
-            out_html,
-            phase_segments=solution.result.info.get("phase_segments", []),
-            title=mission.name,
-        )
-        print(f"Wrote: {out_html}")
+solution = mission.solve()
+if solution.result is None:
+    raise RuntimeError("The finite-burn mission did not return a result.")
+
+print(solution.result.summary())
+for burn_summary in solution.result.info.get("chemical_burns", []):
+    print(
+        f"{burn_summary['phase']}: "
+        f"propellant={burn_summary['propellant_used_kg']:.3f} kg, "
+        f"equivalent dv={burn_summary['equivalent_dv_mps']:.3f} m/s"
+    )
+
+output_path = "traj_composable_chemical_burn_j2.html"
+save_trajectory_html(
+    solution.result.traj,
+    output_path,
+    phase_segments=solution.result.info.get("phase_segments", []),
+    title=mission.name,
+)
+print(f"Wrote: {output_path}")

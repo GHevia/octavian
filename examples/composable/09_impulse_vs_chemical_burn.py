@@ -83,7 +83,7 @@ chemical_mission = Mission(
     phases=[departure_burn, coast, arrival_burn],
     # Feasibility solve: the finite-burn equivalent delta-v is reported from
     # mass depletion and compared with the impulsive Lambert seed.
-    objectives=[objectives.minimize_total_delta_v(weight=0.0)],
+    objectives=[objectives.minimize_propellant(weight=0.0)],
     solver_options=SolverOptions(print_level=0, max_ls_iters=2, enable_adaptive_mesh=False),
     mesh_nsegs_precoast=8,
     mesh_nsegs_transfer=16,
@@ -137,40 +137,39 @@ def _chemical_equivalent_delta_v(solution) -> float:  # type: ignore[no-untyped-
     )
 
 
-if __name__ == "__main__":
-    impulsive_dv_mps, impulsive_traj = _impulsive_reference()
-    chemical_solution = chemical_mission.solve()
+impulsive_dv_mps, impulsive_traj = _impulsive_reference()
+chemical_solution = chemical_mission.solve()
 
-    if chemical_solution.result is None:
-        raise RuntimeError("The finite-burn transfer must solve before delta-v can be compared.")
+if chemical_solution.result is None:
+    raise RuntimeError("The finite-burn transfer must solve before delta-v can be compared.")
 
-    chemical_dv_mps = _chemical_equivalent_delta_v(chemical_solution)
-    relative_difference = abs(chemical_dv_mps - impulsive_dv_mps) / max(impulsive_dv_mps, 1.0)
+chemical_dv_mps = _chemical_equivalent_delta_v(chemical_solution)
+relative_difference = abs(chemical_dv_mps - impulsive_dv_mps) / max(impulsive_dv_mps, 1.0)
 
-    print(chemical_solution.result.summary())
-    print(
-        "Delta-v comparison: "
-        f"impulsive={impulsive_dv_mps:.3f} m/s, "
-        f"chemical equivalent={chemical_dv_mps:.3f} m/s, "
-        f"relative difference={100.0 * relative_difference:.2f}%"
+print(chemical_solution.result.summary())
+print(
+    "Delta-v comparison: "
+    f"impulsive={impulsive_dv_mps:.3f} m/s, "
+    f"chemical equivalent={chemical_dv_mps:.3f} m/s, "
+    f"relative difference={100.0 * relative_difference:.2f}%"
+)
+if relative_difference > 0.20:
+    raise RuntimeError(
+        "Finite-burn equivalent delta-v differs from the impulsive reference by more than 20%."
     )
-    if relative_difference > 0.20:
-        raise RuntimeError(
-            "Finite-burn equivalent delta-v differs from the impulsive reference by more than 20%."
-        )
 
-    impulse_html = "traj_composable_impulse_reference.html"
-    chemical_html = "traj_composable_chemical_reference.html"
-    save_trajectory_html(
-        impulsive_traj,
-        impulse_html,
-        title="Best two-impulse Lambert reference",
-    )
-    save_trajectory_html(
-        chemical_solution.result.traj,
-        chemical_html,
-        phase_segments=chemical_solution.result.info.get("phase_segments", []),
-        title=chemical_mission.name,
-    )
-    print(f"Wrote: {impulse_html}")
-    print(f"Wrote: {chemical_html}")
+impulse_html = "traj_composable_impulse_reference.html"
+chemical_html = "traj_composable_chemical_reference.html"
+save_trajectory_html(
+    impulsive_traj,
+    impulse_html,
+    title="Best two-impulse Lambert reference",
+)
+save_trajectory_html(
+    chemical_solution.result.traj,
+    chemical_html,
+    phase_segments=chemical_solution.result.info.get("phase_segments", []),
+    title=chemical_mission.name,
+)
+print(f"Wrote: {impulse_html}")
+print(f"Wrote: {chemical_html}")

@@ -485,9 +485,18 @@ def _is_composable_mission(mission: Mission) -> bool:
     """
     for phase in getattr(mission, "phases", []) or []:
         normalized_mode = (getattr(phase, "mode", "") or "").lower().replace("-", "_")
-        if normalized_mode in ("burn", "chemical_burn", "finite_burn"):
+        if normalized_mode in (
+            "burn",
+            "chemical_burn",
+            "finite_burn",
+            "powered",
+            "finite_thrust",
+            "low_thrust",
+        ):
             return True
         dynamics = getattr(phase, "dynamics", None)
+        if dynamics is not None and dynamics.model is not None:
+            return True
         if dynamics is not None and dynamics.active_perturbations().j2:
             return True
         if getattr(phase, "variables", None) and len(list(phase.variables or [])) > 0:

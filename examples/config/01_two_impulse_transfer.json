@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "states": {
+    "departure": {
+      "r_m": [7000000.0, 0.0, 0.0],
+      "v_mps": [0.0, 7546.053290107542, 0.0]
+    },
+    "arrival": {
+      "r_m": [-12000000.0, 0.0, 0.0],
+      "v_mps": [0.0, -5763.393400014367, 0.0]
+    }
+  },
+  "spacecraft": {
+    "vehicle": {
+      "name": "ConfigSat",
+      "dry_mass_kg": 150.0,
+      "thrusters": [
+        {"name": "main"}
+      ]
+    }
+  },
+  "dynamics": {
+    "earth_two_body": {
+      "central_body": "earth"
+    }
+  },
+  "mission": {
+    "name": "Config: Hohmann transfer between circular orbits",
+    "phases": [
+      {
+        "name": "transfer",
+        "mode": "coast",
+        "spacecraft": "vehicle",
+        "dynamics": "earth_two_body",
+        "initial_state": "departure",
+        "final_state": "arrival",
+        "tof_bounds_s": [3000.0, 7000.0],
+        "constraints": [
+          {"type": "state", "state": "departure", "where": "Front"},
+          {"type": "state", "state": "arrival", "where": "Back"}
+        ],
+        "variables": [
+          {"type": "impulsive_delta_v", "where": "Front"},
+          {"type": "impulsive_delta_v", "where": "Back"}
+        ]
+      }
+    ],
+    "objectives": [
+      {"type": "delta_v"}
+    ],
+    "mesh_nsegs_transfer": 60,
+    "lambert_grid_size": 60,
+    "nrevs_to_try": [0],
+    "solver_options": {
+      "print_level": 0,
+      "asset_threads": [1, 1]
+    }
+  }
+}

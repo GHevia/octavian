@@ -13,11 +13,12 @@ returns a `Solution`.
 ## Phase
 
 A `Phase` describes one segment of flight. Current examples use coast,
-rendezvous, and chemical-burn phases.
+rendezvous, relative-coast, and finite-thrust phases.
 
 Common phase inputs:
 
-- `mode`: the phase type, such as `coast` or `chemical_burn`.
+- `mode`: the phase type, such as `coast`, `finite_thrust`, or the compatible
+  chemical-specific spelling `chemical_burn`.
 - `spacecraft`: mass and thruster configuration.
 - `dynamics`: gravity and perturbation configuration.
 - `tof_bounds_s`: allowed time-of-flight bounds.
@@ -35,6 +36,9 @@ show:
 - Terminal semi-major axis.
 - Terminal eccentricity.
 - Terminal inclination.
+- Offset spherical keep-out zones.
+- One-sided approach cones.
+- Fixed-direction lighting-angle bounds.
 
 ## Variables
 
@@ -54,15 +58,17 @@ to jump. That jump becomes an impulsive maneuver when an appropriate
 
 ## Objectives
 
-Objectives define what the optimizer minimizes. The current scripts primarily
-use total delta-v and, in the quick API, an optional final-time weight.
+Objectives define what the optimizer minimizes. Use total delta-v for declared
+impulsive maneuvers, propellant for finite-thrust phases, and total time for
+time-of-flight trade studies. Propellant is evaluated once at the final
+powered mass state, so a burn-coast-burn chain is not double-counted.
 
 ## Dynamics And Perturbations
 
 `Dynamics` configures the gravitational parameter, central-body radius, J2
 coefficient, reference frame, characteristic scaling, and perturbation flags.
 J2, Moon, and Sun perturbations are
-implemented in the composable ASSET backend for coast and chemical-burn phases.
+implemented in the composable ASSET backend for coast and finite-thrust phases.
 Moon and Sun use the bundled reduced DE440 ephemeris in the `ECI_TOD` frame and
 require a mission initial epoch so Octavian can build ASSET interpolation
 tables over the mission time bounds.
@@ -75,6 +81,58 @@ parameters remain supported for custom bodies and backward compatibility.
 Sun-centered support currently means idealized heliocentric two-body dynamics.
 It does not yet generate planetary ephemeris states or model sphere-of-influence
 departure and arrival transitions.
+
+### Powered Phases
+
+`mode="finite_thrust"` selects the propulsion-neutral powered equations of
+motion: Cartesian position and velocity, spacecraft mass, and a three-component
+vector throttle. Its norm is bounded by one, and mass flow follows the selected
+thruster's thrust and specific impulse. `mode="chemical_burn"` remains a fully
+supported compatibility spelling and is reported as a chemical burn.
+
+Powered phases can be used alone or in arbitrary powered/coast sequences. Coast
+phases between the first and last powered phases automatically carry the mass
+state so continuous links conserve spacecraft mass. A chain uses one spacecraft
+configuration, but each powered phase may select a named thruster with
+`phase.info["thruster"]`.
+
+Use `objectives.minimize_propellant()` to maximize the final mass of the chain.
+The generic `powered_phases` result table reports mass use for every powered
+mode; the older `chemical_burns` key remains available for chemical phases.
+
+`mode="low_thrust"` uses the same physical ODE and identifies the phase for
+low-thrust-specific seed construction and reporting. The built-in
+`guesses.low_thrust_spiral(...)` seed integrates constant-throttle tangential
+steering with mass depletion, then releases every control sample and phase time
+to the optimizer. Its `auto` direction raises or lowers based on the final
+Cartesian seed anchor's radius.
+
+The spiral seed is intended for near-circular, approximately coplanar orbit
+raising or lowering. It is not an analytical solution and does not constrain
+the optimized steering law. Use terminal orbital-element constraints so final
+orbital phase remains free. Highly eccentric transfers, large plane changes,
+and interplanetary low-thrust arcs will need additional seed families.
+
+### Relative Motion
+
+`Dynamics.cwh(...)` selects the linear Clohessy-Wiltshire model for a deputy
+near a chief on a circular orbit. Relative states are expressed in the chief's
+LVLH/RTN frame: x radial, y along track, and z orbit normal. The model supplies
+frame and characteristic scaling metadata automatically, while the composable
+compiler uses an analytic CWH position-targeting seed instead of Lambert and
+Kepler guesses.
+
+`octavian.relative` also provides analytic propagation and inertial-to-LVLH
+state transforms for analysis before or after optimization. The current CWH
+compiler supports one unforced relative phase. Inertial orbital-element
+constraints, finite thrust, and inertial/relative phase links are rejected
+until an explicit acceleration or frame-link model is configured.
+
+Relative geometry constraints operate on Cartesian position in the phase
+frame. `keep_out_sphere` accepts an arbitrary center, `approach_cone` defines a
+forward axis and half-angle, and `lighting_angle` bounds the angle to a fixed
+Sun direction. The fixed-direction lighting model is appropriate over short
+relative arcs; it is not an ephemeris-varying eclipse or power model.
 
 ## Frames, Layouts, And Scaling
 
@@ -112,6 +170,7 @@ report:
 - chemical burn summaries,
 - constraint reports.
 - reference-frame and solver-scaling metadata.
+- dynamics-model metadata for relative trajectories.
 
 Plotly helpers turn the trajectory and maneuvers into inspectable HTML files.
 
