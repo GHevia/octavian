@@ -197,6 +197,119 @@ class MinRadius(Constraint):
         return float(self.r_min_m)
 
 
+def _unit_vector(name: str, value: Sequence[float]) -> np.ndarray:
+    vector = np.asarray(value, dtype=float).reshape(3)
+    if not np.all(np.isfinite(vector)):
+        raise ValueError(f"{name} must contain finite values")
+    magnitude = float(np.linalg.norm(vector))
+    if magnitude <= 0.0:
+        raise ValueError(f"{name} must have non-zero norm")
+    return vector / magnitude
+
+
+def _finite_vec3(name: str, value: Sequence[float]) -> np.ndarray:
+    vector = np.asarray(value, dtype=float).reshape(3)
+    if not np.all(np.isfinite(vector)):
+        raise ValueError(f"{name} must contain finite values")
+    return vector
+
+
+@dataclass(frozen=True, slots=True)
+class KeepOutSphere(Constraint):
+    """Keep Cartesian position outside a sphere centered in the phase frame."""
+
+    kind: ClassVar[str] = "keep_out_sphere"
+    family: ClassVar[str] = "relative_geometry"
+
+    radius_m: float = 0.0
+    center_m: Sequence[float] = (0.0, 0.0, 0.0)
+    where: Where = "Path"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "where", _normalize_where(self.where))
+        radius = _finite_float("radius_m", self.radius_m)
+        if radius <= 0.0:
+            raise ValueError("radius_m must be > 0")
+        object.__setattr__(self, "radius_m", radius)
+        object.__setattr__(self, "center_m", _finite_vec3("center_m", self.center_m))
+
+    @property
+    def value(self) -> dict[str, Any]:
+        return {"radius_m": self.radius_m, "center_m": self.center_m}
+
+
+@dataclass(frozen=True, slots=True)
+class ApproachCone(Constraint):
+    """Keep position inside a one-sided cone extending from a vertex."""
+
+    kind: ClassVar[str] = "approach_cone"
+    family: ClassVar[str] = "relative_geometry"
+
+    axis: Sequence[float] = (1.0, 0.0, 0.0)
+    half_angle_deg: float = 30.0
+    vertex_m: Sequence[float] = (0.0, 0.0, 0.0)
+    where: Where = "Path"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "where", _normalize_where(self.where))
+        half_angle = _finite_float("half_angle_deg", self.half_angle_deg)
+        if not (0.0 < half_angle < 90.0):
+            raise ValueError("half_angle_deg must satisfy 0 < angle < 90")
+        object.__setattr__(self, "half_angle_deg", half_angle)
+        object.__setattr__(self, "axis", _unit_vector("axis", self.axis))
+        object.__setattr__(self, "vertex_m", _finite_vec3("vertex_m", self.vertex_m))
+
+    @property
+    def value(self) -> dict[str, Any]:
+        return {
+            "axis": self.axis,
+            "half_angle_deg": self.half_angle_deg,
+            "vertex_m": self.vertex_m,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class LightingAngle(Constraint):
+    """Bound the angle from position to a fixed illumination direction.
+
+    ``sun_direction`` is expressed in the same frame as the phase position and
+    points from the constraint origin toward the light source.
+    """
+
+    kind: ClassVar[str] = "lighting_angle"
+    family: ClassVar[str] = "relative_geometry"
+
+    sun_direction: Sequence[float] = (1.0, 0.0, 0.0)
+    min_angle_deg: float = 0.0
+    max_angle_deg: float = 180.0
+    origin_m: Sequence[float] = (0.0, 0.0, 0.0)
+    where: Where = "Path"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "where", _normalize_where(self.where))
+        minimum = _finite_float("min_angle_deg", self.min_angle_deg)
+        maximum = _finite_float("max_angle_deg", self.max_angle_deg)
+        if not (0.0 <= minimum < maximum <= 180.0):
+            raise ValueError("lighting angles must satisfy 0 <= min < max <= 180")
+        object.__setattr__(self, "min_angle_deg", minimum)
+        object.__setattr__(self, "max_angle_deg", maximum)
+        object.__setattr__(
+            self,
+            "sun_direction",
+            _unit_vector("sun_direction", self.sun_direction),
+        )
+        object.__setattr__(self, "origin_m", _finite_vec3("origin_m", self.origin_m))
+
+    @property
+    def value(self) -> dict[str, Any]:
+        return {
+            "sun_direction": self.sun_direction,
+            "min_angle_deg": self.min_angle_deg,
+            "max_angle_deg": self.max_angle_deg,
+            "origin_m": self.origin_m,
+        }
+
+
 @dataclass(frozen=True, slots=True)
 class State(Constraint):
     """Constrain a Cartesian boundary state."""
@@ -266,3 +379,47 @@ def inclination_deg(
 def min_radius(r_min_m: float, where: str = "Path") -> MinRadius:
     """Create a minimum-radius constraint."""
     return MinRadius(r_min_m=r_min_m, where=where)
+
+
+def keep_out_sphere(
+    radius_m: float,
+    *,
+    center_m: Sequence[float] = (0.0, 0.0, 0.0),
+    where: str = "Path",
+) -> KeepOutSphere:
+    """Create an offset spherical keep-out-zone constraint."""
+    return KeepOutSphere(radius_m=radius_m, center_m=center_m, where=where)
+
+
+def approach_cone(
+    axis: Sequence[float],
+    half_angle_deg: float,
+    *,
+    vertex_m: Sequence[float] = (0.0, 0.0, 0.0),
+    where: str = "Path",
+) -> ApproachCone:
+    """Create a one-sided conical approach-corridor constraint."""
+    return ApproachCone(
+        axis=axis,
+        half_angle_deg=half_angle_deg,
+        vertex_m=vertex_m,
+        where=where,
+    )
+
+
+def lighting_angle(
+    sun_direction: Sequence[float],
+    *,
+    min_angle_deg: float = 0.0,
+    max_angle_deg: float = 180.0,
+    origin_m: Sequence[float] = (0.0, 0.0, 0.0),
+    where: str = "Path",
+) -> LightingAngle:
+    """Create a fixed-direction lighting-angle constraint."""
+    return LightingAngle(
+        sun_direction=sun_direction,
+        min_angle_deg=min_angle_deg,
+        max_angle_deg=max_angle_deg,
+        origin_m=origin_m,
+        where=where,
+    )

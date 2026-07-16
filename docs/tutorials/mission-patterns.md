@@ -266,3 +266,27 @@ Relative positions and velocities use the chief LVLH/RTN frame. Use
 `relative.relative_to_inertial_state(...)` to transform analysis states at a
 known chief state. CWH assumes a circular chief and small deputy separation;
 use a nonlinear model when those assumptions are not appropriate.
+
+## Pattern 13: Add Relative Safety And Lighting Geometry
+
+```python
+constraints.keep_out_sphere(
+    radius_m=75.0,
+    center_m=[0.0, 0.0, 0.0],
+)
+constraints.approach_cone(
+    axis=[0.0, -1.0, 0.0],
+    half_angle_deg=30.0,
+)
+constraints.lighting_angle(
+    sun_direction=[1.0, 0.0, 0.0],
+    min_angle_deg=85.0,
+    max_angle_deg=121.0,
+)
+```
+
+All vectors and origins use the phase's declared frame. The approach cone is
+one-sided, so the opposite direction does not satisfy it. Lighting bounds use
+a fixed direction over the phase; transform or update that direction when a
+longer arc needs time-varying Sun geometry. Constraint extrema and satisfaction
+flags are included in `solution.result.info["constraint_report"]`.
