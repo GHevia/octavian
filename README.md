@@ -26,17 +26,31 @@ solver-backed workflows rely on it.
 
 ## Install
 
-```bash
-pip install octavian
+For local development and ASSET-backed workflows on Windows, use the supported
+project environment. It installs ASSET and its native runtime inside one
+isolated conda prefix:
+
+```powershell
+conda env create --file environment.yml
+conda run --name octavian-dev python -m pip install --no-user -e ".[dev]"
+conda run --name octavian-dev python -m octavian.diagnostics
 ```
 
-For an isolated install:
+See [Development Environment](docs/tutorials/development-environment.md) for
+daily commands, dependency tiers, and the recommended environment pattern for
+other projects.
+
+For a standard installed package with the Plotly examples:
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate
-python -m pip install --upgrade pip
-python -m pip install octavian
+pip install "octavian[viz]"
+```
+
+For solver and astrodynamics code without visualization, `pip install octavian`
+is the smaller dependency set. Add YAML support only when needed:
+
+```bash
+pip install "octavian[yaml]"
 ```
 
 Before running solver-backed examples, verify ASSET imports in the active
@@ -78,10 +92,10 @@ the docs workflow publishes the site from pushes to `dev`.
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-pre-commit install
-python -m build
-pytest
+conda run --name octavian-dev python -m pip install --no-user -e ".[dev]"
+conda run --name octavian-dev pre-commit install
+conda run --name octavian-dev python -m build
+conda run --name octavian-dev python -m pytest
 ```
 
 ## Studies

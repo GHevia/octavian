@@ -1,0 +1,16 @@
+name: octavian-dev
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  # ASSET currently requires packaging < 26 through basemap. Pinning it here
+  # avoids pip replacing a newer conda package during environment creation.
+  - packaging<26
+  - pip:
+      # The native ASSET extension requires the OpenMP runtime that this wheel
+      # installs into this environment's Library/bin directory on Windows.
+      - asset-asrl==0.5.1
+variables:
+  # Do not silently borrow packages from %APPDATA% or another user-site path.
+  PYTHONNOUSERSITE: "1"

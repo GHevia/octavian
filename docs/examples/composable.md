@@ -355,7 +355,7 @@ Path: `examples/composable/11_cwh_relative_rendezvous.py`
 Run:
 
 ```bash
-conda run -n asset_env python examples/composable/11_cwh_relative_rendezvous.py
+conda run -n octavian-dev python examples/composable/11_cwh_relative_rendezvous.py
 ```
 
 Capability showcased:
@@ -385,7 +385,7 @@ Path: `examples/composable/12_cwh_safety_corridor.py`
 Run:
 
 ```bash
-conda run -n asset_env python examples/composable/12_cwh_safety_corridor.py
+conda run -n octavian-dev python examples/composable/12_cwh_safety_corridor.py
 ```
 
 Capability showcased:
@@ -407,7 +407,7 @@ Path: `examples/composable/13_low_thrust_orbit_raise.py`
 Run:
 
 ```bash
-conda run -n asset_env python examples/composable/13_low_thrust_orbit_raise.py
+conda run -n octavian-dev python examples/composable/13_low_thrust_orbit_raise.py
 ```
 
 Capability showcased:

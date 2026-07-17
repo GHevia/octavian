@@ -5,6 +5,27 @@ on:
   pull_request:
 
 jobs:
+  windows-asset-runtime:
+    name: Windows ASSET runtime
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          auto-update-conda: false
+          channels: conda-forge
+          channel-priority: strict
+      - name: Create the supported environment
+        shell: pwsh
+        run: conda env create --file environment.yml
+      - name: Install the checkout and verify native ASSET isolation
+        shell: pwsh
+        run: |
+          conda run --name octavian-dev python -m pip install --no-user -e ".[dev]"
+          conda run --name octavian-dev python -s -m octavian.diagnostics
+
   test:
     runs-on: ubuntu-latest
     strategy:
