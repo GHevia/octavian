@@ -1,5 +1,15 @@
 """Octavian: trajectory optimization and astrodynamics in Python using ASSET."""
 
+# ruff: noqa: E402
+# Native DLL setup must run before importing the public API below. Several
+# solver modules import ASSET while they initialize and cache that availability.
+from ._runtime import enable_native_runtime
+
+# Keep the handle alive: Python removes an added DLL directory when its handle
+# is collected. This makes the pip+venv and conda installation paths equivalent
+# for ASSET's Windows OpenMP runtime without changing the global system PATH.
+_NATIVE_RUNTIME_HANDLES = enable_native_runtime()
+
 # Public, config-like objects
 from . import (
     bodies,

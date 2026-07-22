@@ -1,4 +1,6 @@
 *__pycache__*
 *.html
 *.npz
+dist/
 site/
+.venv/

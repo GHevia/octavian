@@ -2,7 +2,10 @@
 
 This example targets only semi-major axis, eccentricity, and inclination at the
 end of the transfer. The terminal Cartesian state is provided only as a guess
-anchor for seeding the solve.
+anchor for seeding the solve. It reports one- and two-impulse local solutions;
+the extra terminal burn expands a nonconvex optimization problem, so comparing
+two independently optimized objective values is informative but not a global
+optimality proof.
 
 Run:
   python examples/composable/07_terminal_orbital_elements.py
@@ -129,6 +132,7 @@ if one_impulse_solution.result is not None and two_impulse_solution.result is no
         f"one-impulse={one_impulse_dv:.6f} m/s, "
         f"two-impulse={two_impulse_dv:.6f} m/s"
     )
+    print("  Note: independent local solves may converge to different minima.")
 
 out_html = "traj_composable_terminal_orbital_elements.html"
 save_trajectory_html(

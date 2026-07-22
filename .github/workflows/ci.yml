@@ -5,7 +5,49 @@ on:
   pull_request:
 
 jobs:
-  test:
+  windows-asset-runtime:
+    name: Windows ASSET runtime
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          auto-update-conda: false
+          channels: conda-forge
+          channel-priority: strict
+      - name: Create the supported environment
+        shell: pwsh
+        run: conda env create --file environment.yml
+      - name: Install the checkout and verify native ASSET isolation
+        shell: pwsh
+        run: |
+          conda run --name octavian-dev python -m pip install --no-user -e ".[dev]"
+          conda run --name octavian-dev python -s -m octavian.diagnostics
+
+  windows-tests:
+    name: Windows tests (Python 3.12)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Create a virtual environment, verify ASSET, and run tests
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python -m pip install --upgrade pip
+          .\.venv\Scripts\python -m pip install --no-user -e ".[dev]"
+          .\.venv\Scripts\python -m octavian.diagnostics
+          .\.venv\Scripts\python -m pytest tests -q
+
+  linux-tests:
+    name: Linux tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -18,16 +60,17 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install
+      - name: Create a virtual environment and install
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          python -m venv .venv
+          ./.venv/bin/python -m pip install --upgrade pip
+          ./.venv/bin/python -m pip install --no-user -e ".[dev]"
       - name: Lint (ruff)
         run: |
-          ruff check .
+          ./.venv/bin/python -m ruff check .
       - name: Tests
         run: |
-          pytest
+          ./.venv/bin/python -m pytest tests -q
       - name: Docs
         run: |
-          python -m mkdocs build --strict
+          ./.venv/bin/python -m mkdocs build --strict

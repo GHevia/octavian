@@ -245,7 +245,7 @@ Important choices:
 | `constraints.semi_major_axis(...)` | Targets orbit size at the end of the phase. |
 | `constraints.eccentricity(...)` | Targets orbit shape at the end of the phase. |
 | `constraints.inclination_deg(...)` | Targets orbital plane tilt at the end of the phase. |
-| `use_terminal_burn` | Compares one-impulse and two-impulse formulations. |
+| `use_terminal_burn` | Reports one- and two-impulse local formulations; use it to compare feasible solutions, not to prove global objective ordering. |
 
 Expected output: `traj_composable_terminal_orbital_elements.html`.
 
@@ -355,7 +355,7 @@ Path: `examples/composable/11_cwh_relative_rendezvous.py`
 Run:
 
 ```bash
-conda run -n asset_env python examples/composable/11_cwh_relative_rendezvous.py
+conda run -n octavian-dev python examples/composable/11_cwh_relative_rendezvous.py
 ```
 
 Capability showcased:
@@ -385,7 +385,7 @@ Path: `examples/composable/12_cwh_safety_corridor.py`
 Run:
 
 ```bash
-conda run -n asset_env python examples/composable/12_cwh_safety_corridor.py
+conda run -n octavian-dev python examples/composable/12_cwh_safety_corridor.py
 ```
 
 Capability showcased:
@@ -407,7 +407,7 @@ Path: `examples/composable/13_low_thrust_orbit_raise.py`
 Run:
 
 ```bash
-conda run -n asset_env python examples/composable/13_low_thrust_orbit_raise.py
+conda run -n octavian-dev python examples/composable/13_low_thrust_orbit_raise.py
 ```
 
 Capability showcased:

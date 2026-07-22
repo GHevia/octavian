@@ -92,24 +92,26 @@ pytest
 python -m build
 ```
 
-ASSET-backed solver commands should run inside the local conda environment:
+ASSET-backed solver commands should run inside the project-owned conda environment:
 
 ```bash
-conda run -n asset_env python -m pytest tests/test_example_regressions.py -q
-conda run -n asset_env python examples/composable/08_chemical_burn_j2.py
+conda run -n octavian-dev python -m pytest tests/test_example_regressions.py -q
+conda run -n octavian-dev python examples/composable/08_chemical_burn_j2.py
 ```
 
 Notes:
 
-- `asset_asrl` is installed at
-  `C:\Users\19145\AppData\Roaming\Python\Python312\site-packages\asset_asrl\__init__.py`.
+- Create `octavian-dev` from `environment.yml`, then install the checkout with
+  `conda run -n octavian-dev python -m pip install --no-user -e ".[dev]"`.
+- `PYTHONNOUSERSITE=1` must remain enabled so ASSET cannot be imported from a
+  global user-site package directory.
 - A local ASSET source checkout is available at
   `C:\Users\19145\Desktop\Personal\PROJECTS\CODING\GTOC13\asset_asrl`. Use it
   when debugging ASSET behavior, exception text, or backend API details.
 - Plain `python` may find that package but fail to import ASSET with a missing DLL.
-- Prefer `conda run -n asset_env ...` in non-interactive automation instead of `conda activate asset_env`,
+- Prefer `conda run -n octavian-dev ...` in non-interactive automation instead of `conda activate octavian-dev`,
   because activation does not persist across separate shell tool calls.
-- Run `conda run -n asset_env ...` commands sequentially. Parallel conda runs can collide on temporary
+- Run `conda run -n octavian-dev ...` commands sequentially. Parallel conda runs can collide on temporary
   activation files on Windows.
 
 Guidance:

@@ -15,7 +15,7 @@ EARTH_RADIUS_M = 6378137.0
 
 def _get_default_earth_texture_path() -> str:
     """Return the packaged default Earth texture path."""
-    return str(files("octavian.viz.data").joinpath("cartoon_earth_map.PNG"))
+    return str(files("octavian.viz.data").joinpath("cartoon_earth_map.png"))
 
 
 def save_trajectory_html(
@@ -55,7 +55,13 @@ def save_trajectory_html(
     Raises:
         ValueError: If ``traj`` is not a 2D array with at least seven columns.
     """
-    import plotly.graph_objects as go
+    try:
+        import plotly.graph_objects as go
+    except ImportError as exc:
+        raise RuntimeError(
+            "Plotly visualization requires the optional viz dependencies. "
+            "Install them with `pip install \"octavian[viz]\"`."
+        ) from exc
 
     if not use_earth_texture:
         resolved_texture_path: str | None = None
@@ -98,7 +104,13 @@ def save_trajectory_html(
 
     earth_radius = float(earth_radius_m)
     if resolved_texture_path is not None:
-        from PIL import Image
+        try:
+            from PIL import Image
+        except ImportError as exc:
+            raise RuntimeError(
+                "Textured visualization requires the optional viz dependencies. "
+                "Install them with `pip install \"octavian[viz]\"`."
+            ) from exc
 
         earth_image = Image.open(resolved_texture_path).convert("RGB")
         earth_image = earth_image.resize((720, 360))

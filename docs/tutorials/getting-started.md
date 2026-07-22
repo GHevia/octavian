@@ -5,30 +5,28 @@ inspectable Plotly output file.
 
 ## Create an Environment
 
-Use a virtual environment so solver dependencies stay isolated from the system
-Python installation.
+For solver-backed workflows, use Octavian's supported conda environment. ASSET
+is a compiled extension, so the environment keeps Python, ASSET, and its native
+runtime libraries together.
+
+```powershell
+conda env create --file environment.yml
+conda run --name octavian-dev python -m pip install --no-user -e ".[dev]"
+conda run --name octavian-dev python -m octavian.diagnostics
+```
+
+The diagnostic must report that both `asset` and `asset_asrl` are loaded from
+the `octavian-dev` prefix. See [Development Environment](development-environment.md)
+for updates, daily commands, and the dependency tiers.
+
+For a standard package install on macOS or Linux where ASSET already imports
+correctly, a normal virtual environment is also supported:
 
 ```bash
 python -m venv .venv
-```
-
-On Windows:
-
-```bash
-.venv\Scripts\activate
-```
-
-On macOS or Linux:
-
-```bash
 source .venv/bin/activate
-```
-
-Install Octavian:
-
-```bash
 python -m pip install --upgrade pip
-python -m pip install octavian
+python -m pip install "octavian[viz]"
 ```
 
 Octavian declares `asset_asrl` as a runtime dependency because the optimization
@@ -46,13 +44,8 @@ If that command reports a missing shared library or DLL, Python found the
 package but the native ASSET runtime is not loadable in the active environment.
 Fix the ASSET installation first, then rerun the Octavian example.
 
-For local development from a checkout:
-
-```bash
-python -m pip install -e ".[dev]"
-```
-
-The development extra adds pytest, ruff, MkDocs, and mkdocstrings.
+The `dev` extra adds pytest, ruff, MkDocs, mkdocstrings, YAML, and visualization
+dependencies.
 
 ## Run a First Transfer
 

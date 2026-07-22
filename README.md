@@ -26,17 +26,54 @@ solver-backed workflows rely on it.
 
 ## Install
 
+For daily development on **Linux x86_64** (glibc 2.31 or newer), use a
+repository-local virtual environment:
+
 ```bash
-pip install octavian
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install --no-user -e ".[dev]"
+python -m octavian.diagnostics
 ```
 
-For an isolated install:
+After activation, use normal commands such as
+`python examples/quick/01_two_impulse_free_time.py` and `pytest`.
+
+For local development and ASSET-backed workflows on **Windows**, use the
+recommended Conda environment. It installs ASSET and its native runtime inside
+one isolated prefix:
+
+```powershell
+conda env create --file environment.yml
+conda run --name octavian-dev python -m pip install --no-user -e ".[dev]"
+conda run --name octavian-dev python -m octavian.diagnostics
+```
+
+See [Development Environment](docs/tutorials/development-environment.md) for
+the platform support boundary, daily commands, dependency tiers, and the
+recommended environment pattern for other projects. Windows also supports a
+repository-local `pip + venv` setup:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install --no-user -e ".[dev]"
+python -m octavian.diagnostics
+```
+
+For a standard installed package with the Plotly examples:
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate
-python -m pip install --upgrade pip
-python -m pip install octavian
+pip install "octavian[viz]"
+```
+
+For solver and astrodynamics code without visualization, `pip install octavian`
+is the smaller dependency set. Add YAML support only when needed:
+
+```bash
+pip install "octavian[yaml]"
 ```
 
 Before running solver-backed examples, verify ASSET imports in the active
@@ -78,10 +115,10 @@ the docs workflow publishes the site from pushes to `dev`.
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-pre-commit install
-python -m build
-pytest
+conda run --name octavian-dev python -m pip install --no-user -e ".[dev]"
+conda run --name octavian-dev pre-commit install
+conda run --name octavian-dev python -m build
+conda run --name octavian-dev python -m pytest
 ```
 
 ## Studies
