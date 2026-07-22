@@ -26,9 +26,9 @@ solver-backed workflows rely on it.
 
 ## Install
 
-For local development and ASSET-backed workflows on Windows, use the supported
-project environment. It installs ASSET and its native runtime inside one
-isolated conda prefix:
+For local development and ASSET-backed workflows on Windows, the recommended
+environment uses conda. It installs ASSET and its native runtime inside one
+isolated prefix:
 
 ```powershell
 conda env create --file environment.yml
@@ -38,7 +38,15 @@ conda run --name octavian-dev python -m octavian.diagnostics
 
 See [Development Environment](docs/tutorials/development-environment.md) for
 daily commands, dependency tiers, and the recommended environment pattern for
-other projects.
+other projects. A supported `pip + venv` setup is documented there as well:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install --no-user -e ".[dev]"
+python -m octavian.diagnostics
+```
 
 For a standard installed package with the Plotly examples:
 

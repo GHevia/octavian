@@ -1,9 +1,9 @@
 # Development Environment
 
 Octavian's solver depends on ASSET, a compiled extension with native runtime
-dependencies. Use one dedicated conda environment for this repository rather
-than combining a conda environment with a nested `.venv` or installing ASSET
-with `pip --user`.
+dependencies. Choose one isolated environment per checkout: a dedicated conda
+environment is the recommended Windows development route, while a standard
+Python virtual environment is also supported.
 
 The recommended environment is named `octavian-dev`. It keeps Python, ASSET,
 the OpenMP runtime, Octavian, and development tools in one isolated prefix.
@@ -93,3 +93,35 @@ Use one environment per repository or project:
 If `python -m octavian.diagnostics` reports a missing DLL, do not copy DLLs into
 the repository or modify system-wide `PATH`. Recreate `octavian-dev` from
 `environment.yml` and verify the diagnostic report before solving a mission.
+
+## Pip And Virtual Environment
+
+Use this option when you already manage Python with the standard library and
+want each checkout to keep its environment in `.venv`:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install --no-user -e ".[dev]"
+python -m octavian.diagnostics
+```
+
+After activation, use normal commands such as
+`python examples/quick/01_two_impulse_free_time.py`. Do not combine this
+virtual environment with conda, and do not use `pip install --user`.
+
+On Windows, ASSET's pip wheel installs its OpenMP DLL under
+`.venv\Library\bin`. When Octavian starts, it adds that directory to its own
+DLL search path when present. This is a process-local adjustment: it does not
+modify the system `PATH` or affect unrelated Python projects. The diagnostic
+command verifies this route before solving a mission.
+
+## Which Environment Should I Choose?
+
+Use **conda** for Octavian development on Windows. It is the most robust route
+for ASSET and future native scientific dependencies because conda manages the
+Python runtime and DLL search path together. Use **pip + venv** when your team
+already standardizes on Python virtual environments, wants a repository-local
+environment, or does not otherwise need conda. Both paths are supported and
+must pass `python -m octavian.diagnostics` before solver-backed work.

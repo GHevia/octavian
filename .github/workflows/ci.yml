@@ -26,6 +26,23 @@ jobs:
           conda run --name octavian-dev python -m pip install --no-user -e ".[dev]"
           conda run --name octavian-dev python -s -m octavian.diagnostics
 
+  windows-pip-runtime:
+    name: Windows pip virtual environment
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Create a virtual environment and verify ASSET isolation
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python -m pip install --upgrade pip
+          .\.venv\Scripts\python -m pip install --no-user -e ".[dev]"
+          .\.venv\Scripts\python -m octavian.diagnostics
+
   test:
     runs-on: ubuntu-latest
     strategy:
