@@ -8,9 +8,10 @@ dependencies:
   # avoids pip replacing a newer conda package during environment creation.
   - packaging<26
   - pip:
-      # The native ASSET extension requires the OpenMP runtime that this wheel
-      # installs into this environment's Library/bin directory on Windows.
+      # The ASSET wheel carries its Python-platform-specific native dependency
+      # chain. Conda activates Library/bin on Windows; Linux uses the wheel's
+      # normal ELF shared-library resolution.
       - asset-asrl==0.5.1
 variables:
-  # Do not silently borrow packages from %APPDATA% or another user-site path.
+  # Do not silently borrow packages from a global user-site path.
   PYTHONNOUSERSITE: "1"

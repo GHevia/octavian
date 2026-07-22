@@ -26,9 +26,23 @@ solver-backed workflows rely on it.
 
 ## Install
 
-For local development and ASSET-backed workflows on Windows, the recommended
-environment uses conda. It installs ASSET and its native runtime inside one
-isolated prefix:
+For daily development on **Linux x86_64** (glibc 2.31 or newer), use a
+repository-local virtual environment:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install --no-user -e ".[dev]"
+python -m octavian.diagnostics
+```
+
+After activation, use normal commands such as
+`python examples/quick/01_two_impulse_free_time.py` and `pytest`.
+
+For local development and ASSET-backed workflows on **Windows**, use the
+recommended Conda environment. It installs ASSET and its native runtime inside
+one isolated prefix:
 
 ```powershell
 conda env create --file environment.yml
@@ -37,8 +51,9 @@ conda run --name octavian-dev python -m octavian.diagnostics
 ```
 
 See [Development Environment](docs/tutorials/development-environment.md) for
-daily commands, dependency tiers, and the recommended environment pattern for
-other projects. A supported `pip + venv` setup is documented there as well:
+the platform support boundary, daily commands, dependency tiers, and the
+recommended environment pattern for other projects. Windows also supports a
+repository-local `pip + venv` setup:
 
 ```powershell
 py -3.12 -m venv .venv

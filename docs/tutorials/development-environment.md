@@ -1,12 +1,54 @@
 # Development Environment
 
 Octavian's solver depends on ASSET, a compiled extension with native runtime
-dependencies. Choose one isolated environment per checkout: a dedicated conda
-environment is the recommended Windows development route, while a standard
-Python virtual environment is also supported.
+dependencies. Use one isolated environment per checkout. Linux is the
+recommended daily-development platform and uses a standard Python virtual
+environment; Windows remains a fully supported validation and development
+platform through Conda or a virtual environment.
 
-The recommended environment is named `octavian-dev`. It keeps Python, ASSET,
-the OpenMP runtime, Octavian, and development tools in one isolated prefix.
+## Supported Platforms
+
+The pinned ASSET 0.5.1 wheel supports CPython 3.10 through 3.12 on:
+
+- Linux x86_64 with glibc 2.31 or newer (Ubuntu 20.04+ is suitable).
+- Windows x86_64.
+
+macOS and ARM Linux need an ASSET wheel or a supported source-build workflow
+before they can run solver-backed Octavian missions. The pure-Python portions
+of Octavian are not the limiting factor.
+
+## Linux: Recommended Daily Development
+
+From the repository root, create one local virtual environment:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install --no-user -e ".[dev]"
+python -m octavian.diagnostics
+```
+
+Once activated, use normal commands:
+
+```bash
+python examples/quick/01_two_impulse_free_time.py
+python -m pytest tests -q
+python -m mkdocs build --strict
+```
+
+Do not use `pip install --user`; it defeats the isolation the virtual
+environment provides. To update the checkout after changing dependencies:
+
+```bash
+python -m pip install --no-user -e ".[dev]"
+```
+
+## Windows: Recommended Conda Development
+
+The recommended Windows environment is named `octavian-dev`. It keeps Python,
+ASSET, the OpenMP runtime, Octavian, and development tools in one isolated
+prefix.
 
 ## Create The Environment
 
@@ -23,7 +65,7 @@ The first command installs the minimum native solver layer:
 
 | Layer | Package source | Purpose |
 | --- | --- | --- |
-| Python runtime | conda-forge | Isolated CPython 3.12 and Windows runtime libraries. |
+| Python runtime | conda-forge | Isolated CPython 3.12 and platform runtime libraries. |
 | ASSET | pinned PyPI wheel | Native optimal-control extension and its OpenMP runtime. |
 | Octavian core | this checkout | Mission, astrodynamics, solver, and ephemeris code. |
 | Development tools | `.[dev]` | Tests, docs, linting, build, YAML, and visualization support. |
@@ -94,7 +136,7 @@ If `python -m octavian.diagnostics` reports a missing DLL, do not copy DLLs into
 the repository or modify system-wide `PATH`. Recreate `octavian-dev` from
 `environment.yml` and verify the diagnostic report before solving a mission.
 
-## Pip And Virtual Environment
+## Windows: Pip And Virtual Environment
 
 Use this option when you already manage Python with the standard library and
 want each checkout to keep its environment in `.venv`:
@@ -119,9 +161,19 @@ command verifies this route before solving a mission.
 
 ## Which Environment Should I Choose?
 
-Use **conda** for Octavian development on Windows. It is the most robust route
-for ASSET and future native scientific dependencies because conda manages the
-Python runtime and DLL search path together. Use **pip + venv** when your team
-already standardizes on Python virtual environments, wants a repository-local
-environment, or does not otherwise need conda. Both paths are supported and
-must pass `python -m octavian.diagnostics` before solver-backed work.
+Use **pip + venv on Linux** for ordinary Octavian development: it is simple,
+repository-local, and directly matches the Linux CI test path. Use **Conda on
+Windows** when developing locally there; it is the most robust route for ASSET
+and future native scientific dependencies because conda manages the Python
+runtime and DLL search path together. Use **Windows pip + venv** when your team
+already standardizes on virtual environments. Both platforms must pass
+`python -m octavian.diagnostics` before solver-backed work.
+
+## Cross-Platform Validation
+
+GitHub Actions runs the full test suite on Linux for Python 3.10, 3.11, and
+3.12. It also creates a Windows Python 3.12 virtual environment, verifies the
+native ASSET import, and runs the full suite there. A separate Windows Conda
+job verifies the project-owned `octavian-dev` environment. This keeps Linux
+development and Windows compatibility continuously tested without requiring
+every contributor to maintain both machines.
