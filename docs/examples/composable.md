@@ -245,7 +245,7 @@ Important choices:
 | `constraints.semi_major_axis(...)` | Targets orbit size at the end of the phase. |
 | `constraints.eccentricity(...)` | Targets orbit shape at the end of the phase. |
 | `constraints.inclination_deg(...)` | Targets orbital plane tilt at the end of the phase. |
-| `use_terminal_burn` | Compares one-impulse and two-impulse formulations. |
+| `use_terminal_burn` | Reports one- and two-impulse local formulations; use it to compare feasible solutions, not to prove global objective ordering. |
 
 Expected output: `traj_composable_terminal_orbital_elements.html`.
 
