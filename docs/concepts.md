@@ -115,24 +115,53 @@ and interplanetary low-thrust arcs will need additional seed families.
 
 ### Relative Motion
 
-`Dynamics.cwh(...)` selects the linear Clohessy-Wiltshire model for a deputy
-near a chief on a circular orbit. Relative states are expressed in the chief's
-LVLH/RTN frame: x radial, y along track, and z orbit normal. The model supplies
-frame and characteristic scaling metadata automatically, while the composable
-compiler uses an analytic CWH position-targeting seed instead of Lambert and
-Kepler guesses.
+`Dynamics.cwh(...)` selects the Clohessy-Wiltshire model for a deputy near a
+chief on a circular orbit. Relative states use the chief's RIC/RTN/LVLH axes:
+R is radial, I is in-track, and C is cross-track. The model supplies frame and
+characteristic scaling metadata automatically, while the composable compiler
+uses an analytic CWH position-targeting seed instead of Lambert and Kepler
+guesses.
 
-`octavian.relative` also provides analytic propagation and inertial-to-LVLH
-state transforms for analysis before or after optimization. The current CWH
-compiler supports one unforced relative phase. Inertial orbital-element
-constraints, finite thrust, and inertial/relative phase links are rejected
-until an explicit acceleration or frame-link model is configured.
+`octavian.relative` includes explicit single-state and vectorized history
+transforms:
+
+- `absolute_to_relative_state(...)` and `relative_to_absolute_state(...)`;
+- `absolute_to_relative_history(...)` and `relative_to_absolute_history(...)`;
+- `ric_basis(...)` and the compatibility name `lvlh_basis(...)`.
+- `absolute_to_relative_orbital_elements(...)` and
+  `relative_orbital_elements_to_absolute_state(...)` for six
+  quasi-nonsingular elements `[δa, δλ, δex, δey, δix, δiy]`.
+
+The transforms include the RIC angular-rate term in velocity. Rotating an ECI
+velocity difference by the position direction-cosine matrix alone is not a
+valid relative velocity.
+
+Unforced CWH remains the default. Setting J2, Moon, or Sun perturbations and
+supplying `chief_initial_state_eci` adds their differential acceleration to the
+optimized relative dynamics. The chief reference remains a prescribed circular
+orbit; perturbations are evaluated at both the chief and reconstructed deputy,
+differenced, and rotated into RIC. This model is useful for rendezvous design
+without adding six chief decision states to the optimizer.
+
+For analysis that should propagate the chief rather than prescribe it,
+`propagate_relative_numerical(...)` advances absolute chief and deputy states
+together with central gravity, J2, lunar gravity, and solar gravity. Its result
+contains both absolute histories and the converted RIC history. It uses a
+fixed-step fourth-order Runge-Kutta integrator, so `max_step_s` is an explicit
+accuracy/cost choice rather than a hidden tolerance.
+
+The CWH compiler currently supports one optimized relative phase. Inertial
+orbital-element constraints, finite thrust, and inertial/relative phase links
+remain rejected until an explicit acceleration or frame-link model is
+configured.
 
 Relative geometry constraints operate on Cartesian position in the phase
 frame. `keep_out_sphere` accepts an arbitrary center, `approach_cone` defines a
 forward axis and half-angle, and `lighting_angle` bounds the angle to a fixed
-Sun direction. The fixed-direction lighting model is appropriate over short
-relative arcs; it is not an ephemeris-varying eclipse or power model.
+direction. `solar_phase_angle` instead samples the Sun from the bundled SPICE
+BSP at `Mission.initial_epoch`, subtracts the chief position, and rotates the
+line into RIC throughout the arc. It requires `chief_initial_state_eci` so the
+rotation is defined. Neither lighting constraint is an eclipse or power model.
 
 ## Frames, Layouts, And Scaling
 
@@ -173,6 +202,10 @@ report:
 - dynamics-model metadata for relative trajectories.
 
 Plotly helpers turn the trajectory and maneuvers into inspectable HTML files.
+`save_relative_trajectory_html(...)` labels R, I, and C explicitly, places the
+chief at the origin, and can draw a chief or keep-out radius.
+`solution.viz().save_html(...)` selects that view automatically when the result
+frame is relative.
 
 ## Documentation Contract
 

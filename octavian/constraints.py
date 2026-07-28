@@ -311,6 +311,44 @@ class LightingAngle(Constraint):
 
 
 @dataclass(frozen=True, slots=True)
+class SolarPhaseAngle(Constraint):
+    """Bound the relative position angle to the ephemeris Sun direction.
+
+    Unlike :class:`LightingAngle`, the direction is not stored as a fixed
+    vector.  The composable relative-motion compiler samples the bundled SPICE
+    BSP at ``Mission.initial_epoch`` and rotates the Sun line into the chief's
+    RIC frame throughout the phase.  CWH dynamics must therefore provide a
+    chief initial inertial state.
+    """
+
+    kind: ClassVar[str] = "solar_phase_angle"
+    family: ClassVar[str] = "relative_geometry"
+
+    min_angle_deg: float = 0.0
+    max_angle_deg: float = 180.0
+    origin_m: Sequence[float] = (0.0, 0.0, 0.0)
+    where: Where = "Path"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "where", _normalize_where(self.where))
+        minimum = _finite_float("min_angle_deg", self.min_angle_deg)
+        maximum = _finite_float("max_angle_deg", self.max_angle_deg)
+        if not (0.0 <= minimum < maximum <= 180.0):
+            raise ValueError("solar phase angles must satisfy 0 <= min < max <= 180")
+        object.__setattr__(self, "min_angle_deg", minimum)
+        object.__setattr__(self, "max_angle_deg", maximum)
+        object.__setattr__(self, "origin_m", _finite_vec3("origin_m", self.origin_m))
+
+    @property
+    def value(self) -> dict[str, Any]:
+        return {
+            "min_angle_deg": self.min_angle_deg,
+            "max_angle_deg": self.max_angle_deg,
+            "origin_m": self.origin_m,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class State(Constraint):
     """Constrain a Cartesian boundary state."""
 
@@ -418,6 +456,22 @@ def lighting_angle(
     """Create a fixed-direction lighting-angle constraint."""
     return LightingAngle(
         sun_direction=sun_direction,
+        min_angle_deg=min_angle_deg,
+        max_angle_deg=max_angle_deg,
+        origin_m=origin_m,
+        where=where,
+    )
+
+
+def solar_phase_angle(
+    *,
+    min_angle_deg: float = 0.0,
+    max_angle_deg: float = 180.0,
+    origin_m: Sequence[float] = (0.0, 0.0, 0.0),
+    where: str = "Path",
+) -> SolarPhaseAngle:
+    """Create an ephemeris-driven RIC solar-phase-angle constraint."""
+    return SolarPhaseAngle(
         min_angle_deg=min_angle_deg,
         max_angle_deg=max_angle_deg,
         origin_m=origin_m,

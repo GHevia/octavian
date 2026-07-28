@@ -71,6 +71,7 @@ def _fake_solution() -> Solution:
         ("examples/composable/11_cwh_relative_rendezvous.py", 1),
         ("examples/composable/12_cwh_safety_corridor.py", 1),
         ("examples/composable/13_low_thrust_orbit_raise.py", 1),
+        ("examples/composable/14_perturbed_relative_solar.py", 1),
     ],
 )
 def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int) -> None:
@@ -90,12 +91,22 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
     monkeypatch.setattr("octavian.mission.Mission.solve", fake_solve, raising=True)
     monkeypatch.setattr("octavian.viz.plotly.save_trajectory_html", fake_plot, raising=True)
     monkeypatch.setattr("octavian.viz.save_trajectory_html", fake_plot, raising=True)
+    monkeypatch.setattr(
+        "octavian.viz.plotly.save_relative_trajectory_html",
+        fake_plot,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "octavian.viz.save_relative_trajectory_html",
+        fake_plot,
+        raising=True,
+    )
 
     runpy.run_path(str(ROOT / script_rel), run_name="__main__")
 
     assert len(missions) == expected_solve_calls
     if not script_rel.endswith(
-        ("11_cwh_relative_rendezvous.py", "12_cwh_safety_corridor.py")
+        ("12_cwh_safety_corridor.py",)
     ):
         assert len(plotted) >= 1
 
@@ -138,7 +149,7 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
         assert mission.phases[0].mode == "relative_coast"
         assert mission.phases[0].dynamics.frame.kind == "relative"
         assert mission.phases[0].dynamics.model.mean_motion_radps > 0.0
-        assert plotted == []
+        assert plotted == ["traj_composable_cwh_relative_rendezvous.html"]
     elif script_rel.endswith("12_cwh_safety_corridor.py"):
         mission = missions[0]
         kinds = [constraint.kind for constraint in mission.phases[0].constraints]
@@ -153,6 +164,18 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
         assert phase.initial_guess.throttle == pytest.approx(0.85)
         assert mission.objectives[0].kind == "propellant"
         assert plotted == ["traj_composable_low_thrust_orbit_raise.html"]
+    elif script_rel.endswith("14_perturbed_relative_solar.py"):
+        mission = missions[0]
+        phase = mission.phases[0]
+        perturbations = phase.dynamics.active_perturbations()
+        assert mission.initial_epoch == "2026-01-01T00:00:00Z"
+        assert perturbations.j2 is True
+        assert perturbations.sun is True
+        assert phase.dynamics.model.chief_initial_state_eci is not None
+        assert "solar_phase_angle" in [
+            constraint.kind for constraint in phase.constraints
+        ]
+        assert plotted == ["traj_composable_perturbed_relative_solar.html"]
     elif script_rel.endswith("07_terminal_orbital_elements.py"):
         assert len(missions[0].phases) == 1
         kinds = [getattr(c, "kind", "") for c in missions[0].phases[0].constraints]

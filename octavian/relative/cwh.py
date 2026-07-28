@@ -9,6 +9,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from ..bodies import EARTH, CelestialBody
 from ..coordinates import CoordinateFrame, SolverScaling, lvlh
+from ..specs import BoundaryState
 
 StateVector = NDArray[np.float64]
 StateMatrix = NDArray[np.float64]
@@ -27,6 +28,7 @@ class ClohessyWiltshire:
     chief_orbit_radius_m: float | None = None
     chief_name: str = "chief"
     reference_length_m: float = 1_000.0
+    chief_initial_state_eci: BoundaryState | None = None
 
     def __post_init__(self) -> None:
         if float(self.mean_motion_radps) <= 0.0:
@@ -37,6 +39,37 @@ class ClohessyWiltshire:
             raise ValueError("ClohessyWiltshire.reference_length_m must be positive")
         if not str(self.chief_name).strip():
             raise ValueError("ClohessyWiltshire.chief_name must not be empty")
+        if self.chief_initial_state_eci is not None:
+            chief_radius = float(np.linalg.norm(self.chief_initial_state_eci.r_m))
+            chief_speed = float(np.linalg.norm(self.chief_initial_state_eci.v_mps))
+            expected_speed = self.mean_motion_radps * chief_radius
+            radial_speed = float(
+                np.dot(
+                    self.chief_initial_state_eci.r_m,
+                    self.chief_initial_state_eci.v_mps,
+                )
+                / chief_radius
+            )
+            if (
+                self.chief_orbit_radius_m is not None
+                and not np.isclose(
+                    chief_radius,
+                    self.chief_orbit_radius_m,
+                    rtol=1.0e-6,
+                    atol=1.0,
+                )
+            ):
+                raise ValueError(
+                    "chief_initial_state_eci radius must match chief_orbit_radius_m"
+                )
+            if not np.isclose(chief_speed, expected_speed, rtol=1.0e-5):
+                raise ValueError(
+                    "chief_initial_state_eci speed must match the configured circular orbit"
+                )
+            if abs(radial_speed) > max(1.0e-6 * chief_speed, 1.0e-6):
+                raise ValueError(
+                    "chief_initial_state_eci position and velocity must be perpendicular"
+                )
         object.__setattr__(self, "mean_motion_radps", float(self.mean_motion_radps))
         if self.chief_orbit_radius_m is not None:
             object.__setattr__(self, "chief_orbit_radius_m", float(self.chief_orbit_radius_m))
@@ -50,6 +83,7 @@ class ClohessyWiltshire:
         body: CelestialBody = EARTH,
         chief_name: str = "chief",
         reference_length_m: float = 1_000.0,
+        chief_initial_state_eci: BoundaryState | None = None,
     ) -> ClohessyWiltshire:
         """Construct CWH parameters from a circular chief-orbit radius."""
         radius = float(radius_m)
@@ -61,6 +95,7 @@ class ClohessyWiltshire:
             chief_orbit_radius_m=radius,
             chief_name=chief_name,
             reference_length_m=reference_length_m,
+            chief_initial_state_eci=chief_initial_state_eci,
         )
 
     @property

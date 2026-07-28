@@ -19,6 +19,7 @@ from octavian import (
     variables,
 )
 from octavian.solvers import SolverOptions
+from octavian.viz.plotly import save_relative_trajectory_html
 
 CHIEF_ORBIT_RADIUS_M = EARTH.mean_radius_m + 400_000.0
 
@@ -70,3 +71,11 @@ solution = mission.solve()
 print(solution.summary())
 print(f"Frame: {solution.frame}")
 print(f"Dynamics model: {solution.result.info['dynamics_model']}")
+
+save_relative_trajectory_html(
+    solution.traj,
+    "traj_composable_cwh_relative_rendezvous.html",
+    maneuvers=solution.result.maneuvers,
+    phase_segments=solution.result.info["phase_segments"],
+    title="CWH rendezvous in the chief RIC frame",
+)

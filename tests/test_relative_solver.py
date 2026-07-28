@@ -9,6 +9,7 @@ from octavian import (
     EARTH,
     Dynamics,
     Mission,
+    Perturbations,
     Phase,
     Spacecraft,
     constraints,
@@ -150,3 +151,67 @@ def test_cwh_relative_geometry_constraints_compile_and_report() -> None:
     assert report[1]["actual"] <= 30.0 + 1e-4
     assert report[2]["actual"] >= 85.0 - 1e-4
     assert report[3]["actual"] <= 121.0 + 1e-4
+
+
+def test_cwh_j2_differential_perturbation_compiles_and_solves() -> None:
+    chief_radius_m = EARTH.mean_radius_m + 400_000.0
+    chief_speed_mps = np.sqrt(EARTH.mu_m3ps2 / chief_radius_m)
+    chief_state = state(
+        [chief_radius_m, 0.0, 0.0],
+        [0.0, chief_speed_mps, 0.0],
+    )
+    mission = _relative_rendezvous_mission()
+    mission.mesh_nsegs_transfer = 20
+    mission.lambert_grid_size = 20
+    mission.phases[0].dynamics = Dynamics.cwh(
+        chief_orbit_radius_m=chief_radius_m,
+        chief_initial_state_eci=chief_state,
+        perturbations=Perturbations(j2=True),
+        third_body_table_step_s=300.0,
+    )
+
+    solution = mission.solve()
+
+    assert solution.ok
+    assert solution.result is not None
+    assert solution.result.info["dynamics_model"] == "cwh_differential_perturbations"
+    assert solution.result.info["relative_reference_model"] == "prescribed_circular_chief"
+
+
+def test_spice_solar_phase_angle_compiles_solves_and_reports() -> None:
+    chief_radius_m = EARTH.mean_radius_m + 400_000.0
+    chief_speed_mps = np.sqrt(EARTH.mu_m3ps2 / chief_radius_m)
+    chief_state = state(
+        [chief_radius_m, 0.0, 0.0],
+        [0.0, chief_speed_mps, 0.0],
+    )
+    mission = _relative_rendezvous_mission()
+    mission.initial_epoch = "2026-01-01T00:00:00Z"
+    mission.mesh_nsegs_transfer = 20
+    mission.lambert_grid_size = 20
+    phase = mission.phases[0]
+    phase.dynamics = Dynamics.cwh(
+        chief_orbit_radius_m=chief_radius_m,
+        chief_initial_state_eci=chief_state,
+        third_body_table_step_s=300.0,
+    )
+    phase.constraints.append(
+        constraints.solar_phase_angle(
+            min_angle_deg=0.0,
+            max_angle_deg=180.0,
+        )
+    )
+
+    solution = mission.solve()
+
+    assert solution.ok
+    assert solution.result is not None
+    report = solution.result.info["constraint_report"]
+    solar_rows = [
+        row for row in report if str(row["constraint"]).startswith("solar_phase_")
+    ]
+    assert [row["constraint"] for row in solar_rows] == [
+        "solar_phase_min_angle_deg",
+        "solar_phase_max_angle_deg",
+    ]
+    assert all(row["satisfied"] for row in solar_rows)

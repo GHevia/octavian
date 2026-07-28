@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from octavian import MissionConfigError, load_mission, load_mission_mapping
@@ -194,6 +195,44 @@ def test_cwh_geometry_and_phase_links_translate_to_existing_objects() -> None:
         "approach_cone",
         "lighting_angle",
     ]
+
+
+def test_cwh_config_accepts_chief_state_perturbations_and_solar_phase() -> None:
+    config = _basic_config()
+    radius_m = 6_778_136.3
+    speed_mps = np.sqrt(3.986004418e14 / radius_m)
+    config["dynamics"] = {
+        "relative": {
+            "model": "cwh",
+            "central_body": "earth",
+            "chief_orbit_radius_m": radius_m,
+            "chief_initial_state_eci": {
+                "r_m": [radius_m, 0.0, 0.0],
+                "v_mps": [0.0, speed_mps, 0.0],
+            },
+            "perturbations": {"j2": True, "sun": True},
+        }
+    }
+    config["mission"]["initial_epoch"] = "2026-01-01T00:00:00Z"
+    config["mission"]["phases"][0]["dynamics"] = "relative"
+    config["mission"]["phases"][0]["mode"] = "relative_coast"
+    config["mission"]["phases"][0]["constraints"].append(
+        {
+            "type": "solar_phase_angle",
+            "min_angle_deg": 20.0,
+            "max_angle_deg": 150.0,
+        }
+    )
+
+    mission = load_mission_mapping(config)
+    dynamics = mission.phases[0].dynamics
+
+    assert dynamics.model.chief_initial_state_eci.r_m == pytest.approx(
+        [radius_m, 0.0, 0.0]
+    )
+    assert dynamics.active_perturbations().j2 is True
+    assert dynamics.active_perturbations().sun is True
+    assert mission.phases[0].constraints[-1].kind == "solar_phase_angle"
 
 
 def test_low_thrust_guess_and_orbital_constraints_are_declarative() -> None:

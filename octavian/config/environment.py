@@ -6,6 +6,7 @@ from typing import Any
 
 from ..coordinates import CoordinateFrame, SolverScaling
 from ..models import Dynamics, Perturbations
+from ..phase import state
 from .errors import MissionConfigError
 from .schema import boolean, mapping, normalized_type, reject_unknown, required, sequence
 
@@ -35,6 +36,7 @@ def _build_one_dynamics(value: Any, path: str) -> Dynamics:
         "chief_orbit_radius_m",
         "chief_name",
         "reference_length_m",
+        "chief_initial_state_eci",
         "info",
     }
     reject_unknown(config, allowed, path)
@@ -52,18 +54,38 @@ def _build_cwh_dynamics(config: Any, path: str) -> Dynamics:
         "mu_m3ps2",
         "central_body_radius_m",
         "j2_coefficient",
-        "perturbations",
         "frame",
     }
     if invalid:
         names = ", ".join(sorted(invalid))
         raise MissionConfigError(f"{path} cannot combine model='cwh' with: {names}.")
     scaling = build_scaling(config["scaling"], f"{path}.scaling") if "scaling" in config else None
+    chief_initial_state = None
+    if "chief_initial_state_eci" in config:
+        chief_config = mapping(
+            config["chief_initial_state_eci"],
+            f"{path}.chief_initial_state_eci",
+        )
+        reject_unknown(
+            chief_config,
+            {"r_m", "v_mps"},
+            f"{path}.chief_initial_state_eci",
+        )
+        chief_initial_state = state(
+            required(chief_config, "r_m", f"{path}.chief_initial_state_eci"),
+            required(chief_config, "v_mps", f"{path}.chief_initial_state_eci"),
+        )
     return Dynamics.cwh(
         chief_orbit_radius_m=float(required(config, "chief_orbit_radius_m", path)),
         central_body=config.get("central_body", "earth"),
         chief_name=str(config.get("chief_name", "chief")),
         reference_length_m=float(config.get("reference_length_m", 1_000.0)),
+        chief_initial_state_eci=chief_initial_state,
+        perturbations=(
+            build_perturbations(config["perturbations"], f"{path}.perturbations")
+            if "perturbations" in config
+            else None
+        ),
         third_body_table_step_s=float(config.get("third_body_table_step_s", 3_600.0)),
         third_body_table_margin_s=float(config.get("third_body_table_margin_s", 86_400.0)),
         scaling=scaling,

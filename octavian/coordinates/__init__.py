@@ -1,6 +1,6 @@
 """Coordinate frames, state layouts, and solver scaling declarations."""
 
-from .frames import EARTH_INERTIAL, CoordinateFrame, inertial, lvlh
+from .frames import EARTH_INERTIAL, CoordinateFrame, inertial, lvlh, ric
 from .layouts import (
     CARTESIAN,
     CARTESIAN_MASS,
@@ -21,4 +21,5 @@ __all__ = [
     "StateLayout",
     "inertial",
     "lvlh",
+    "ric",
 ]

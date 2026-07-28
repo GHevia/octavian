@@ -78,3 +78,40 @@ def test_relative_constraint_reports_path_extrema() -> None:
     assert rows[0]["actual"] == pytest.approx(np.sqrt(20.0**2 + 100.0**2))
     assert rows[1]["actual"] == pytest.approx(np.rad2deg(np.arctan2(20.0, 100.0)))
     assert all(row["satisfied"] for row in rows)
+
+
+def test_solar_phase_angle_uses_time_varying_ric_directions() -> None:
+    trajectory = np.asarray(
+        [
+            [100.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 10.0],
+        ]
+    )
+    constraint = constraints.solar_phase_angle(
+        min_angle_deg=0.0,
+        max_angle_deg=1.0,
+    )
+
+    def sun_direction_at(times: np.ndarray) -> np.ndarray:
+        return np.column_stack(
+            [
+                np.cos(np.pi * times / 20.0),
+                np.sin(np.pi * times / 20.0),
+                np.zeros_like(times),
+            ]
+        )
+
+    rows = relative_constraint_report_rows(
+        phase_name="approach",
+        constraint=constraint,
+        phase_traj=trajectory,
+        solar_direction_at=sun_direction_at,
+    )
+
+    assert [row["constraint"] for row in rows] == [
+        "solar_phase_min_angle_deg",
+        "solar_phase_max_angle_deg",
+    ]
+    assert rows[0]["actual"] == pytest.approx(0.0)
+    assert rows[1]["actual"] == pytest.approx(0.0)
+    assert all(row["satisfied"] for row in rows)

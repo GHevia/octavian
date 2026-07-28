@@ -109,6 +109,24 @@ def build_constraint(
             origin_m=config.get("origin_m", [0.0, 0.0, 0.0]),
             where=where,
         )
+    if constraint_type == "solar_phase_angle":
+        reject_unknown(
+            config,
+            {
+                "type",
+                "min_angle_deg",
+                "max_angle_deg",
+                "origin_m",
+                "where",
+            },
+            path,
+        )
+        return constraints.solar_phase_angle(
+            min_angle_deg=float(config.get("min_angle_deg", 0.0)),
+            max_angle_deg=float(config.get("max_angle_deg", 180.0)),
+            origin_m=config.get("origin_m", [0.0, 0.0, 0.0]),
+            where=where,
+        )
     raise MissionConfigError(f"{path}.type has unsupported value {constraint_type!r}.")
 
 

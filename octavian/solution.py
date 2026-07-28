@@ -106,8 +106,49 @@ class Solution:
 
         class _Viz:
             def save_html(self, out_html: str, *, title: str = "trajectory") -> None:
+                """Save a frame-aware trajectory plot.
+
+                Relative results use RIC axes and a chief marker; inertial
+                results retain the Earth-centered trajectory view.
+                """
                 if self_outer.result is None:
                     raise RuntimeError("No result to visualize")
-                _plotly.save_trajectory_html(self_outer.result.traj, out_html, title=title)
+                frame = self_outer.frame
+                phase_segments = self_outer.result.info.get("phase_segments")
+                if frame is not None and frame.kind == "relative":
+                    _plotly.save_relative_trajectory_html(
+                        self_outer.result.traj,
+                        out_html,
+                        maneuvers=self_outer.result.maneuvers,
+                        phase_segments=phase_segments,
+                        title=title,
+                    )
+                    return
+                _plotly.save_trajectory_html(
+                    self_outer.result.traj,
+                    out_html,
+                    maneuvers=self_outer.result.maneuvers,
+                    phase_segments=phase_segments,
+                    title=title,
+                )
+
+            def save_relative_html(
+                self,
+                out_html: str,
+                *,
+                title: str = "relative trajectory",
+                chief_radius_m: float = 0.0,
+            ) -> None:
+                """Save the result explicitly as a chief-centered RIC plot."""
+                if self_outer.result is None:
+                    raise RuntimeError("No result to visualize")
+                _plotly.save_relative_trajectory_html(
+                    self_outer.result.traj,
+                    out_html,
+                    maneuvers=self_outer.result.maneuvers,
+                    phase_segments=self_outer.result.info.get("phase_segments"),
+                    title=title,
+                    chief_radius_m=chief_radius_m,
+                )
 
         return _Viz()

@@ -124,11 +124,13 @@ phase; list order alone does not add a hidden connection.
 Schema version 1 covers the current public mission building blocks:
 
 - two-body dynamics with `central_body`, optional perturbations, frame, and scaling;
-- CWH dynamics with `model: cwh`, chief orbit radius, and relative scaling;
+- CWH dynamics with `model: cwh`, chief orbit radius, optional inline
+  `chief_initial_state_eci`, perturbations, and relative scaling;
 - coast, rendezvous, relative-coast, finite-thrust, chemical-burn, and low-thrust phase modes;
 - continuous and impulsive links;
 - boundary state, position, minimum-radius, orbital-element, keep-out,
-  approach-cone, and lighting-angle constraints;
+  approach-cone, fixed lighting-angle, and ephemeris solar-phase-angle
+  constraints;
 - impulsive delta-v variables and boundary impulse events;
 - delta-v, time, and propellant objectives;
 - low-thrust spiral initial guesses;

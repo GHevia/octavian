@@ -48,6 +48,12 @@ The API reference is generated from source docstrings with `mkdocstrings`.
 
 ::: octavian.relative.transforms
 
+::: octavian.relative.elements
+
+::: octavian.relative.propagation
+
+::: octavian.relative.solar
+
 ## Quick Builders And Specs
 
 ::: octavian.quick

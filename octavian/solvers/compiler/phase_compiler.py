@@ -26,7 +26,11 @@ from ...dynamics import (
 )
 from ...phase import Phase
 from ...relative import ClohessyWiltshire
-from ...relative.dynamics import ClohessyWiltshireODE
+from ...relative.dynamics import (
+    ClohessyWiltshireODE,
+    PerturbedClohessyWiltshireODE,
+    RelativeReferenceTable,
+)
 from ...variables import ImpulsiveDeltaV
 from ..third_bodies import phase_perturbations, tables_for_phase
 
@@ -203,6 +207,7 @@ def ode_for_phase(
     *,
     carries_mass: bool = False,
     third_body_tables: Sequence[ThirdBodyTable] = (),
+    relative_reference_table: RelativeReferenceTable | None = None,
 ):
     """Construct the ASSET ODE selected by phase intent and environment."""
     dynamics = phase.dynamics
@@ -213,20 +218,19 @@ def ode_for_phase(
     if relative_model is not None:
         if is_powered_phase(phase) or carries_mass:
             raise ValueError("CWH phases do not yet support finite-thrust or mass states.")
-        if any(
-            (
-                perturbations.j2,
-                perturbations.moon,
-                perturbations.sun,
-                perturbations.srp,
-                perturbations.drag,
-                bool(perturbations.third_bodies),
-                bool(third_body_tables),
-            )
-        ):
-            raise ValueError(
-                "CWH phases currently support the unforced linear model only; "
-                "relative-frame perturbations require an explicit acceleration model."
+        if perturbations.j2 or third_body_tables:
+            if relative_reference_table is None:
+                raise ValueError(
+                    "Perturbed CWH dynamics require a sampled chief reference table"
+                )
+            return PerturbedClohessyWiltshireODE(
+                mean_motion_radps=relative_model.mean_motion_radps,
+                reference_table=relative_reference_table,
+                j2=bool(perturbations.j2),
+                mu_m3ps2=float(dynamics.mu_m3ps2),
+                central_body_radius_m=float(dynamics.central_body_radius_m),
+                j2_coefficient=float(dynamics.j2_coefficient),
+                third_body_tables=tuple(third_body_tables),
             )
         return ClohessyWiltshireODE(
             mean_motion_radps=relative_model.mean_motion_radps
@@ -420,6 +424,7 @@ def make_asset_phase(
     *,
     carries_mass: bool = False,
     third_body_tables: dict[str, ThirdBodyTable] | None = None,
+    relative_reference_table: RelativeReferenceTable | None = None,
 ):
     """Compile one user phase into an ASSET phase plus dimensional metadata."""
     prepared_guess, layout, propulsion_kind = prepare_phase_guess(
@@ -431,6 +436,7 @@ def make_asset_phase(
         phase,
         carries_mass=carries_mass,
         third_body_tables=tables_for_phase(phase, third_body_tables or {}),
+        relative_reference_table=relative_reference_table,
     )
     asset_phase = ode.phase(Tmodes.LGL3, prepared_guess, int(nsegs))
     return asset_phase, layout, propulsion_kind

@@ -13,6 +13,7 @@ from typing import Any, Protocol
 from .bodies import CelestialBody
 from .bodies import resolve as resolve_body
 from .coordinates import EARTH_INERTIAL, CoordinateFrame, SolverScaling
+from .specs import BoundaryState
 
 
 class TranslationalModel(Protocol):
@@ -119,6 +120,7 @@ class Dynamics:
         central_body: CelestialBody | str = "earth",
         chief_name: str = "chief",
         reference_length_m: float = 1_000.0,
+        chief_initial_state_eci: BoundaryState | None = None,
         **kwargs: Any,
     ) -> Dynamics:
         """Create circular-chief Clohessy-Wiltshire relative dynamics."""
@@ -130,6 +132,7 @@ class Dynamics:
             body=body,
             chief_name=chief_name,
             reference_length_m=reference_length_m,
+            chief_initial_state_eci=chief_initial_state_eci,
         )
         return cls(central_body=body, model=model, **kwargs)
 

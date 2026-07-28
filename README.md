@@ -15,7 +15,8 @@ This MVP includes:
 - Terminal state, terminal delta-v, path, and orbital-element constraints.
 - Finite chemical-burn phases with mass depletion and three thrust-direction controls.
 - J2 perturbation support in the composable ASSET backend.
-- Central-body selection, CWH relative motion, and relative safety geometry.
+- Central-body selection, CWH relative motion, RIC transforms and plots,
+  differential relative perturbations, and SPICE solar-phase geometry.
 - Finite-thrust and low-thrust phases with mass depletion and spiral seeding.
 - Optional schema-versioned JSON and YAML mission configuration.
 - Lambert-Izzo seed sweeps across time of flight, longway, and multi-rev cases.

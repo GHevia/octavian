@@ -374,9 +374,9 @@ Important choices:
 | relative `constraints.state(...)` | Fixes deputy state values in meters and meters per second. |
 | front/back `impulsive_delta_v` | Frees boundary velocities and reports both maneuvers. |
 
-The example prints the solution, frame, and selected dynamics model without
-creating a plot. Existing inertial trajectory plots are not labeled for LVLH
-geometry yet.
+The example also writes `traj_composable_cwh_relative_rendezvous.html` with
+explicit radial, in-track, and cross-track axes, a chief marker at the origin,
+and the optimized impulse markers.
 
 ## 12: CWH Safety Corridor
 
@@ -431,3 +431,32 @@ The reference solve raises a 560 kg spacecraft from a 7,000 km to an 8,000 km
 near-circular orbit in about 17.72 hours using about 15.05 kg of propellant.
 
 Expected output: `traj_composable_low_thrust_orbit_raise.html`.
+
+## 14: Perturbed Relative Solar Geometry
+
+Path: `examples/composable/14_perturbed_relative_solar.py`
+
+Run:
+
+```bash
+conda run -n octavian-dev python examples/composable/14_perturbed_relative_solar.py
+```
+
+Capability showcased:
+
+- Differential J2 and solar gravity in an optimized CWH relative arc.
+- A prescribed circular chief ECI_TOD state used to reconstruct deputy
+  absolute position for the perturbation difference.
+- A time-varying solar-phase angle sampled from the bundled SPICE BSP.
+- A chief-centered RIC plot with the 75 m keep-out boundary.
+
+Important choices:
+
+| Code | Purpose |
+| --- | --- |
+| `chief_initial_state_eci=...` | Anchors the chief orbit plane, phase, and RIC rotation in ECI_TOD. |
+| `Perturbations(j2=True, sun=True)` | Adds differential J2 and solar accelerations. |
+| `Mission(initial_epoch=...)` | Defines SPICE time zero for force and constraint tables. |
+| `constraints.solar_phase_angle(...)` | Bounds the changing angle between relative position and the ephemeris Sun line. |
+
+Expected output: `traj_composable_perturbed_relative_solar.html`.

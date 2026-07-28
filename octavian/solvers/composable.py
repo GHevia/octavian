@@ -53,12 +53,17 @@ from ..constraints import OrbitalElementConstraint
 from ..guesses import LowThrustSpiralGuess
 from ..phase import Phase
 from ..relative import CWHRendezvousSeed, cwh_dense_guess, select_cwh_rendezvous_seed
+from ..relative.dynamics import RelativeReferenceTable
 from ..time import normalize_time_bounds
 from ..types import Maneuver
 from . import constraint_compiler
 from .compiler import phase_compiler, powered_guessing, relative_constraint_compiler
 from .options import SolverOptions
 from .preconfigured import RendezvousResult  # reuse stable result type
+from .relative_environment import (
+    build_relative_reference_samples,
+    build_solar_direction_tables,
+)
 from .third_bodies import build_third_body_tables
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -184,6 +189,7 @@ def _build_guess_single_phase_cwh(
     tf_bounds: tuple[float, float],
     nsegs: int,
     samples: int,
+    solar_direction_table=None,
 ) -> tuple[list[np.ndarray], dict[str, float | int | str]]:
     """Build an analytic position-targeted guess for one CWH phase."""
     model = _cwh_model(phase)
@@ -220,6 +226,11 @@ def _build_guess_single_phase_cwh(
                 phase_name=phase.name,
                 constraint=constraint,
                 phase_traj=candidate_traj,
+                solar_direction_at=(
+                    solar_direction_table.at
+                    if solar_direction_table is not None
+                    else None
+                ),
             )
         )
 
@@ -1105,6 +1116,34 @@ def solve_composable_mission(
     # Normalize time bounds (absolute Back-time bounds for each phase).
     abs_bounds = normalize_time_bounds(phases)
     third_body_tables = build_third_body_tables(mission, phases, abs_bounds)
+    solar_direction_tables = build_solar_direction_tables(mission, phases, abs_bounds)
+    asset_solar_direction_tables = {
+        index: vf.InterpTable1D(
+            table.times_s,
+            table.directions_ric,
+            axis=0,
+            kind="cubic",
+        )
+        for index, table in solar_direction_tables.items()
+    }
+    relative_reference_samples = build_relative_reference_samples(phases, abs_bounds)
+    asset_relative_reference_tables = {
+        index: RelativeReferenceTable(
+            chief_position_table=vf.InterpTable1D(
+                samples.times_s,
+                samples.chief_positions_eci_m,
+                axis=0,
+                kind="cubic",
+            ),
+            inertial_to_ric_table=vf.InterpTable1D(
+                samples.times_s,
+                samples.inertial_to_ric,
+                axis=0,
+                kind="cubic",
+            ),
+        )
+        for index, samples in relative_reference_samples.items()
+    }
 
     # Characteristic scaling remains dimensional at the public API boundary.
     first = phases[0]
@@ -1175,6 +1214,7 @@ def solve_composable_mission(
             tf_bounds=tf_bounds,
             nsegs=nsegs1,
             samples=int(getattr(mission, "lambert_grid_size", 60)),
+            solar_direction_table=solar_direction_tables.get(0),
         )
         guesses[0] = ig0
         guess_info[0] = info0
@@ -1310,6 +1350,7 @@ def solve_composable_mission(
                     int(nsegs),
                     carries_mass=idx in mass_state_indices,
                     third_body_tables=third_body_tables,
+                    relative_reference_table=asset_relative_reference_tables.get(idx),
                 )
                 ocp.addPhase(asset_phase)
 
@@ -1416,6 +1457,7 @@ def solve_composable_mission(
             int(nsegs),
             carries_mass=idx in mass_state_indices,
             third_body_tables=third_body_tables,
+            relative_reference_table=asset_relative_reference_tables.get(idx),
         )
         ocp.addPhase(asset_phase)
 
@@ -1593,6 +1635,8 @@ def solve_composable_mission(
                     ap,
                     constraint,
                     b.layout.state_indices("position"),
+                    time_index=b.layout.time_column,
+                    solar_direction_table=asset_solar_direction_tables.get(b.index),
                 )
 
         # Time bounds: normalize tof_bounds_s to absolute Back-time bounds.
@@ -1807,6 +1851,11 @@ def solve_composable_mission(
                     phase_name=constraint_phase.name,
                     constraint=constraint,
                     phase_traj=phase_traj,
+                    solar_direction_at=(
+                        solar_direction_tables[build.index].at
+                        if build.index in solar_direction_tables
+                        else None
+                    ),
                 )
             )
 
@@ -1877,7 +1926,18 @@ def solve_composable_mission(
                 if first.dynamics.central_body is not None  # type: ignore[union-attr]
                 else first.dynamics.frame.origin  # type: ignore[union-attr]
             ),
-            "dynamics_model": "cwh" if relative_phases else "central_gravity",
+            "dynamics_model": (
+                "cwh_differential_perturbations"
+                if relative_reference_samples
+                else "cwh"
+                if relative_phases
+                else "central_gravity"
+            ),
+            "relative_reference_model": (
+                "prescribed_circular_chief"
+                if relative_reference_samples
+                else None
+            ),
             "state_layouts": [build.layout.name for build in built],
             "constraint_report": constraint_report,
             "powered_phases": powered_phases,
