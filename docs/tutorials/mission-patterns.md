@@ -284,6 +284,26 @@ Relative positions and velocities use the chief LVLH/RTN frame. Use
 known chief state. CWH assumes a circular chief and small deputy separation;
 use a nonlinear model when those assumptions are not appropriate.
 
+For exact central gravity or perturbations, keep the same public RIC states and
+replace the dynamics declaration:
+
+```python
+dynamics = Dynamics.relative(
+    chief_initial_state_eci=chief_initial_state_eci,
+    central_body=EARTH,
+    perturbations=Perturbations(j2=True, sun=True),
+)
+```
+
+The compiler uses CWH only to seed the solve. It propagates the chief and deputy
+as two absolute states and converts them to RIC for constraints and results.
+
+Save state, range, and solar-phase histories beside either trajectory plot:
+
+```python
+solution.viz().save_diagnostics_html("relative_diagnostics.html")
+```
+
 ## Pattern 13: Add Relative Safety And Lighting Geometry
 
 ```python

@@ -127,6 +127,9 @@ of the phase definition.
 - `octavian/solvers/compiler/relative_constraint_compiler.py`: Cartesian
   keep-out, approach-cone, and lighting inequality compilation plus result
   reports.
+- `octavian/solvers/compiler/nonlinear_relative_compiler.py`: the boundary
+  between coupled absolute chief/deputy states and public RIC constraints,
+  objectives, solar geometry, and result extraction.
 - `octavian/coordinates/`: immutable frame, state-layout, and characteristic
   scaling declarations shared by configuration, compilation, and reporting.
 - `octavian/bodies/`: immutable central-body constants and case-insensitive
@@ -143,7 +146,8 @@ of the phase definition.
   namespace.
 - `octavian/types.py`: shared small result types such as `Maneuver`.
 - `octavian/study.py`: study-level utilities.
-- `octavian/viz/plotly.py`: Plotly trajectory visualization.
+- `octavian/viz/diagnostics.py`: plotting-backend-independent time-series data.
+- `octavian/viz/plotly.py`: Plotly trajectory and diagnostic visualization.
 - `octavian/viz/data/`: bundled visualization assets.
 
 ## Solve Flow

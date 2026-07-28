@@ -400,63 +400,49 @@ constraint therefore moves the optimized transfer to the cone boundary,
 demonstrating that the geometry changes the solution rather than only checking
 it afterward.
 
-## 13: Low-Thrust Orbit Raise
+## 13: Relative Representations
 
-Path: `examples/composable/13_low_thrust_orbit_raise.py`
+Path: `examples/composable/13_relative_representations.py`
 
-Run:
+This optimizer-free example builds a chief ECI state and deputy RIC state,
+converts RIC to absolute ECI and back, and derives quasi-nonsingular relative
+orbital elements. It is the representation layer used by both CWH and nonlinear
+missions.
 
-```bash
-conda run -n octavian-dev python examples/composable/13_low_thrust_orbit_raise.py
-```
+## 14: Nonlinear Relative Rendezvous
 
-Capability showcased:
+Path: `examples/composable/14_nonlinear_relative_rendezvous.py`
 
-- A single `mode="low_thrust"` phase using the common mass/throttle ODE.
-- A typed, dynamics-integrated prograde spiral initial guess.
-- Free terminal orbital phase through semi-major-axis and near-circular
-  eccentricity constraints.
-- Explicit final-mass optimization and powered-phase reporting.
+`Dynamics.relative(...)` propagates chief and deputy as two exact
+central-gravity states. CWH supplies only the initial guess. Public boundary
+states, keep-out geometry, maneuvers, the trajectory, and diagnostics remain
+in RIC.
 
-Important choices:
+Expected outputs:
 
-| Code | Purpose |
-| --- | --- |
-| `guesses.low_thrust_spiral(throttle=0.85)` | Integrates a prograde seed and initializes the control history. |
-| `final_state=terminal_seed_anchor` | Supplies target radius and scaling without fixing terminal longitude. |
-| `objectives.minimize_propellant()` | Maximizes final spacecraft mass. |
-| `tof_bounds_s=(14 h, 24 h)` | Brackets the seed's 17.59-hour burn estimate. |
+- `traj_composable_nonlinear_relative_rendezvous.html`
+- `diagnostics_composable_nonlinear_relative_rendezvous.html`
 
-The reference solve raises a 560 kg spacecraft from a 7,000 km to an 8,000 km
-near-circular orbit in about 17.72 hours using about 15.05 kg of propellant.
+## 15: Perturbed Relative Solar Geometry
 
-Expected output: `traj_composable_low_thrust_orbit_raise.html`.
+Path: `examples/composable/15_perturbed_relative_solar.py`
 
-## 14: Perturbed Relative Solar Geometry
-
-Path: `examples/composable/14_perturbed_relative_solar.py`
-
-Run:
-
-```bash
-conda run -n octavian-dev python examples/composable/14_perturbed_relative_solar.py
-```
-
-Capability showcased:
-
-- Differential J2 and solar gravity in an optimized CWH relative arc.
-- A prescribed circular chief ECI_TOD state used to reconstruct deputy
-  absolute position for the perturbation difference.
-- A time-varying solar-phase angle sampled from the bundled SPICE BSP.
-- A chief-centered RIC plot with the 75 m keep-out boundary.
-
-Important choices:
+This extends example 14 with differential J2 and solar gravity. The
+solar-phase constraint uses the SPICE BSP at `Mission.initial_epoch`; it is
+evaluated from the propagated chief/deputy state and the actual chief-to-Sun
+line. The diagnostics file includes solar phase angle over time.
 
 | Code | Purpose |
 | --- | --- |
-| `chief_initial_state_eci=...` | Anchors the chief orbit plane, phase, and RIC rotation in ECI_TOD. |
-| `Perturbations(j2=True, sun=True)` | Adds differential J2 and solar accelerations. |
-| `Mission(initial_epoch=...)` | Defines SPICE time zero for force and constraint tables. |
-| `constraints.solar_phase_angle(...)` | Bounds the changing angle between relative position and the ephemeris Sun line. |
+| `Dynamics.relative(chief_initial_state_eci=...)` | Selects full coupled nonlinear propagation. |
+| `Perturbations(j2=True, sun=True)` | Applies the same force model independently to chief and deputy. |
+| `constraints.solar_phase_angle(...)` | Bounds the changing relative-position/Sun angle. |
 
-Expected output: `traj_composable_perturbed_relative_solar.html`.
+## 16: Low-Thrust Orbit Raise
+
+Path: `examples/composable/16_low_thrust_orbit_raise.py`
+
+The low-thrust example remains part of the broader composable suite after the
+relative-motion build-up. It demonstrates a dynamics-integrated spiral seed,
+free terminal orbital phase, propellant optimization, and inertial diagnostics
+for Cartesian state, radius, speed, and osculating elements.

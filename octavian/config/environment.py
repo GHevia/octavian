@@ -44,6 +44,8 @@ def _build_one_dynamics(value: Any, path: str) -> Dynamics:
 
     if model == "cwh":
         return _build_cwh_dynamics(config, path)
+    if model in {"relative", "nonlinear_relative"}:
+        return _build_relative_dynamics(config, path)
     if model not in {"two_body", "cartesian"}:
         raise MissionConfigError(f"{path}.model has unsupported value {model!r}.")
     return _build_cartesian_dynamics(config, path, model)
@@ -60,21 +62,7 @@ def _build_cwh_dynamics(config: Any, path: str) -> Dynamics:
         names = ", ".join(sorted(invalid))
         raise MissionConfigError(f"{path} cannot combine model='cwh' with: {names}.")
     scaling = build_scaling(config["scaling"], f"{path}.scaling") if "scaling" in config else None
-    chief_initial_state = None
-    if "chief_initial_state_eci" in config:
-        chief_config = mapping(
-            config["chief_initial_state_eci"],
-            f"{path}.chief_initial_state_eci",
-        )
-        reject_unknown(
-            chief_config,
-            {"r_m", "v_mps"},
-            f"{path}.chief_initial_state_eci",
-        )
-        chief_initial_state = state(
-            required(chief_config, "r_m", f"{path}.chief_initial_state_eci"),
-            required(chief_config, "v_mps", f"{path}.chief_initial_state_eci"),
-        )
+    chief_initial_state = _build_chief_state(config, path, required_value=False)
     return Dynamics.cwh(
         chief_orbit_radius_m=float(required(config, "chief_orbit_radius_m", path)),
         central_body=config.get("central_body", "earth"),
@@ -93,9 +81,78 @@ def _build_cwh_dynamics(config: Any, path: str) -> Dynamics:
     )
 
 
+def _build_relative_dynamics(config: Any, path: str) -> Dynamics:
+    """Build full coupled chief/deputy dynamics from configuration."""
+    invalid = set(config) & {
+        "mu_m3ps2",
+        "central_body_radius_m",
+        "j2_coefficient",
+        "frame",
+        "chief_orbit_radius_m",
+    }
+    if invalid:
+        names = ", ".join(sorted(invalid))
+        raise MissionConfigError(
+            f"{path} cannot combine model='relative' with: {names}."
+        )
+    scaling = (
+        build_scaling(config["scaling"], f"{path}.scaling")
+        if "scaling" in config
+        else None
+    )
+    chief_initial_state = _build_chief_state(config, path, required_value=True)
+    return Dynamics.relative(
+        chief_initial_state_eci=chief_initial_state,
+        central_body=config.get("central_body", "earth"),
+        chief_name=str(config.get("chief_name", "chief")),
+        reference_length_m=float(config.get("reference_length_m", 1_000.0)),
+        perturbations=(
+            build_perturbations(config["perturbations"], f"{path}.perturbations")
+            if "perturbations" in config
+            else None
+        ),
+        third_body_table_step_s=float(
+            config.get("third_body_table_step_s", 3_600.0)
+        ),
+        third_body_table_margin_s=float(
+            config.get("third_body_table_margin_s", 86_400.0)
+        ),
+        scaling=scaling,
+        info=dict(mapping(config.get("info", {}), f"{path}.info")),
+    )
+
+
+def _build_chief_state(
+    config: Any,
+    path: str,
+    *,
+    required_value: bool,
+):
+    if "chief_initial_state_eci" not in config:
+        if required_value:
+            raise MissionConfigError(
+                f"{path}.chief_initial_state_eci is required for model='relative'."
+            )
+        return None
+    chief_path = f"{path}.chief_initial_state_eci"
+    chief_config = mapping(config["chief_initial_state_eci"], chief_path)
+    reject_unknown(chief_config, {"r_m", "v_mps"}, chief_path)
+    return state(
+        required(chief_config, "r_m", chief_path),
+        required(chief_config, "v_mps", chief_path),
+    )
+
+
 def _build_cartesian_dynamics(config: Any, path: str, model: str) -> Dynamics:
-    if set(config) & {"chief_orbit_radius_m", "chief_name", "reference_length_m"}:
-        raise MissionConfigError(f"{path} contains CWH-only fields but model is {model!r}.")
+    if set(config) & {
+        "chief_orbit_radius_m",
+        "chief_name",
+        "reference_length_m",
+        "chief_initial_state_eci",
+    }:
+        raise MissionConfigError(
+            f"{path} contains relative-model fields but model is {model!r}."
+        )
     if "central_body" in config and set(config) & {
         "mu_m3ps2",
         "central_body_radius_m",

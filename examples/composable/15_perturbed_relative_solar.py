@@ -1,8 +1,8 @@
-"""Composable example 14: perturbed RIC rendezvous with a SPICE Sun constraint.
+"""Composable example 15: perturbed RIC rendezvous with a SPICE Sun constraint.
 
-The optimized relative dynamics add differential J2 and solar gravity to CWH.
-The solar-phase angle uses the bundled BSP and the mission epoch rather than a
-fixed direction.  A chief ECI_TOD state anchors both time-varying calculations.
+Chief and deputy absolute states are propagated under central gravity, J2, and
+solar gravity. The public constraints and results remain in RIC. The
+solar-phase angle uses the bundled BSP and mission epoch.
 """
 
 from __future__ import annotations
@@ -34,8 +34,7 @@ chief_initial_state_eci = state(
 initial_relative_state = state([0.0, -1_000.0, 0.0], [0.0, 0.0, 0.0])
 stand_off_state = state([0.0, -100.0, 0.0], [0.0, 0.0, 0.0])
 
-dynamics = Dynamics.cwh(
-    chief_orbit_radius_m=CHIEF_ORBIT_RADIUS_M,
+dynamics = Dynamics.relative(
     chief_name="Chief",
     chief_initial_state_eci=chief_initial_state_eci,
     perturbations=Perturbations(j2=True, sun=True),
@@ -87,4 +86,8 @@ save_relative_trajectory_html(
     phase_segments=solution.result.info["phase_segments"],
     chief_radius_m=75.0,
     title="Perturbed relative approach with SPICE solar geometry",
+)
+solution.viz().save_diagnostics_html(
+    "diagnostics_composable_perturbed_relative_solar.html",
+    title="Perturbed relative state and solar geometry",
 )

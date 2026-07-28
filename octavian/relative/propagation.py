@@ -21,7 +21,7 @@ from ..bodies import EARTH, MOON, SUN, CelestialBody
 from ..data.ephemeris import DEFAULT_EPHEMERIS_BSP, sample_sun_moon_positions_eci_tod
 from ..dynamics import j2_acceleration_components, third_body_acceleration_components
 from ..specs import BoundaryState
-from .transforms import absolute_to_relative_history, relative_to_inertial_state
+from .transforms import inertial_to_relative_state, relative_to_inertial_state
 
 StateHistory = NDArray[np.float64]
 
@@ -136,9 +136,16 @@ def propagate_relative_numerical(
         bsp_path=bsp_path,
     )
 
+    initial_chief_acceleration = _absolute_acceleration(
+        chief_initial_eci.r_m,
+        central_body=central_body,
+        include_j2=flags["j2"],
+        third_bodies=body_positions(0.0),
+    )
     deputy_initial_eci = relative_to_inertial_state(
         chief_initial_eci,
         relative_initial_ric,
+        chief_acceleration_mps2=initial_chief_acceleration,
     )
     combined_state = np.hstack(
         [
@@ -201,7 +208,25 @@ def propagate_relative_numerical(
 
     chief_states = absolute_history[:, 0:6]
     deputy_states = absolute_history[:, 6:12]
-    relative_states = absolute_to_relative_history(chief_states, deputy_states)
+    relative_states = np.empty_like(chief_states)
+    for index, time_s in enumerate(output_times):
+        chief = BoundaryState(chief_states[index, 0:3], chief_states[index, 3:6])
+        deputy = BoundaryState(
+            deputy_states[index, 0:3],
+            deputy_states[index, 3:6],
+        )
+        chief_acceleration = _absolute_acceleration(
+            chief.r_m,
+            central_body=central_body,
+            include_j2=flags["j2"],
+            third_bodies=body_positions(float(time_s)),
+        )
+        relative = inertial_to_relative_state(
+            chief,
+            deputy,
+            chief_acceleration_mps2=chief_acceleration,
+        )
+        relative_states[index] = np.hstack([relative.r_m, relative.v_mps])
     return RelativePropagationResult(
         times_s=output_times,
         chief_states_eci=chief_states,

@@ -5,6 +5,7 @@ from .layouts import (
     CARTESIAN,
     CARTESIAN_MASS,
     CARTESIAN_MASS_THRUST,
+    COUPLED_RELATIVE_ECI,
     RELATIVE_CARTESIAN,
     StateLayout,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "CARTESIAN",
     "CARTESIAN_MASS",
     "CARTESIAN_MASS_THRUST",
+    "COUPLED_RELATIVE_ECI",
     "RELATIVE_CARTESIAN",
     "EARTH_INERTIAL",
     "CoordinateFrame",

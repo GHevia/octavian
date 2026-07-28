@@ -20,7 +20,8 @@ This MVP includes:
 - Finite-thrust and low-thrust phases with mass depletion and spiral seeding.
 - Optional schema-versioned JSON and YAML mission configuration.
 - Lambert-Izzo seed sweeps across time of flight, longway, and multi-rev cases.
-- Plotly HTML visualization with maneuver markers.
+- Frame-aware Plotly trajectory and time-series diagnostics with maneuver
+  markers, RIC state/range/solar phase, and inertial state/elements.
 
 `octavian` declares ASSET (`asset_asrl`) as a runtime dependency because the
 solver-backed workflows rely on it.

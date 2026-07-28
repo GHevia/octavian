@@ -24,6 +24,8 @@ def _fake_solution() -> Solution:
         last_obj=2.0,
         info={
             "dynamics_model": "cwh",
+            "state_layouts": ["coupled_relative_eci"],
+            "mu_m3ps2": 3.986004418e14,
             "chemical_burns": [
                 {
                     "phase": "burn",
@@ -70,8 +72,9 @@ def _fake_solution() -> Solution:
         ("examples/composable/10_sun_moon_perturbations.py", 1),
         ("examples/composable/11_cwh_relative_rendezvous.py", 1),
         ("examples/composable/12_cwh_safety_corridor.py", 1),
-        ("examples/composable/13_low_thrust_orbit_raise.py", 1),
-        ("examples/composable/14_perturbed_relative_solar.py", 1),
+        ("examples/composable/14_nonlinear_relative_rendezvous.py", 1),
+        ("examples/composable/15_perturbed_relative_solar.py", 1),
+        ("examples/composable/16_low_thrust_orbit_raise.py", 1),
     ],
 )
 def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int) -> None:
@@ -101,14 +104,21 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
         fake_plot,
         raising=True,
     )
+    monkeypatch.setattr(
+        "octavian.viz.plotly.save_trajectory_diagnostics_html",
+        fake_plot,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "octavian.viz.save_trajectory_diagnostics_html",
+        fake_plot,
+        raising=True,
+    )
 
     runpy.run_path(str(ROOT / script_rel), run_name="__main__")
 
     assert len(missions) == expected_solve_calls
-    if not script_rel.endswith(
-        ("12_cwh_safety_corridor.py",)
-    ):
-        assert len(plotted) >= 1
+    assert len(plotted) >= 1
 
     if script_rel.endswith("01_single_phase_terminal_dv_objective.py"):
         assert len(missions[0].phases) == 1
@@ -149,22 +159,39 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
         assert mission.phases[0].mode == "relative_coast"
         assert mission.phases[0].dynamics.frame.kind == "relative"
         assert mission.phases[0].dynamics.model.mean_motion_radps > 0.0
-        assert plotted == ["traj_composable_cwh_relative_rendezvous.html"]
+        assert plotted == [
+            "traj_composable_cwh_relative_rendezvous.html",
+            "diagnostics_composable_cwh_relative_rendezvous.html",
+        ]
     elif script_rel.endswith("12_cwh_safety_corridor.py"):
         mission = missions[0]
         kinds = [constraint.kind for constraint in mission.phases[0].constraints]
         assert "keep_out_sphere" in kinds
         assert "approach_cone" in kinds
         assert "lighting_angle" in kinds
-        assert plotted == []
-    elif script_rel.endswith("13_low_thrust_orbit_raise.py"):
+        assert plotted == [
+            "traj_composable_cwh_safety_corridor.html",
+            "diagnostics_composable_cwh_safety_corridor.html",
+        ]
+    elif script_rel.endswith("14_nonlinear_relative_rendezvous.py"):
+        phase = missions[0].phases[0]
+        assert phase.dynamics.model.chief_initial_state_eci is not None
+        assert phase.dynamics.active_perturbations().j2 is False
+        assert plotted == [
+            "traj_composable_nonlinear_relative_rendezvous.html",
+            "diagnostics_composable_nonlinear_relative_rendezvous.html",
+        ]
+    elif script_rel.endswith("16_low_thrust_orbit_raise.py"):
         mission = missions[0]
         phase = mission.phases[0]
         assert phase.mode == "low_thrust"
         assert phase.initial_guess.throttle == pytest.approx(0.85)
         assert mission.objectives[0].kind == "propellant"
-        assert plotted == ["traj_composable_low_thrust_orbit_raise.html"]
-    elif script_rel.endswith("14_perturbed_relative_solar.py"):
+        assert plotted == [
+            "traj_composable_low_thrust_orbit_raise.html",
+            "diagnostics_composable_low_thrust_orbit_raise.html",
+        ]
+    elif script_rel.endswith("15_perturbed_relative_solar.py"):
         mission = missions[0]
         phase = mission.phases[0]
         perturbations = phase.dynamics.active_perturbations()
@@ -175,7 +202,10 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
         assert "solar_phase_angle" in [
             constraint.kind for constraint in phase.constraints
         ]
-        assert plotted == ["traj_composable_perturbed_relative_solar.html"]
+        assert plotted == [
+            "traj_composable_perturbed_relative_solar.html",
+            "diagnostics_composable_perturbed_relative_solar.html",
+        ]
     elif script_rel.endswith("07_terminal_orbital_elements.py"):
         assert len(missions[0].phases) == 1
         kinds = [getattr(c, "kind", "") for c in missions[0].phases[0].constraints]
@@ -183,3 +213,13 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
         assert "eccentricity" in kinds
         assert "inclination_deg" in kinds
         assert len(missions[0].phases[0].variables) == 2
+
+
+def test_relative_representation_example_round_trips(capsys) -> None:
+    runpy.run_path(
+        str(ROOT / "examples/composable/13_relative_representations.py"),
+        run_name="__main__",
+    )
+    output = capsys.readouterr().out
+    assert "Recovered deputy RIC state" in output
+    assert "relative orbital elements" in output

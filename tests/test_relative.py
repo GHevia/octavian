@@ -5,9 +5,10 @@ import pytest
 
 from octavian import EARTH, Dynamics, Perturbations, state
 from octavian.astro import classical_to_cartesian
-from octavian.coordinates import RELATIVE_CARTESIAN, lvlh, ric
+from octavian.coordinates import COUPLED_RELATIVE_ECI, RELATIVE_CARTESIAN, lvlh, ric
 from octavian.relative import (
     ClohessyWiltshire,
+    NonlinearRelative,
     absolute_to_relative_history,
     absolute_to_relative_orbital_elements,
     cwh_derivative,
@@ -56,6 +57,26 @@ def test_relative_layout_has_semantic_position_velocity_groups() -> None:
     assert RELATIVE_CARTESIAN.state_indices("position") == (0, 1, 2)
     assert RELATIVE_CARTESIAN.state_indices("velocity") == (3, 4, 5)
     assert ric("ISS").orientation == "RIC/RTN/LVLH"
+    assert COUPLED_RELATIVE_ECI.state_indices("chief_position") == (0, 1, 2)
+    assert COUPLED_RELATIVE_ECI.state_indices("deputy_velocity") == (9, 10, 11)
+
+
+def test_nonlinear_relative_model_uses_chief_and_relative_scaling() -> None:
+    radius_m = EARTH.mean_radius_m + 400_000.0
+    chief = state(
+        [radius_m, 0.0, 0.0],
+        [0.0, np.sqrt(EARTH.mu_m3ps2 / radius_m), 0.0],
+    )
+
+    dynamics = Dynamics.relative(
+        chief_initial_state_eci=chief,
+        chief_name="ISS",
+        reference_length_m=2_000.0,
+    )
+
+    assert isinstance(dynamics.model, NonlinearRelative)
+    assert dynamics.frame == ric("ISS")
+    assert dynamics.scaling.length_m == 2_000.0
 
 
 def test_cwh_state_transition_matches_derivative_and_semigroup() -> None:
@@ -99,6 +120,26 @@ def test_inertial_relative_state_transform_round_trip() -> None:
     relative = state([100.0, -250.0, 40.0], [0.2, -0.1, 0.05])
     deputy = relative_to_inertial_state(chief, relative)
     recovered = inertial_to_relative_state(chief, deputy)
+
+    assert recovered.r_m == pytest.approx(relative.r_m, abs=1e-10)
+    assert recovered.v_mps == pytest.approx(relative.v_mps, abs=1e-12)
+
+
+def test_accelerating_ric_state_transform_round_trip() -> None:
+    chief = state([7_000_000.0, 0.0, 0.0], [0.0, 7_500.0, 200.0])
+    relative = state([100.0, -250.0, 40.0], [0.2, -0.1, 0.05])
+    acceleration = np.asarray([-8.0, 0.0, 0.02])
+
+    deputy = relative_to_inertial_state(
+        chief,
+        relative,
+        chief_acceleration_mps2=acceleration,
+    )
+    recovered = inertial_to_relative_state(
+        chief,
+        deputy,
+        chief_acceleration_mps2=acceleration,
+    )
 
     assert recovered.r_m == pytest.approx(relative.r_m, abs=1e-10)
     assert recovered.v_mps == pytest.approx(relative.v_mps, abs=1e-12)

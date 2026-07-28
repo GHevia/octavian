@@ -134,6 +134,48 @@ class Dynamics:
             reference_length_m=reference_length_m,
             chief_initial_state_eci=chief_initial_state_eci,
         )
+        dynamics = cls(central_body=body, model=model, **kwargs)
+        perturbations = dynamics.active_perturbations()
+        if any(
+            (
+                perturbations.j2,
+                perturbations.srp,
+                perturbations.drag,
+                bool(perturbations.active_third_bodies()),
+            )
+        ):
+            raise ValueError(
+                "Dynamics.cwh is an unforced linear model. Use "
+                "Dynamics.relative(...) for exact nonlinear relative motion "
+                "with perturbations."
+            )
+        return dynamics
+
+    @classmethod
+    def relative(
+        cls,
+        *,
+        chief_initial_state_eci: BoundaryState,
+        central_body: CelestialBody | str = "earth",
+        chief_name: str = "chief",
+        reference_length_m: float = 1_000.0,
+        **kwargs: Any,
+    ) -> Dynamics:
+        """Create full nonlinear chief/deputy relative dynamics.
+
+        Chief and deputy absolute Cartesian states are propagated under the
+        configured force model.  Mission states and results remain
+        chief-centered RIC coordinates.
+        """
+        from .relative import NonlinearRelative
+
+        body = resolve_body(central_body)
+        model = NonlinearRelative(
+            chief_initial_state_eci=chief_initial_state_eci,
+            central_body=body,
+            chief_name=chief_name,
+            reference_length_m=reference_length_m,
+        )
         return cls(central_body=body, model=model, **kwargs)
 
     def active_perturbations(self) -> Perturbations:

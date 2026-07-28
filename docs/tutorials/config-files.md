@@ -124,8 +124,11 @@ phase; list order alone does not add a hidden connection.
 Schema version 1 covers the current public mission building blocks:
 
 - two-body dynamics with `central_body`, optional perturbations, frame, and scaling;
-- CWH dynamics with `model: cwh`, chief orbit radius, optional inline
-  `chief_initial_state_eci`, perturbations, and relative scaling;
+- unforced linear CWH dynamics with `model: cwh`, chief orbit radius, optional
+  inline `chief_initial_state_eci`, and relative scaling;
+- full nonlinear relative dynamics with `model: relative`, a required inline
+  `chief_initial_state_eci`, optional J2/Moon/Sun perturbations, and relative
+  scaling;
 - coast, rendezvous, relative-coast, finite-thrust, chemical-burn, and low-thrust phase modes;
 - continuous and impulsive links;
 - boundary state, position, minimum-radius, orbital-element, keep-out,

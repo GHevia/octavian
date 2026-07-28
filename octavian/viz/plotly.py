@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 
 from ..types import Maneuver
+from .diagnostics import inertial_diagnostic_panels, relative_diagnostic_panels
 
 EARTH_RADIUS_M = 6378137.0
 
@@ -516,5 +517,96 @@ def save_relative_trajectory_html(
         phase_segments=phase_segments,
         title=title,
         chief_radius_m=chief_radius_m,
+    )
+    figure.write_html(out_html, include_plotlyjs="cdn")
+
+
+def trajectory_diagnostics_figure(
+    traj: np.ndarray,
+    *,
+    frame_kind: str,
+    mu_m3ps2: float | None = None,
+    solar_directions_ric: np.ndarray | None = None,
+    title: str = "octavian trajectory diagnostics",
+) -> Any:
+    """Build stacked, shared-time plots appropriate to the trajectory frame."""
+    try:
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+    except ImportError as exc:
+        raise RuntimeError(
+            "Plotly visualization requires the optional viz dependencies. "
+            "Install them with `pip install \"octavian[viz]\"`."
+        ) from exc
+
+    trajectory = np.asarray(traj, dtype=float)
+    normalized_frame = str(frame_kind).strip().lower()
+    if normalized_frame == "relative":
+        panels = relative_diagnostic_panels(
+            trajectory,
+            solar_directions_ric=solar_directions_ric,
+        )
+    else:
+        if mu_m3ps2 is None or float(mu_m3ps2) <= 0.0:
+            raise ValueError(
+                "Inertial trajectory diagnostics require a positive mu_m3ps2"
+            )
+        panels = inertial_diagnostic_panels(
+            trajectory,
+            mu_m3ps2=float(mu_m3ps2),
+        )
+
+    figure = make_subplots(
+        rows=len(panels),
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=min(0.08, 0.25 / len(panels)),
+        subplot_titles=[panel.title for panel in panels],
+    )
+    time_s = trajectory[:, 6]
+    for row, panel in enumerate(panels, start=1):
+        for series in panel.series:
+            label = (
+                f"{series.name} ({series.unit})" if series.unit else series.name
+            )
+            figure.add_trace(
+                go.Scatter(
+                    x=time_s,
+                    y=series.values,
+                    mode="lines",
+                    name=label,
+                ),
+                row=row,
+                col=1,
+            )
+        figure.update_yaxes(title_text=panel.y_axis_title, row=row, col=1)
+    figure.update_xaxes(title_text="Time (s)", row=len(panels), col=1)
+    figure.update_layout(
+        title=dict(text=title, x=0.5),
+        template="plotly_dark",
+        height=max(650, 245 * len(panels)),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.01),
+        margin=dict(l=75, r=25, t=90, b=55),
+    )
+    return figure
+
+
+def save_trajectory_diagnostics_html(
+    traj: np.ndarray,
+    out_html: str,
+    *,
+    frame_kind: str,
+    mu_m3ps2: float | None = None,
+    solar_directions_ric: np.ndarray | None = None,
+    title: str = "octavian trajectory diagnostics",
+) -> None:
+    """Save frame-aware trajectory time histories as interactive HTML."""
+    figure = trajectory_diagnostics_figure(
+        traj,
+        frame_kind=frame_kind,
+        mu_m3ps2=mu_m3ps2,
+        solar_directions_ric=solar_directions_ric,
+        title=title,
     )
     figure.write_html(out_html, include_plotlyjs="cdn")

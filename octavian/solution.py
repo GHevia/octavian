@@ -98,6 +98,26 @@ class Solution:
             return SolverScaling(**value)
         return None
 
+    @property
+    def chief_trajectory_eci(self) -> np.ndarray:
+        """Return the propagated chief absolute history for relative solves."""
+        if self.result is None:
+            return np.empty((0, 7), dtype=float)
+        value = self.result.info.get("chief_trajectory_eci")
+        if value is None:
+            return np.empty((0, 7), dtype=float)
+        return np.asarray(value, dtype=float)
+
+    @property
+    def deputy_trajectory_eci(self) -> np.ndarray:
+        """Return the propagated deputy absolute history for relative solves."""
+        if self.result is None:
+            return np.empty((0, 7), dtype=float)
+        value = self.result.info.get("deputy_trajectory_eci")
+        if value is None:
+            return np.empty((0, 7), dtype=float)
+        return np.asarray(value, dtype=float)
+
     def viz(self):
         """Namespace-style access to visualization helpers."""
         from .viz import plotly as _plotly
@@ -149,6 +169,29 @@ class Solution:
                     phase_segments=self_outer.result.info.get("phase_segments"),
                     title=title,
                     chief_radius_m=chief_radius_m,
+                )
+
+            def save_diagnostics_html(
+                self,
+                out_html: str,
+                *,
+                title: str = "trajectory diagnostics",
+            ) -> None:
+                """Save frame-aware state and geometry values over time."""
+                if self_outer.result is None:
+                    raise RuntimeError("No result to visualize")
+                frame = self_outer.frame
+                _plotly.save_trajectory_diagnostics_html(
+                    self_outer.result.traj,
+                    out_html,
+                    frame_kind=(
+                        frame.kind if frame is not None else "inertial"
+                    ),
+                    mu_m3ps2=self_outer.result.info.get("mu_m3ps2"),
+                    solar_directions_ric=self_outer.result.info.get(
+                        "solar_directions_ric"
+                    ),
+                    title=title,
                 )
 
         return _Viz()

@@ -19,7 +19,8 @@ optimization, then inspect summaries and Plotly trajectory views.
 - Terminal state, terminal delta-v, minimum-radius, and orbital-element constraints.
 - Finite chemical burn phases with mass depletion and thrust-direction controls.
 - J2 perturbation support in the composable backend.
-- Plotly HTML trajectory visualization with maneuver markers.
+- Plotly HTML trajectory and frame-aware time-series diagnostics with maneuver
+  markers.
 
 ## Documentation Map
 

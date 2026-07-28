@@ -5,16 +5,13 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from octavian import EARTH, Dynamics, Mission, Phase, Spacecraft, constraints, state
+from octavian import EARTH, Dynamics, Mission, Phase, constraints, state
 from octavian.relative import (
     SolarDirectionTable,
     circular_chief_state,
     sample_solar_directions_ric,
 )
-from octavian.solvers.relative_environment import (
-    build_relative_reference_samples,
-    build_solar_direction_tables,
-)
+from octavian.solvers.relative_environment import build_solar_direction_tables
 
 
 def _chief_state():
@@ -56,6 +53,7 @@ def test_sample_solar_directions_rotates_spice_line_to_ric(monkeypatch) -> None:
 
     assert table.directions_ric[0] == pytest.approx([1.0, 0.0, 0.0])
     assert not np.allclose(table.directions_ric[1], table.directions_ric[0])
+    assert table.sun_position_at([50.0])[0] == pytest.approx([1.5e11, 0.0, 0.0])
 
 
 def test_circular_chief_reference_preserves_radius_and_speed() -> None:
@@ -82,11 +80,10 @@ def test_relative_environment_requires_chief_state_for_solar_constraint() -> Non
         build_solar_direction_tables(mission, [phase], [(0.0, 1_000.0)])
 
 
-def test_relative_reference_samples_follow_circular_chief() -> None:
+def test_cwh_rejects_perturbations_instead_of_building_a_reference() -> None:
     chief = _chief_state()
-    phase = Phase(
-        spacecraft=Spacecraft(name="Deputy", dry_mass_kg=100.0),
-        dynamics=Dynamics.cwh(
+    with pytest.raises(ValueError, match=r"Dynamics\.relative"):
+        Dynamics.cwh(
             chief_orbit_radius_m=float(np.linalg.norm(chief.r_m)),
             chief_initial_state_eci=chief,
             perturbations=SimpleNamespace(
@@ -95,10 +92,4 @@ def test_relative_reference_samples_follow_circular_chief() -> None:
                 drag=False,
                 active_third_bodies=lambda: (),
             ),
-        ),
-    )
-    samples = build_relative_reference_samples([phase], [(0.0, 600.0)])[0]
-
-    assert samples.chief_positions_eci_m.shape[1] == 3
-    assert samples.inertial_to_ric.shape[1] == 9
-    np.testing.assert_allclose(samples.inertial_to_ric[0].reshape(3, 3), np.eye(3))
+        )

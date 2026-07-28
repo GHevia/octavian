@@ -197,15 +197,14 @@ def test_cwh_geometry_and_phase_links_translate_to_existing_objects() -> None:
     ]
 
 
-def test_cwh_config_accepts_chief_state_perturbations_and_solar_phase() -> None:
+def test_relative_config_accepts_chief_state_perturbations_and_solar_phase() -> None:
     config = _basic_config()
     radius_m = 6_778_136.3
     speed_mps = np.sqrt(3.986004418e14 / radius_m)
     config["dynamics"] = {
         "relative": {
-            "model": "cwh",
+            "model": "relative",
             "central_body": "earth",
-            "chief_orbit_radius_m": radius_m,
             "chief_initial_state_eci": {
                 "r_m": [radius_m, 0.0, 0.0],
                 "v_mps": [0.0, speed_mps, 0.0],

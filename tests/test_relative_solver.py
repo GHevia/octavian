@@ -153,7 +153,7 @@ def test_cwh_relative_geometry_constraints_compile_and_report() -> None:
     assert report[3]["actual"] <= 121.0 + 1e-4
 
 
-def test_cwh_j2_differential_perturbation_compiles_and_solves() -> None:
+def test_nonlinear_relative_j2_compiles_solves_and_reports_absolute_states() -> None:
     chief_radius_m = EARTH.mean_radius_m + 400_000.0
     chief_speed_mps = np.sqrt(EARTH.mu_m3ps2 / chief_radius_m)
     chief_state = state(
@@ -163,8 +163,7 @@ def test_cwh_j2_differential_perturbation_compiles_and_solves() -> None:
     mission = _relative_rendezvous_mission()
     mission.mesh_nsegs_transfer = 20
     mission.lambert_grid_size = 20
-    mission.phases[0].dynamics = Dynamics.cwh(
-        chief_orbit_radius_m=chief_radius_m,
+    mission.phases[0].dynamics = Dynamics.relative(
         chief_initial_state_eci=chief_state,
         perturbations=Perturbations(j2=True),
         third_body_table_step_s=300.0,
@@ -174,11 +173,23 @@ def test_cwh_j2_differential_perturbation_compiles_and_solves() -> None:
 
     assert solution.ok
     assert solution.result is not None
-    assert solution.result.info["dynamics_model"] == "cwh_differential_perturbations"
-    assert solution.result.info["relative_reference_model"] == "prescribed_circular_chief"
+    assert solution.result.info["dynamics_model"] == "nonlinear_relative"
+    assert solution.result.info["state_layouts"] == ["coupled_relative_eci"]
+    assert solution.result.info["relative_reference_model"] is None
+    assert np.asarray(solution.result.info["chief_trajectory_eci"]).shape[1] == 7
+    assert np.asarray(solution.result.info["deputy_trajectory_eci"]).shape[1] == 7
+    assert "nonlinear_relative" in solution.result.to_json()
 
 
-def test_spice_solar_phase_angle_compiles_solves_and_reports() -> None:
+def test_cwh_rejects_perturbations_with_relative_model_guidance() -> None:
+    with pytest.raises(ValueError, match=r"Dynamics\.relative"):
+        Dynamics.cwh(
+            chief_orbit_radius_m=EARTH.mean_radius_m + 400_000.0,
+            perturbations=Perturbations(j2=True),
+        )
+
+
+def test_nonlinear_spice_solar_phase_angle_compiles_solves_and_reports() -> None:
     chief_radius_m = EARTH.mean_radius_m + 400_000.0
     chief_speed_mps = np.sqrt(EARTH.mu_m3ps2 / chief_radius_m)
     chief_state = state(
@@ -190,9 +201,15 @@ def test_spice_solar_phase_angle_compiles_solves_and_reports() -> None:
     mission.mesh_nsegs_transfer = 20
     mission.lambert_grid_size = 20
     phase = mission.phases[0]
-    phase.dynamics = Dynamics.cwh(
-        chief_orbit_radius_m=chief_radius_m,
+    stand_off_state = state([0.0, -100.0, 0.0], [0.0, 0.0, 0.0])
+    phase.final_state = stand_off_state
+    phase.constraints = [
+        phase.constraints[0],
+        constraints.state(stand_off_state, where="Back"),
+    ]
+    phase.dynamics = Dynamics.relative(
         chief_initial_state_eci=chief_state,
+        perturbations=Perturbations(sun=True),
         third_body_table_step_s=300.0,
     )
     phase.constraints.append(

@@ -47,11 +47,15 @@ def lvlh_basis(chief_position_m: ArrayLike, chief_velocity_mps: ArrayLike) -> Ma
     return ric_basis(chief_position_m, chief_velocity_mps)
 
 
-def chief_ric_angular_velocity(chief: BoundaryState) -> NDArray[np.float64]:
+def chief_ric_angular_velocity(
+    chief: BoundaryState,
+    chief_acceleration_mps2: ArrayLike | None = None,
+) -> NDArray[np.float64]:
     """Return the chief RIC frame angular velocity expressed in RIC.
 
-    The result is ``[0, 0, h/r²]``.  It is exact for the instantaneous RIC
-    frame when the orbit plane is fixed, including eccentric chief orbits.
+    With chief acceleration, the result is ``[r*a_C/h, 0, h/r²]`` and includes
+    orbit-plane rotation caused by cross-track acceleration.  Omitting
+    acceleration assumes a fixed orbit plane.
     """
     radius_sq = float(np.dot(chief.r_m, chief.r_m))
     if radius_sq <= 0.0:
@@ -59,26 +63,54 @@ def chief_ric_angular_velocity(chief: BoundaryState) -> NDArray[np.float64]:
     angular_momentum = float(np.linalg.norm(np.cross(chief.r_m, chief.v_mps)))
     if angular_momentum <= 0.0:
         raise ValueError("Chief position and velocity must define an orbital plane")
-    return np.asarray([0.0, 0.0, angular_momentum / radius_sq], dtype=float)
+    radial_rate = 0.0
+    if chief_acceleration_mps2 is not None:
+        acceleration = np.asarray(chief_acceleration_mps2, dtype=float).reshape(3)
+        cross_track = ric_basis(chief.r_m, chief.v_mps)[2]
+        cross_track_acceleration = float(np.dot(acceleration, cross_track))
+        radial_rate = (
+            float(np.linalg.norm(chief.r_m))
+            * cross_track_acceleration
+            / angular_momentum
+        )
+    return np.asarray(
+        [radial_rate, 0.0, angular_momentum / radius_sq],
+        dtype=float,
+    )
 
 
-def inertial_to_relative_state(chief: BoundaryState, deputy: BoundaryState) -> BoundaryState:
+def inertial_to_relative_state(
+    chief: BoundaryState,
+    deputy: BoundaryState,
+    *,
+    chief_acceleration_mps2: ArrayLike | None = None,
+) -> BoundaryState:
     """Transform a deputy inertial state to the chief's instantaneous RIC frame."""
     dcm = ric_basis(chief.r_m, chief.v_mps)
     relative_position = dcm @ (deputy.r_m - chief.r_m)
     inertial_relative_velocity = dcm @ (deputy.v_mps - chief.v_mps)
     relative_velocity = inertial_relative_velocity - np.cross(
-        chief_ric_angular_velocity(chief), relative_position
+        chief_ric_angular_velocity(chief, chief_acceleration_mps2),
+        relative_position,
     )
     return BoundaryState(relative_position, relative_velocity)
 
 
-def relative_to_inertial_state(chief: BoundaryState, relative: BoundaryState) -> BoundaryState:
+def relative_to_inertial_state(
+    chief: BoundaryState,
+    relative: BoundaryState,
+    *,
+    chief_acceleration_mps2: ArrayLike | None = None,
+) -> BoundaryState:
     """Transform a chief-centered RIC state to inertial Cartesian coordinates."""
     dcm = ric_basis(chief.r_m, chief.v_mps)
     inertial_position = chief.r_m + dcm.T @ relative.r_m
     inertial_velocity = chief.v_mps + dcm.T @ (
-        relative.v_mps + np.cross(chief_ric_angular_velocity(chief), relative.r_m)
+        relative.v_mps
+        + np.cross(
+            chief_ric_angular_velocity(chief, chief_acceleration_mps2),
+            relative.r_m,
+        )
     )
     return BoundaryState(inertial_position, inertial_velocity)
 
@@ -86,22 +118,36 @@ def relative_to_inertial_state(chief: BoundaryState, relative: BoundaryState) ->
 def absolute_to_relative_state(
     chief: BoundaryState,
     deputy: BoundaryState,
+    *,
+    chief_acceleration_mps2: ArrayLike | None = None,
 ) -> BoundaryState:
     """Alias for :func:`inertial_to_relative_state` with explicit terminology."""
-    return inertial_to_relative_state(chief, deputy)
+    return inertial_to_relative_state(
+        chief,
+        deputy,
+        chief_acceleration_mps2=chief_acceleration_mps2,
+    )
 
 
 def relative_to_absolute_state(
     chief: BoundaryState,
     relative: BoundaryState,
+    *,
+    chief_acceleration_mps2: ArrayLike | None = None,
 ) -> BoundaryState:
     """Return the reconstructed deputy absolute Cartesian state."""
-    return relative_to_inertial_state(chief, relative)
+    return relative_to_inertial_state(
+        chief,
+        relative,
+        chief_acceleration_mps2=chief_acceleration_mps2,
+    )
 
 
 def absolute_to_relative_history(
     chief_history: ArrayLike,
     deputy_history: ArrayLike,
+    *,
+    chief_acceleration_history_mps2: ArrayLike | None = None,
 ) -> StateHistory:
     """Convert matching absolute histories to ``[rho_RIC, rho_dot_RIC, t]``.
 
@@ -112,12 +158,19 @@ def absolute_to_relative_history(
         chief_history, deputy_history
     )
     converted = np.empty((chief_rows.shape[0], 7 if include_time else 6), dtype=float)
+    accelerations = _acceleration_history(
+        chief_acceleration_history_mps2,
+        chief_rows.shape[0],
+    )
     for index, (chief_row, deputy_row) in enumerate(
         zip(chief_rows, deputy_rows, strict=True)
     ):
         relative = inertial_to_relative_state(
             BoundaryState(chief_row[0:3], chief_row[3:6]),
             BoundaryState(deputy_row[0:3], deputy_row[3:6]),
+            chief_acceleration_mps2=(
+                None if accelerations is None else accelerations[index]
+            ),
         )
         converted[index, 0:6] = np.hstack([relative.r_m, relative.v_mps])
     if include_time:
@@ -128,6 +181,8 @@ def absolute_to_relative_history(
 def relative_to_absolute_history(
     chief_history: ArrayLike,
     relative_history: ArrayLike,
+    *,
+    chief_acceleration_history_mps2: ArrayLike | None = None,
 ) -> StateHistory:
     """Reconstruct deputy absolute history from matching chief and RIC rows.
 
@@ -138,17 +193,42 @@ def relative_to_absolute_history(
         chief_history, relative_history
     )
     converted = np.empty((chief_rows.shape[0], 7 if include_time else 6), dtype=float)
+    accelerations = _acceleration_history(
+        chief_acceleration_history_mps2,
+        chief_rows.shape[0],
+    )
     for index, (chief_row, relative_row) in enumerate(
         zip(chief_rows, relative_rows, strict=True)
     ):
         deputy = relative_to_inertial_state(
             BoundaryState(chief_row[0:3], chief_row[3:6]),
             BoundaryState(relative_row[0:3], relative_row[3:6]),
+            chief_acceleration_mps2=(
+                None if accelerations is None else accelerations[index]
+            ),
         )
         converted[index, 0:6] = np.hstack([deputy.r_m, deputy.v_mps])
     if include_time:
         converted[:, 6] = chief_rows[:, 6]
     return converted
+
+
+def _acceleration_history(
+    values: ArrayLike | None,
+    expected_rows: int,
+) -> NDArray[np.float64] | None:
+    if values is None:
+        return None
+    accelerations = np.asarray(values, dtype=float)
+    if accelerations.shape != (expected_rows, 3):
+        raise ValueError(
+            "chief_acceleration_history_mps2 must have shape (N, 3)"
+        )
+    if not np.all(np.isfinite(accelerations)):
+        raise ValueError(
+            "chief_acceleration_history_mps2 must contain finite values"
+        )
+    return accelerations
 
 
 def _matching_histories(

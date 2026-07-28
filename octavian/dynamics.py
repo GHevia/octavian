@@ -14,6 +14,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+from numpy.typing import ArrayLike, NDArray
+
 from ._asset import oc, require_asset, vf
 from .bodies import MOON, SUN
 
@@ -30,11 +33,35 @@ class ThirdBodyTable:
         mu_m3ps2: Gravitational parameter for the third body in SI units.
         position_table: ASSET vector function that returns the body's
             Earth-centered position in meters at the current phase time.
+        times_s: Optional numeric sample times used for result conversion.
+        positions_eci_m: Optional numeric positions paired with ``times_s``.
     """
 
     name: str
     mu_m3ps2: float
     position_table: Any
+    times_s: NDArray[np.float64] | None = None
+    positions_eci_m: NDArray[np.float64] | None = None
+
+    def position_at(self, time_s: float) -> NDArray[np.float64]:
+        """Interpolate the numeric Earth-centered position at ``time_s``."""
+        if self.times_s is None or self.positions_eci_m is None:
+            raise ValueError(
+                f"ThirdBodyTable {self.name!r} does not contain numeric samples"
+            )
+        times = np.asarray(self.times_s, dtype=float)
+        positions = np.asarray(self.positions_eci_m, dtype=float)
+        if float(time_s) < times[0] or float(time_s) > times[-1]:
+            raise ValueError(
+                f"Requested {self.name} position lies outside the sampled time range"
+            )
+        return np.asarray(
+            [
+                np.interp(float(time_s), times, positions[:, component])
+                for component in range(3)
+            ],
+            dtype=float,
+        )
 
 
 def _require_asset() -> None:
@@ -128,6 +155,50 @@ def third_body_acceleration_components(
         mu * (rel_y / rel_radius**3 - by / body_radius**3),
         mu * (rel_z / rel_radius**3 - bz / body_radius**3),
     )
+
+
+def gravity_acceleration_components(
+    position_m: ArrayLike,
+    *,
+    time_s: float = 0.0,
+    mu_m3ps2: float,
+    include_j2: bool = False,
+    central_body_radius_m: float = 6_378_136.3,
+    j2_coefficient: float = 1.08262668e-3,
+    third_body_tables: Sequence[ThirdBodyTable] = (),
+) -> NDArray[np.float64]:
+    """Evaluate the full configured acceleration numerically.
+
+    This is the numeric counterpart of :func:`_gravity_acceleration`.  It is
+    used when converting solved coupled chief/deputy histories to the
+    instantaneous RIC frame, where the chief acceleration determines the
+    frame's cross-track angular rate.
+    """
+    position = np.asarray(position_m, dtype=float).reshape(3)
+    radius = float(np.linalg.norm(position))
+    if radius <= 0.0:
+        raise ValueError("position_m must have non-zero norm")
+    acceleration = -float(mu_m3ps2) * position / radius**3
+    if include_j2:
+        acceleration = acceleration + np.asarray(
+            j2_acceleration_components(
+                position,
+                mu_m3ps2=float(mu_m3ps2),
+                radius_m=float(central_body_radius_m),
+                j2=float(j2_coefficient),
+            ),
+            dtype=float,
+        )
+    for body in third_body_tables:
+        acceleration = acceleration + np.asarray(
+            third_body_acceleration_components(
+                position,
+                body.position_at(float(time_s)),
+                mu_m3ps2=float(body.mu_m3ps2),
+            ),
+            dtype=float,
+        )
+    return np.asarray(acceleration, dtype=float)
 
 
 def _third_body_acceleration(position_vec, body_position_vec, *, mu_m3ps2: float):

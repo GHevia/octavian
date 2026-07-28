@@ -115,12 +115,19 @@ and interplanetary low-thrust arcs will need additional seed families.
 
 ### Relative Motion
 
-`Dynamics.cwh(...)` selects the Clohessy-Wiltshire model for a deputy near a
-chief on a circular orbit. Relative states use the chief's RIC/RTN/LVLH axes:
-R is radial, I is in-track, and C is cross-track. The model supplies frame and
-characteristic scaling metadata automatically, while the composable compiler
-uses an analytic CWH position-targeting seed instead of Lambert and Kepler
-guesses.
+Relative states use the chief's RIC/RTN/LVLH axes: R is radial, I is in-track,
+and C is cross-track. Two dynamics levels are deliberately separate:
+
+- `Dynamics.cwh(...)` is the unforced, linear Clohessy-Wiltshire model for a
+  circular chief and small separation. It is useful for quick studies and fast
+  initial guesses. Adding perturbations to it is rejected.
+- `Dynamics.relative(chief_initial_state_eci=...)` is the full nonlinear
+  model. The optimizer propagates independent chief and deputy absolute
+  Cartesian states under central gravity and any enabled J2, Moon, or Sun
+  perturbations. Constraints, maneuvers, results, and plots are converted to
+  instantaneous RIC at the compiler boundary. The propagated absolute
+  histories remain available as `solution.chief_trajectory_eci` and
+  `solution.deputy_trajectory_eci`.
 
 `octavian.relative` includes explicit single-state and vectorized history
 transforms:
@@ -132,16 +139,10 @@ transforms:
   `relative_orbital_elements_to_absolute_state(...)` for six
   quasi-nonsingular elements `[δa, δλ, δex, δey, δix, δiy]`.
 
-The transforms include the RIC angular-rate term in velocity. Rotating an ECI
-velocity difference by the position direction-cosine matrix alone is not a
-valid relative velocity.
-
-Unforced CWH remains the default. Setting J2, Moon, or Sun perturbations and
-supplying `chief_initial_state_eci` adds their differential acceleration to the
-optimized relative dynamics. The chief reference remains a prescribed circular
-orbit; perturbations are evaluated at both the chief and reconstructed deputy,
-differenced, and rotated into RIC. This model is useful for rendezvous design
-without adding six chief decision states to the optimizer.
+The transforms include the RIC angular-rate term in velocity. When chief
+acceleration is supplied, they also include orbit-plane rotation from
+cross-track acceleration. Rotating an ECI velocity difference by the position
+direction-cosine matrix alone is not a valid relative velocity.
 
 For analysis that should propagate the chief rather than prescribe it,
 `propagate_relative_numerical(...)` advances absolute chief and deputy states
@@ -150,7 +151,7 @@ contains both absolute histories and the converted RIC history. It uses a
 fixed-step fourth-order Runge-Kutta integrator, so `max_step_s` is an explicit
 accuracy/cost choice rather than a hidden tolerance.
 
-The CWH compiler currently supports one optimized relative phase. Inertial
+The relative compiler currently supports one optimized relative phase. Inertial
 orbital-element constraints, finite thrust, and inertial/relative phase links
 remain rejected until an explicit acceleration or frame-link model is
 configured.
@@ -205,7 +206,11 @@ Plotly helpers turn the trajectory and maneuvers into inspectable HTML files.
 `save_relative_trajectory_html(...)` labels R, I, and C explicitly, places the
 chief at the origin, and can draw a chief or keep-out radius.
 `solution.viz().save_html(...)` selects that view automatically when the result
-frame is relative.
+frame is relative. `solution.viz().save_diagnostics_html(...)` writes shared
+time-axis state and geometry panels. Relative diagnostics include RIC state,
+range, speed, and solar phase angle when ephemeris geometry is present;
+inertial diagnostics include Cartesian state, radius, speed, and osculating
+elements.
 
 ## Documentation Contract
 

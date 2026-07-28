@@ -35,7 +35,7 @@ from .models import Dynamics, Perturbations, RetryPolicy, RunPlan, SolveConfig
 from .objectives import Objective
 from .phase import Phase
 from .quick import state, two_burn_rendezvous
-from .relative import ClohessyWiltshire
+from .relative import ClohessyWiltshire, NonlinearRelative
 from .solution import Solution
 from .solvers import SolverOptions
 from .solvers.preconfigured import (
@@ -68,6 +68,7 @@ __all__ = [
     "StateLayout",
     "CelestialBody",
     "ClohessyWiltshire",
+    "NonlinearRelative",
     "LowThrustSpiralGuess",
     "MissionConfigError",
     "EARTH",

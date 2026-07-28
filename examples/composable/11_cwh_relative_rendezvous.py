@@ -79,3 +79,7 @@ save_relative_trajectory_html(
     phase_segments=solution.result.info["phase_segments"],
     title="CWH rendezvous in the chief RIC frame",
 )
+solution.viz().save_diagnostics_html(
+    "diagnostics_composable_cwh_relative_rendezvous.html",
+    title="CWH relative state over time",
+)

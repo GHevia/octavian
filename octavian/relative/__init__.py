@@ -1,4 +1,4 @@
-"""Linearized relative-motion models and LVLH coordinate transforms."""
+"""Linear and nonlinear relative-motion models and representation transforms."""
 
 from .cwh import (
     ClohessyWiltshire,
@@ -13,6 +13,7 @@ from .elements import (
     relative_orbital_elements_to_absolute_state,
 )
 from .guessing import CWHRendezvousSeed, cwh_dense_guess, select_cwh_rendezvous_seed
+from .model import NonlinearRelative
 from .propagation import RelativePropagationResult, propagate_relative_numerical
 from .solar import (
     SolarDirectionTable,
@@ -34,6 +35,7 @@ from .transforms import (
 __all__ = [
     "ClohessyWiltshire",
     "CWHRendezvousSeed",
+    "NonlinearRelative",
     "RelativePropagationResult",
     "RelativeOrbitalElements",
     "SolarDirectionTable",

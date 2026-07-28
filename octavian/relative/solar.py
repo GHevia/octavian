@@ -16,10 +16,11 @@ from .transforms import ric_basis
 
 @dataclass(frozen=True, slots=True)
 class SolarDirectionTable:
-    """Sampled unit vectors from the chief toward the Sun in RIC."""
+    """Sampled Sun geometry for relative constraints and diagnostics."""
 
     times_s: NDArray[np.float64]
     directions_ric: NDArray[np.float64]
+    sun_positions_eci_m: NDArray[np.float64] | None = None
 
     def __post_init__(self) -> None:
         times = np.asarray(self.times_s, dtype=float).reshape(-1)
@@ -33,6 +34,13 @@ class SolarDirectionTable:
             raise ValueError("SolarDirectionTable directions must have non-zero norm")
         object.__setattr__(self, "times_s", times)
         object.__setattr__(self, "directions_ric", directions / norms[:, None])
+        if self.sun_positions_eci_m is not None:
+            positions = np.asarray(self.sun_positions_eci_m, dtype=float)
+            if positions.shape != (times.size, 3) or not np.all(np.isfinite(positions)):
+                raise ValueError(
+                    "SolarDirectionTable sun positions must have shape (N, 3)"
+                )
+            object.__setattr__(self, "sun_positions_eci_m", positions)
 
     def at(self, times_s: ArrayLike) -> NDArray[np.float64]:
         """Interpolate and renormalize Sun directions at elapsed times."""
@@ -49,6 +57,26 @@ class SolarDirectionTable:
         norms = np.linalg.norm(interpolated, axis=1)
         result = interpolated / norms[:, None]
         return result.reshape((*query.shape, 3))
+
+    def sun_position_at(self, times_s: ArrayLike) -> NDArray[np.float64]:
+        """Interpolate the SPICE-derived Sun position in ECI."""
+        if self.sun_positions_eci_m is None:
+            raise ValueError("SolarDirectionTable does not contain ECI Sun positions")
+        query = np.asarray(times_s, dtype=float)
+        if np.any(query < self.times_s[0]) or np.any(query > self.times_s[-1]):
+            raise ValueError("Requested Sun position lies outside the sampled time range")
+        flat_query = query.reshape(-1)
+        interpolated = np.column_stack(
+            [
+                np.interp(
+                    flat_query,
+                    self.times_s,
+                    self.sun_positions_eci_m[:, component],
+                )
+                for component in range(3)
+            ]
+        )
+        return interpolated.reshape((*query.shape, 3))
 
 
 def circular_chief_state(
@@ -105,4 +133,8 @@ def sample_solar_directions_ric(
         sun_line_eci = sun_position_m - chief.r_m
         sun_line_ric = ric_basis(chief.r_m, chief.v_mps) @ sun_line_eci
         directions[index] = sun_line_ric / np.linalg.norm(sun_line_ric)
-    return SolarDirectionTable(times_s=times_s, directions_ric=directions)
+    return SolarDirectionTable(
+        times_s=times_s,
+        directions_ric=directions,
+        sun_positions_eci_m=body_positions["sun"],
+    )

@@ -161,6 +161,8 @@ def build_third_body_tables(
             name=body,
             mu_m3ps2=SUPPORTED_THIRD_BODY_MU_M3PS2[body],
             position_table=table,
+            times_s=times_s,
+            positions_eci_m=positions_m[body],
         )
     return tables
 

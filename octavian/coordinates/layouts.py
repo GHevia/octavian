@@ -113,6 +113,30 @@ RELATIVE_CARTESIAN = StateLayout(
     state_groups=_CARTESIAN_GROUPS,
 )
 
+COUPLED_RELATIVE_ECI = StateLayout(
+    name="coupled_relative_eci",
+    state_names=(
+        "chief_rx",
+        "chief_ry",
+        "chief_rz",
+        "chief_vx",
+        "chief_vy",
+        "chief_vz",
+        "deputy_rx",
+        "deputy_ry",
+        "deputy_rz",
+        "deputy_vx",
+        "deputy_vy",
+        "deputy_vz",
+    ),
+    state_groups=(
+        ("chief_position", (0, 1, 2)),
+        ("chief_velocity", (3, 4, 5)),
+        ("deputy_position", (6, 7, 8)),
+        ("deputy_velocity", (9, 10, 11)),
+    ),
+)
+
 CARTESIAN_MASS = StateLayout(
     name="cartesian_mass",
     state_names=(*_CARTESIAN_STATES, "mass"),

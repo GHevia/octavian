@@ -14,6 +14,7 @@ from ...coordinates import (
     CARTESIAN,
     CARTESIAN_MASS,
     CARTESIAN_MASS_THRUST,
+    COUPLED_RELATIVE_ECI,
     RELATIVE_CARTESIAN,
     StateLayout,
 )
@@ -25,12 +26,14 @@ from ...dynamics import (
     TwoBodyECI,
 )
 from ...phase import Phase
-from ...relative import ClohessyWiltshire
+from ...relative import ClohessyWiltshire, NonlinearRelative
 from ...relative.dynamics import (
     ClohessyWiltshireODE,
-    PerturbedClohessyWiltshireODE,
-    RelativeReferenceTable,
+    CoupledRelativeODE,
 )
+from ...relative.solar import circular_chief_state
+from ...relative.transforms import relative_to_inertial_state
+from ...specs import BoundaryState
 from ...variables import ImpulsiveDeltaV
 from ..third_bodies import phase_perturbations, tables_for_phase
 
@@ -133,6 +136,18 @@ def cwh_model(phase: Phase) -> ClohessyWiltshire | None:
     return model if isinstance(model, ClohessyWiltshire) else None
 
 
+def nonlinear_relative_model(phase: Phase) -> NonlinearRelative | None:
+    """Return the phase's full nonlinear relative model, when configured."""
+    dynamics = phase.dynamics
+    model = dynamics.model if dynamics is not None else None
+    return model if isinstance(model, NonlinearRelative) else None
+
+
+def is_relative_phase(phase: Phase) -> bool:
+    """Return whether a phase uses either full relative dynamics or CWH."""
+    return cwh_model(phase) is not None or nonlinear_relative_model(phase) is not None
+
+
 def mass_state_phase_indices(phases: Sequence[Phase]) -> set[int]:
     """Return phases that carry mass across a continuous powered chain."""
     powered_indices = [idx for idx, phase in enumerate(phases) if is_powered_phase(phase)]
@@ -207,7 +222,6 @@ def ode_for_phase(
     *,
     carries_mass: bool = False,
     third_body_tables: Sequence[ThirdBodyTable] = (),
-    relative_reference_table: RelativeReferenceTable | None = None,
 ):
     """Construct the ASSET ODE selected by phase intent and environment."""
     dynamics = phase.dynamics
@@ -219,21 +233,25 @@ def ode_for_phase(
         if is_powered_phase(phase) or carries_mass:
             raise ValueError("CWH phases do not yet support finite-thrust or mass states.")
         if perturbations.j2 or third_body_tables:
-            if relative_reference_table is None:
-                raise ValueError(
-                    "Perturbed CWH dynamics require a sampled chief reference table"
-                )
-            return PerturbedClohessyWiltshireODE(
-                mean_motion_radps=relative_model.mean_motion_radps,
-                reference_table=relative_reference_table,
-                j2=bool(perturbations.j2),
-                mu_m3ps2=float(dynamics.mu_m3ps2),
-                central_body_radius_m=float(dynamics.central_body_radius_m),
-                j2_coefficient=float(dynamics.j2_coefficient),
-                third_body_tables=tuple(third_body_tables),
+            raise ValueError(
+                "Dynamics.cwh is an unforced linear model and cannot include "
+                "perturbations. Use Dynamics.relative(...) for exact nonlinear "
+                "chief/deputy propagation with J2 or third-body gravity."
             )
         return ClohessyWiltshireODE(
             mean_motion_radps=relative_model.mean_motion_radps
+        )
+    if nonlinear_relative_model(phase) is not None:
+        if is_powered_phase(phase) or carries_mass:
+            raise ValueError(
+                "Nonlinear relative phases do not yet support finite-thrust or mass states."
+            )
+        return CoupledRelativeODE(
+            mu_m3ps2=float(dynamics.mu_m3ps2),
+            j2=bool(perturbations.j2),
+            central_body_radius_m=float(dynamics.central_body_radius_m),
+            j2_coefficient=float(dynamics.j2_coefficient),
+            third_body_tables=tuple(third_body_tables),
         )
     if is_powered_phase(phase):
         thruster = first_thruster(phase)
@@ -275,6 +293,8 @@ def layout_for_phase(phase: Phase, *, carries_mass: bool = False) -> StateLayout
     """Return the named state/control layout required by a phase."""
     if cwh_model(phase) is not None:
         return RELATIVE_CARTESIAN
+    if nonlinear_relative_model(phase) is not None:
+        return COUPLED_RELATIVE_ECI
     if is_powered_phase(phase):
         return CARTESIAN_MASS_THRUST
     if carries_mass:
@@ -296,6 +316,10 @@ def trajectory_rvt(raw_traj: np.ndarray, layout: StateLayout | int) -> np.ndarra
     """Return the public ``[R, V, t]`` view of an ASSET trajectory."""
     raw = np.asarray(raw_traj, dtype=float)
     if isinstance(layout, StateLayout):
+        if layout == COUPLED_RELATIVE_ECI:
+            raise ValueError(
+                "Coupled relative trajectories require phase-aware RIC conversion"
+            )
         columns = layout.public_rvt_columns()
         time_column = layout.time_column
     else:
@@ -377,6 +401,17 @@ def prepare_phase_guess(
         carries_mass=carries_mass,
     )
     propulsion_kind = powered_phase_kind(phase)
+    nonlinear_model = nonlinear_relative_model(phase)
+    if nonlinear_model is not None:
+        rows = [np.asarray(row, dtype=float).reshape(-1) for row in guess]
+        compiled_width = layout.state_dim + 1
+        if rows and all(row.size == compiled_width for row in rows):
+            return rows, layout, None
+        return (
+            augment_nonlinear_relative_guess(rows, nonlinear_model),
+            layout,
+            None,
+        )
     if propulsion_kind is None and not carries_mass:
         return [np.asarray(row, dtype=float) for row in guess], layout, None
 
@@ -417,6 +452,44 @@ def prepare_phase_guess(
     )
 
 
+def augment_nonlinear_relative_guess(
+    relative_guess: Sequence[np.ndarray],
+    model: NonlinearRelative,
+) -> list[np.ndarray]:
+    """Lift public RIC seed rows into coupled chief/deputy ECI rows.
+
+    CWH supplies a fast, smooth initial guess only.  The compiled ODE and all
+    constraints remain full nonlinear dynamics.
+    """
+    augmented: list[np.ndarray] = []
+    for raw_row in relative_guess:
+        row = np.asarray(raw_row, dtype=float).reshape(-1)
+        if row.size != 7:
+            raise ValueError(
+                "A nonlinear relative initial guess must contain "
+                "[R, I, C, Rdot, Idot, Cdot, t] rows"
+            )
+        chief = circular_chief_state(
+            model.chief_initial_state_eci,
+            float(row[6]),
+            model.mean_motion_radps,
+        )
+        relative = BoundaryState(row[0:3], row[3:6])
+        deputy = relative_to_inertial_state(chief, relative)
+        augmented.append(
+            np.hstack(
+                [
+                    chief.r_m,
+                    chief.v_mps,
+                    deputy.r_m,
+                    deputy.v_mps,
+                    float(row[6]),
+                ]
+            )
+        )
+    return augmented
+
+
 def make_asset_phase(
     phase: Phase,
     guess: Sequence[np.ndarray],
@@ -424,7 +497,6 @@ def make_asset_phase(
     *,
     carries_mass: bool = False,
     third_body_tables: dict[str, ThirdBodyTable] | None = None,
-    relative_reference_table: RelativeReferenceTable | None = None,
 ):
     """Compile one user phase into an ASSET phase plus dimensional metadata."""
     prepared_guess, layout, propulsion_kind = prepare_phase_guess(
@@ -436,7 +508,6 @@ def make_asset_phase(
         phase,
         carries_mass=carries_mass,
         third_body_tables=tables_for_phase(phase, third_body_tables or {}),
-        relative_reference_table=relative_reference_table,
     )
     asset_phase = ode.phase(Tmodes.LGL3, prepared_guess, int(nsegs))
     return asset_phase, layout, propulsion_kind

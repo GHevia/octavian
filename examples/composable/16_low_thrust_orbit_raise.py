@@ -1,7 +1,7 @@
-"""Composable example 13: fuel-optimal low-thrust orbit raising.
+"""Composable example 16: fuel-optimal low-thrust orbit raising.
 
 Run:
-  python examples/composable/13_low_thrust_orbit_raise.py
+  python examples/composable/16_low_thrust_orbit_raise.py
 """
 
 from __future__ import annotations
@@ -116,5 +116,9 @@ save_trajectory_html(
     output_path,
     phase_segments=solution.result.info["phase_segments"],
     title=mission.name,
+)
+solution.viz().save_diagnostics_html(
+    "diagnostics_composable_low_thrust_orbit_raise.html",
+    title="Low-thrust orbit-raise diagnostics",
 )
 print(f"Wrote: {output_path}")
