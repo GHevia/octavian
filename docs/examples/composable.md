@@ -483,13 +483,15 @@ Path: `examples/composable/18_safety_ellipse_transfer.py`
 This example defines both boundary orbits with D'Amico relative orbital
 elements, converts them to RIC states at their respective chief epochs, and
 optimizes a fixed-duration, two-impulse transfer between them. The transfer
-uses exact `coupled_ric` dynamics because native `damico` propagation is an
+uses exact `coupled_eci` dynamics because native `damico` propagation is an
 unforced drift model and cannot represent an impulsive jump between arbitrary
-ROE sets. Both conversions remain relative; no absolute deputy constraint is
+ROE sets. Differential J2 and solar gravity are active throughout the
+transfer. Both conversions remain relative; no absolute deputy constraint is
 introduced.
 
-Analysis-only propagation extends the departure and arrival ROE sets into
-safety ellipses before and after the optimized transfer.
+Perturbed analysis-only propagation extends the departure and arrival ROE sets
+into safety ellipses before and after the optimized transfer using the same
+force model and epoch convention.
 
 Expected outputs:
 
@@ -510,3 +512,40 @@ Expected outputs:
 
 - `traj_composable_relative_finite_burn_coast.html`
 - `diagnostics_composable_relative_finite_burn_coast.html`
+
+## 20: Relative Three-Burn Transfer
+
+Path: `examples/composable/20_relative_three_burn_transfer.py`
+
+This example exposes the phase topology used for a three-burn design: an
+initial natural coast, a departure impulse, a free intermediate impulse at a
+RIC position waypoint, and a terminal arrival impulse. Every phase duration is
+bounded independently with `tof_is_relative=True`.
+
+CWH keeps the broad design-space example fast and readable. Replace its shared
+`Dynamics.cwh(...)` declaration with `Dynamics.relative(...)` to refine the
+same phases using exact nonlinear coupled propagation and optional
+perturbations.
+
+Expected outputs:
+
+- `traj_composable_relative_three_burn.html`
+- `diagnostics_composable_relative_three_burn.html`
+
+## 21: Perturbed Relative-Element Propagation
+
+Path: `examples/composable/21_perturbed_relative_element_propagation.py`
+
+This optimizer-free example starts from D'Amico relative orbital elements and
+compares analytical two-body drift with numerical J2 and solar propagation.
+For the perturbed case, Octavian constructs the absolute deputy state,
+propagates chief and deputy under the same force-model declarations, then
+reconstructs osculating ROEs and RIC histories.
+
+The same API accepts backward time histories when zero is the final sample,
+which is useful for drawing pre-transfer coasts from an element boundary.
+
+Expected outputs:
+
+- `traj_perturbed_relative_elements.html`
+- `diagnostics_perturbed_relative_elements.html`

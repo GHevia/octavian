@@ -34,6 +34,7 @@ from octavian.relative import (
     nonlinear_relative_ric_derivative,
     propagate_cwh,
     propagate_nonlinear_relative_ric,
+    propagate_relative_elements_to_ric,
     propagate_relative_numerical,
     propagate_relative_orbital_elements,
     relative_orbital_elements_to_absolute_state,
@@ -468,6 +469,138 @@ def test_j2_changes_coupled_relative_propagation() -> None:
         np.linalg.norm(perturbed.relative_states_ric[-1] - unperturbed.relative_states_ric[-1])
         > 1e-4
     )
+
+
+def test_relative_element_propagation_accepts_j2_force_model() -> None:
+    chief_position, chief_velocity = classical_to_cartesian(
+        a_m=7_000_000.0,
+        e=0.001,
+        inc_deg=40.0,
+        raan_deg=20.0,
+        argp_deg=10.0,
+        true_anomaly_deg=30.0,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    chief = state(chief_position, chief_velocity)
+    initial = RelativeOrbitalElements(
+        delta_a=2.0e-4,
+        delta_lambda_rad=-0.004,
+        delta_ex=1.0e-4,
+        delta_ey=-2.0e-4,
+        delta_ix_rad=3.0e-4,
+        delta_iy_rad=-4.0e-4,
+    )
+    times = np.asarray([0.0, 1_800.0, 3_600.0])
+    unperturbed = propagate_relative_orbital_elements(
+        initial,
+        times,
+        chief_initial_state_eci=chief,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    perturbed = propagate_relative_orbital_elements(
+        initial,
+        times,
+        chief_initial_state_eci=chief,
+        mu_m3ps2=EARTH.mu_m3ps2,
+        perturbations=Perturbations(j2=True),
+        max_step_s=5.0,
+    )
+    ric_history = propagate_relative_elements_to_ric(
+        initial,
+        times,
+        chief_initial_state_eci=chief,
+        mu_m3ps2=EARTH.mu_m3ps2,
+        perturbations=Perturbations(j2=True),
+        max_step_s=5.0,
+    )
+
+    np.testing.assert_allclose(perturbed[0, 0:6], initial.as_vector(), atol=2.0e-14)
+    assert np.linalg.norm(perturbed[-1, 0:6] - unperturbed[-1, 0:6]) > 1.0e-5
+    np.testing.assert_allclose(ric_history[:, 6], times)
+    assert np.all(np.isfinite(ric_history))
+
+
+def test_relative_element_perturbations_require_zero_time_endpoint() -> None:
+    radius_m = EARTH.mean_radius_m + 400_000.0
+    chief = state(
+        [radius_m, 0.0, 0.0],
+        [0.0, np.sqrt(EARTH.mu_m3ps2 / radius_m), 0.0],
+    )
+    initial = RelativeOrbitalElements(
+        delta_a=0.0,
+        delta_lambda_rad=-0.001,
+        delta_ex=1.0e-4,
+        delta_ey=0.0,
+        delta_ix_rad=0.0,
+        delta_iy_rad=0.0,
+    )
+
+    with pytest.raises(ValueError, match="first or last"):
+        propagate_relative_elements_to_ric(
+            initial,
+            [10.0, 20.0],
+            chief_initial_state_eci=chief,
+            mu_m3ps2=EARTH.mu_m3ps2,
+            perturbations=Perturbations(j2=True),
+        )
+
+
+def test_relative_element_perturbations_propagate_backward_to_initial_epoch() -> None:
+    chief_position, chief_velocity = classical_to_cartesian(
+        a_m=7_000_000.0,
+        e=0.001,
+        inc_deg=40.0,
+        raan_deg=20.0,
+        argp_deg=10.0,
+        true_anomaly_deg=30.0,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    chief = state(chief_position, chief_velocity)
+    initial = RelativeOrbitalElements(
+        delta_a=2.0e-4,
+        delta_lambda_rad=-0.002,
+        delta_ex=1.0e-4,
+        delta_ey=-2.0e-4,
+        delta_ix_rad=3.0e-4,
+        delta_iy_rad=-4.0e-4,
+    )
+    times = np.asarray([-600.0, -300.0, 0.0])
+
+    history = propagate_relative_orbital_elements(
+        initial,
+        times,
+        chief_initial_state_eci=chief,
+        mu_m3ps2=EARTH.mu_m3ps2,
+        perturbations=Perturbations(j2=True),
+        max_step_s=5.0,
+    )
+
+    np.testing.assert_allclose(history[:, 6], times)
+    np.testing.assert_allclose(history[-1, 0:6], initial.as_vector(), atol=2.0e-14)
+    assert np.all(np.isfinite(history))
+
+
+def test_coupled_propagation_accepts_absolute_deputy_initial_state() -> None:
+    radius_m = EARTH.mean_radius_m + 400_000.0
+    chief = state(
+        [radius_m, 0.0, 0.0],
+        [0.0, np.sqrt(EARTH.mu_m3ps2 / radius_m), 0.0],
+    )
+    deputy = state(
+        [radius_m + 100.0, 0.0, 0.0],
+        [0.0, np.sqrt(EARTH.mu_m3ps2 / (radius_m + 100.0)), 0.0],
+    )
+
+    result = propagate_relative_numerical(
+        chief,
+        None,
+        [0.0, 10.0],
+        deputy_initial_eci=deputy,
+        perturbations=Perturbations(j2=True),
+    )
+
+    np.testing.assert_allclose(result.deputy_states_eci[0, 0:3], deputy.r_m)
+    np.testing.assert_allclose(result.deputy_states_eci[0, 3:6], deputy.v_mps)
 
 
 def test_exact_nonlinear_ric_matches_coupled_two_body_propagation() -> None:

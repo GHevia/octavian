@@ -29,6 +29,8 @@ def _fake_solution() -> Solution:
         ("examples/quick/03_time_tradeoff.py", 2),
         ("examples/quick/04_batch_targets.py", 7),
         ("examples/quick/05_sun_centered_transfer.py", 1),
+        ("examples/quick/06_relative_hop.py", 1),
+        ("examples/quick/07_relative_transfer_chain.py", 1),
     ],
 )
 def test_quick_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int) -> None:
@@ -48,6 +50,16 @@ def test_quick_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script
     monkeypatch.setattr("octavian.mission.Mission.solve", fake_solve, raising=True)
     monkeypatch.setattr("octavian.viz.plotly.save_trajectory_html", fake_plot, raising=True)
     monkeypatch.setattr("octavian.viz.save_trajectory_html", fake_plot, raising=True)
+    monkeypatch.setattr(
+        "octavian.viz.plotly.save_trajectory_diagnostics_html",
+        fake_plot,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "octavian.viz.save_trajectory_diagnostics_html",
+        fake_plot,
+        raising=True,
+    )
 
     runpy.run_path(str(ROOT / script_rel), run_name="__main__")
 
@@ -74,3 +86,20 @@ def test_quick_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script
     elif script_rel.endswith("05_sun_centered_transfer.py"):
         assert missions[0].phases[0].dynamics.central_body.name == "sun"
         assert missions[0].phases[0].dynamics.frame.origin == "sun"
+    elif script_rel.endswith("06_relative_hop.py"):
+        mission = missions[0]
+        assert [phase.name for phase in mission.phases] == [
+            "departure_coast",
+            "transfer_1",
+        ]
+        assert mission.phases[1].link.is_impulsive()
+        assert mission.phases[0].dynamics.active_perturbations().j2 is True
+    elif script_rel.endswith("07_relative_transfer_chain.py"):
+        mission = missions[0]
+        assert [phase.name for phase in mission.phases] == [
+            "transfer_1",
+            "target_1_coast",
+            "transfer_2",
+        ]
+        assert all(phase.tof_is_relative for phase in mission.phases)
+        assert [len(phase.variables) for phase in mission.phases] == [1, 1, 2]

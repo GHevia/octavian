@@ -1945,8 +1945,22 @@ def solve_composable_mission(
                 st_val = constraint_compiler.state_boundary_value(st)
                 groups = constraint_compiler.state_groups(st)
 
-                # If an impulsive Δv is declared at this boundary, we drop V from the constraint
-                if _has_impulsive_var(ph, loc) and "V" in groups:
+                # At mission endpoints, an impulsive declaration turns the
+                # requested velocity into a delta-v target. At a linked Front,
+                # however, the impulse is the velocity jump across the link;
+                # retaining a declared V constraint lets a post-arrival coast
+                # begin on the exact requested orbit.
+                linked_front_impulse = (
+                    loc == "Front"
+                    and ph.previous is not None
+                    and ph.link is not None
+                    and not ph.link.is_continuous()
+                )
+                if (
+                    _has_impulsive_var(ph, loc)
+                    and "V" in groups
+                    and not linked_front_impulse
+                ):
                     groups = tuple(g for g in groups if g != "V")
 
                 if relative_expressions is not None:
@@ -2045,7 +2059,19 @@ def solve_composable_mission(
         if bounds is not None:
             tmin, tmax = map(float, bounds)
             add_back_time_bound(ap, b.state_dim, tmin, tmax)
-            ap.addLowerDeltaTimeBound(0.1)
+            declared_phase = b.ph
+            if (
+                declared_phase.tof_is_relative
+                and declared_phase.tof_bounds_s is not None
+            ):
+                duration_min_s, duration_max_s = map(
+                    float,
+                    declared_phase.tof_bounds_s,
+                )
+                ap.addLowerDeltaTimeBound(max(duration_min_s, 0.1))
+                ap.addUpperDeltaTimeBound(duration_max_s)
+            else:
+                ap.addLowerDeltaTimeBound(0.1)
 
     # Apply links and link objectives
     for b in built:

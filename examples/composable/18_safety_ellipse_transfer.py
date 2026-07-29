@@ -1,18 +1,20 @@
 """Composable example 18: transfer between two D'Amico ROE sets.
 
 The departure and arrival conditions are authored as D'Amico relative orbital
-elements (ROEs).  Each set is converted to a Cartesian RIC boundary state at
-its boundary epoch, then the transfer is optimized with exact coupled-RIC
+elements (ROEs). Each set is converted to a Cartesian RIC boundary state at
+its boundary epoch, then the transfer is optimized with exact coupled-ECI
 dynamics and impulsive maneuvers at the two boundaries.
 
 Native ``damico`` propagation is intentionally not used for the transfer:
 that model describes unforced, two-body ROE drift and cannot represent the
-instantaneous ROE changes produced by an impulse.  ``coupled_ric`` instead
-propagates the chief and deputy together while keeping the public states,
-constraints, maneuver components, and plots in the RIC frame.
+instantaneous ROE changes produced by an impulse. ``coupled_eci`` instead
+propagates the chief and deputy independently with J2 and solar gravity while
+keeping the public states, constraints, maneuver components, and plots in RIC.
 """
 
 from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
@@ -20,6 +22,7 @@ from octavian import (
     EARTH,
     Dynamics,
     Mission,
+    Perturbations,
     Phase,
     Spacecraft,
     constraints,
@@ -31,7 +34,7 @@ from octavian.astro import classical_to_cartesian
 from octavian.relative import (
     RelativeOrbitalElements,
     propagate_relative_elements_to_ric,
-    propagate_two_body_state,
+    propagate_relative_numerical,
     relative_orbital_elements_to_relative_state,
 )
 from octavian.solvers import SolverOptions
@@ -47,6 +50,8 @@ TRANSFER_DURATION_S = 1_800.0
 # target epoch while still satisfying the API's strict lower < upper rule.
 TRANSFER_TIME_TOLERANCE_S = 1.0e-3
 CHIEF_SEMI_MAJOR_AXIS_M = 7_000_000.0
+INITIAL_EPOCH = datetime(2026, 1, 1, tzinfo=timezone.utc)
+FORCE_MODEL = Perturbations(j2=True, sun=True)
 
 chief_position, chief_velocity = classical_to_cartesian(
     a_m=CHIEF_SEMI_MAJOR_AXIS_M,
@@ -73,38 +78,48 @@ departure_elements = RelativeOrbitalElements(
 arrival_elements = RelativeOrbitalElements(
     delta_a=0.0,
     delta_lambda_rad=-1_000.0 / CHIEF_SEMI_MAJOR_AXIS_M,
-    delta_ex=700.0 / CHIEF_SEMI_MAJOR_AXIS_M,
+    delta_ex=200.0 / CHIEF_SEMI_MAJOR_AXIS_M,
     delta_ey=100.0 / CHIEF_SEMI_MAJOR_AXIS_M,
-    delta_ix_rad=700.0 / CHIEF_SEMI_MAJOR_AXIS_M,
+    delta_ix_rad=200.0 / CHIEF_SEMI_MAJOR_AXIS_M,
     delta_iy_rad=200.0 / CHIEF_SEMI_MAJOR_AXIS_M,
 )
 
-# An ROE set maps to a different RIC state as the chief advances, so convert
-# each endpoint using the chief state at that endpoint's epoch.
+# An ROE set maps to a different RIC state as the chief advances. Propagate the
+# chief to the target epoch with the same force model used by the optimizer.
 departure_ric = relative_orbital_elements_to_relative_state(
     chief_eci,
     departure_elements,
     mu_m3ps2=EARTH.mu_m3ps2,
 )
-arrival_chief_eci = propagate_two_body_state(
+chief_history = propagate_relative_numerical(
     chief_eci,
-    TRANSFER_DURATION_S,
-    EARTH.mu_m3ps2,
+    None,
+    [0.0, TRANSFER_DURATION_S],
+    deputy_initial_eci=chief_eci,
+    perturbations=FORCE_MODEL,
+    initial_epoch=INITIAL_EPOCH,
+    max_step_s=30.0,
+    ephemeris_step_s=300.0,
+)
+arrival_chief_eci = state(
+    chief_history.chief_states_eci[-1, 0:3],
+    chief_history.chief_states_eci[-1, 3:6],
 )
 arrival_ric = relative_orbital_elements_to_relative_state(
     arrival_chief_eci,
     arrival_elements,
     mu_m3ps2=EARTH.mu_m3ps2,
 )
-
 transfer = Phase(
     name="safety_ellipse_transfer",
     mode="relative_coast",
     spacecraft=Spacecraft(name="Deputy", dry_mass_kg=250.0),
     dynamics=Dynamics.relative(
+        chief_name="Chief",
         chief_initial_state_eci=chief_eci,
-        propagation_mode="coupled_ric",
-        reference_length_m=7_000.0,
+        propagation_mode="coupled_eci",
+        perturbations=FORCE_MODEL,
+        third_body_table_step_s=300.0,
     ),
     initial_state=departure_ric,
     final_state=arrival_ric,
@@ -125,6 +140,7 @@ mission = Mission(
     name="Composable: safety-ellipse ROE transfer",
     phases=[transfer],
     objectives=[objectives.minimize_total_delta_v()],
+    initial_epoch=INITIAL_EPOCH,
     mesh_nsegs_transfer=40,
     lambert_grid_size=60,
     solver_options=SolverOptions(print_level=0),
@@ -150,12 +166,20 @@ pre_coast_traj = propagate_relative_elements_to_ric(
     pre_coast_times_s,
     chief_initial_state_eci=chief_eci,
     mu_m3ps2=EARTH.mu_m3ps2,
+    perturbations=FORCE_MODEL,
+    initial_epoch=INITIAL_EPOCH,
+    max_step_s=30.0,
+    ephemeris_step_s=300.0,
 )
 post_coast_traj = propagate_relative_elements_to_ric(
     arrival_elements,
     post_coast_elapsed_s,
     chief_initial_state_eci=arrival_chief_eci,
     mu_m3ps2=EARTH.mu_m3ps2,
+    perturbations=FORCE_MODEL,
+    initial_epoch=INITIAL_EPOCH + timedelta(seconds=TRANSFER_DURATION_S),
+    max_step_s=30.0,
+    ephemeris_step_s=300.0,
 )
 
 # Shift the zero-based histories onto one mission-elapsed plot axis beginning

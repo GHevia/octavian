@@ -18,7 +18,11 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from ..bodies import EARTH, MOON, SUN, CelestialBody
-from ..data.ephemeris import DEFAULT_EPHEMERIS_BSP, sample_sun_moon_positions_eci_tod
+from ..data.ephemeris import (
+    DEFAULT_EPHEMERIS_BSP,
+    epoch_to_et,
+    sample_sun_moon_positions_eci_tod,
+)
 from ..dynamics import j2_acceleration_components, third_body_acceleration_components
 from ..specs import BoundaryState
 from .transforms import (
@@ -82,9 +86,10 @@ class RelativePropagationResult:
 
 def propagate_relative_numerical(
     chief_initial_eci: BoundaryState,
-    relative_initial_ric: BoundaryState,
+    relative_initial_ric: BoundaryState | None,
     times_s: ArrayLike,
     *,
+    deputy_initial_eci: BoundaryState | None = None,
     central_body: CelestialBody = EARTH,
     perturbations: Any | None = None,
     initial_epoch: str | datetime | float | int | None = None,
@@ -102,8 +107,16 @@ def propagate_relative_numerical(
 
     Args:
         chief_initial_eci: Chief absolute Cartesian state at elapsed time zero.
-        relative_initial_ric: Deputy state relative to the chief in RIC.
-        times_s: Strictly increasing output times beginning at zero.
+        relative_initial_ric: Deputy state relative to the chief in RIC. Pass
+            ``None`` when supplying ``deputy_initial_eci`` directly.
+        times_s: Strictly monotonic output times with zero at either endpoint.
+            Forward histories normally begin at zero; backward histories may
+            be requested as either ``[0, ..., negative]`` or
+            ``[negative, ..., 0]``.
+        deputy_initial_eci: Optional absolute deputy state at time zero. This
+            avoids a frame-velocity round trip when osculating elements define
+            the deputy under a perturbed force model. Exactly one deputy
+            initial-state representation must be supplied.
         central_body: Central-body constants used by gravity and J2.
         perturbations: An :class:`octavian.Perturbations` configuration.  J2,
             Moon, and Sun are supported; drag and SRP raise explicitly.
@@ -116,26 +129,39 @@ def propagate_relative_numerical(
     Returns:
         Absolute chief/deputy histories and the equivalent RIC history.
     """
-    output_times = np.asarray(times_s, dtype=float).reshape(-1)
-    if output_times.size < 1 or not np.all(np.isfinite(output_times)):
+    requested_times = np.asarray(times_s, dtype=float).reshape(-1)
+    if requested_times.size < 1 or not np.all(np.isfinite(requested_times)):
         raise ValueError("times_s must contain at least one finite value")
-    if not np.isclose(output_times[0], 0.0, atol=1.0e-12):
-        raise ValueError("times_s must begin at 0.0")
-    if output_times.size > 1 and np.any(np.diff(output_times) <= 0.0):
-        raise ValueError("times_s must be strictly increasing")
+    if np.isclose(requested_times[0], 0.0, atol=1.0e-12):
+        integration_times = requested_times
+        reverse_output = False
+    elif np.isclose(requested_times[-1], 0.0, atol=1.0e-12):
+        integration_times = requested_times[::-1]
+        reverse_output = True
+    else:
+        raise ValueError("times_s must have 0.0 at the first or last output")
+    if integration_times.size > 1:
+        differences = np.diff(integration_times)
+        if not (np.all(differences > 0.0) or np.all(differences < 0.0)):
+            raise ValueError("times_s must be strictly monotonic")
     maximum_step = float(max_step_s)
     ephemeris_step = float(ephemeris_step_s)
     if not np.isfinite(maximum_step) or maximum_step <= 0.0:
         raise ValueError("max_step_s must be finite and positive")
     if not np.isfinite(ephemeris_step) or ephemeris_step <= 0.0:
         raise ValueError("ephemeris_step_s must be finite and positive")
+    if (relative_initial_ric is None) == (deputy_initial_eci is None):
+        raise ValueError(
+            "Supply exactly one of relative_initial_ric or deputy_initial_eci"
+        )
 
     flags = _normalize_perturbations(perturbations)
     requested_bodies = flags["third_bodies"]
     body_positions = _build_body_position_interpolator(
         requested_bodies=requested_bodies,
         initial_epoch=initial_epoch,
-        duration_s=float(output_times[-1]),
+        start_time_s=float(np.min(integration_times)),
+        end_time_s=float(np.max(integration_times)),
         step_s=ephemeris_step,
         bsp_path=bsp_path,
     )
@@ -146,11 +172,14 @@ def propagate_relative_numerical(
         include_j2=flags["j2"],
         third_bodies=body_positions(0.0),
     )
-    deputy_initial_eci = relative_to_inertial_state(
-        chief_initial_eci,
-        relative_initial_ric,
-        chief_acceleration_mps2=initial_chief_acceleration,
-    )
+    if deputy_initial_eci is None:
+        if relative_initial_ric is None:  # guarded by the exclusive-input check
+            raise RuntimeError("Relative initial state validation failed")
+        deputy_initial_eci = relative_to_inertial_state(
+            chief_initial_eci,
+            relative_initial_ric,
+            chief_acceleration_mps2=initial_chief_acceleration,
+        )
     combined_state = np.hstack(
         [
             chief_initial_eci.r_m,
@@ -159,7 +188,7 @@ def propagate_relative_numerical(
             deputy_initial_eci.v_mps,
         ]
     ).astype(float)
-    absolute_history = np.empty((output_times.size, 12), dtype=float)
+    absolute_history = np.empty((integration_times.size, 12), dtype=float)
     absolute_history[0] = combined_state
 
     def derivative(time_s: float, state: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -191,9 +220,9 @@ def propagate_relative_numerical(
         )
 
     current_time = 0.0
-    for output_index, output_time in enumerate(output_times[1:], start=1):
+    for output_index, output_time in enumerate(integration_times[1:], start=1):
         interval = float(output_time - current_time)
-        substeps = max(1, int(np.ceil(interval / maximum_step)))
+        substeps = max(1, int(np.ceil(abs(interval) / maximum_step)))
         step = interval / substeps
         for _ in range(substeps):
             k1 = derivative(current_time, combined_state)
@@ -210,7 +239,7 @@ def propagate_relative_numerical(
     chief_states = absolute_history[:, 0:6]
     deputy_states = absolute_history[:, 6:12]
     relative_states = np.empty_like(chief_states)
-    for index, time_s in enumerate(output_times):
+    for index, time_s in enumerate(integration_times):
         chief = BoundaryState(chief_states[index, 0:3], chief_states[index, 3:6])
         deputy = BoundaryState(
             deputy_states[index, 0:3],
@@ -228,8 +257,12 @@ def propagate_relative_numerical(
             chief_acceleration_mps2=chief_acceleration,
         )
         relative_states[index] = np.hstack([relative.r_m, relative.v_mps])
+    if reverse_output:
+        chief_states = chief_states[::-1].copy()
+        deputy_states = deputy_states[::-1].copy()
+        relative_states = relative_states[::-1].copy()
     return RelativePropagationResult(
-        times_s=output_times,
+        times_s=requested_times,
         chief_states_eci=chief_states,
         deputy_states_eci=deputy_states,
         relative_states_ric=relative_states,
@@ -467,7 +500,8 @@ def _build_body_position_interpolator(
     *,
     requested_bodies: tuple[str, ...],
     initial_epoch: str | datetime | float | int | None,
-    duration_s: float,
+    start_time_s: float,
+    end_time_s: float,
     step_s: float,
     bsp_path: str | Path,
 ):
@@ -475,14 +509,16 @@ def _build_body_position_interpolator(
         return lambda _time_s: {}
     if initial_epoch is None:
         raise ValueError("initial_epoch is required for Moon or Sun relative perturbations")
+    duration_s = float(end_time_s - start_time_s)
     if duration_s <= 0.0:
-        raise ValueError("Moon or Sun perturbations require a positive propagation duration")
+        raise ValueError("Moon or Sun perturbations require a nonzero propagation span")
     table_times, table_positions = sample_sun_moon_positions_eci_tod(
-        initial_epoch=initial_epoch,
+        initial_epoch=epoch_to_et(initial_epoch) + float(start_time_s),
         duration_s=duration_s,
         step_s=step_s,
         bsp_path=bsp_path,
     )
+    table_times = table_times + float(start_time_s)
 
     def interpolate(time_s: float) -> dict[str, NDArray[np.float64]]:
         """Interpolate requested third-body positions at elapsed time."""

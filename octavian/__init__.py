@@ -34,7 +34,12 @@ from .mission import Mission
 from .models import Dynamics, Perturbations, RetryPolicy, RunPlan, SolveConfig
 from .objectives import Objective
 from .phase import Phase
-from .quick import state, two_burn_rendezvous
+from .quick import (
+    relative_hop,
+    relative_transfer_chain,
+    state,
+    two_burn_rendezvous,
+)
 from .relative import ClohessyWiltshire, NonlinearRelative, RelativePropagationMode
 from .solution import Solution
 from .solvers import SolverOptions
@@ -80,6 +85,8 @@ __all__ = [
     "mission_from_dict",
     # quick + conops
     "two_burn_rendezvous",
+    "relative_hop",
+    "relative_transfer_chain",
     "state",
     "rendezvous_two_impulse",
     "rendezvous_precoast_then_transfer",

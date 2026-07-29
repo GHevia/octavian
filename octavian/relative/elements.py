@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from ..astro.kepler import cartesian_to_classic, classical_to_cartesian
+from ..bodies import EARTH, CelestialBody
+from ..bodies import resolve as resolve_body
+from ..data.ephemeris import DEFAULT_EPHEMERIS_BSP
+from ..models import Perturbations
 from ..specs import BoundaryState
 from .transforms import inertial_to_relative_state, relative_to_inertial_state
 
@@ -375,29 +381,85 @@ def propagate_relative_orbital_elements(
     chief_initial_state_eci: BoundaryState,
     mu_m3ps2: float,
     representation: str = "damico",
+    central_body: CelestialBody | str = EARTH,
+    perturbations: Perturbations | None = None,
+    initial_epoch: str | datetime | float | int | None = None,
+    max_step_s: float = 10.0,
+    ephemeris_step_s: float = 600.0,
+    bsp_path: str | Path = DEFAULT_EPHEMERIS_BSP,
 ) -> NDArray[np.float64]:
-    """Propagate native two-body relative elements at requested elapsed times.
+    """Propagate relative elements at requested elapsed times.
 
     The returned rows contain six relative elements followed by elapsed time.
-    The propagation is exact for the osculating two-body element definitions:
-    all elements remain constant except D'Amico ``δλ`` or classical ``ΔM``.
+    Without ``perturbations``, the fast analytical two-body model keeps every
+    element constant except D'Amico ``δλ`` or classical ``ΔM``. With a
+    perturbation configuration, the chief and deputy are instead propagated
+    as coupled absolute states and converted back to osculating relative
+    elements at every requested output time.
 
     Args:
         initial_elements: Initial D'Amico or classical relative elements.
-        times_s: Finite elapsed output times.
+        times_s: Finite elapsed output times. Perturbed propagation requires
+            strictly monotonic values with zero at one endpoint.
         chief_initial_state_eci: Chief Cartesian state at elapsed time zero.
         mu_m3ps2: Central-body gravitational parameter.
         representation: ``"damico"`` or ``"classical_elements"``.
+        central_body: Body constants used by numerical central gravity and J2.
+        perturbations: Optional differential J2, Moon, or Sun configuration.
+            SRP and drag are not yet supported by the numerical propagator.
+        initial_epoch: UTC or SPICE ET at time zero. Required for Sun or Moon.
+        max_step_s: Maximum internal RK4 step for numerical propagation.
+        ephemeris_step_s: Sun/Moon interpolation spacing.
+        bsp_path: SPICE BSP containing Earth-centered Sun/Moon states.
 
     Returns:
         An ``(N, 7)`` array of native element states and time.
     """
+    if perturbations is not None:
+        numerical = _propagate_relative_elements_numerical(
+            initial_elements,
+            times_s,
+            chief_initial_state_eci=chief_initial_state_eci,
+            mu_m3ps2=mu_m3ps2,
+            representation=representation,
+            central_body=central_body,
+            perturbations=perturbations,
+            initial_epoch=initial_epoch,
+            max_step_s=max_step_s,
+            ephemeris_step_s=ephemeris_step_s,
+            bsp_path=bsp_path,
+        )
+        output = np.empty((numerical.times_s.size, 7), dtype=float)
+        normalized = _normalize_relative_representation(representation)
+        for index, time_s in enumerate(numerical.times_s):
+            chief = BoundaryState(
+                numerical.chief_states_eci[index, 0:3],
+                numerical.chief_states_eci[index, 3:6],
+            )
+            deputy = BoundaryState(
+                numerical.deputy_states_eci[index, 0:3],
+                numerical.deputy_states_eci[index, 3:6],
+            )
+            elements = (
+                absolute_to_relative_orbital_elements(
+                    chief,
+                    deputy,
+                    mu_m3ps2=mu_m3ps2,
+                )
+                if normalized == "damico"
+                else absolute_to_classical_relative_orbital_elements(
+                    chief,
+                    deputy,
+                    mu_m3ps2=mu_m3ps2,
+                )
+            )
+            output[index] = np.hstack([elements.as_vector(), time_s])
+        return output
+
     times = np.asarray(times_s, dtype=float).reshape(-1)
     if times.size == 0 or not np.all(np.isfinite(times)):
         raise ValueError("times_s must contain at least one finite value")
-    normalized = str(representation).strip().lower().replace("-", "_")
-    if normalized not in {"damico", "classical_elements"}:
-        raise ValueError("representation must be 'damico' or 'classical_elements'")
+    normalized = _normalize_relative_representation(representation)
     if isinstance(initial_elements, RelativeOrbitalElements):
         vector = initial_elements.as_vector()
         inferred = "damico"
@@ -435,8 +497,53 @@ def propagate_relative_elements_to_ric(
     chief_initial_state_eci: BoundaryState,
     mu_m3ps2: float,
     representation: str = "damico",
+    central_body: CelestialBody | str = EARTH,
+    perturbations: Perturbations | None = None,
+    initial_epoch: str | datetime | float | int | None = None,
+    max_step_s: float = 10.0,
+    ephemeris_step_s: float = 600.0,
+    bsp_path: str | Path = DEFAULT_EPHEMERIS_BSP,
 ) -> NDArray[np.float64]:
-    """Propagate relative elements and return equivalent RIC state history."""
+    """Propagate relative elements and return equivalent RIC state history.
+
+    With ``perturbations=None`` this uses analytical two-body element drift and
+    supports arbitrary finite output times, including negative analysis times.
+    Supplying :class:`octavian.Perturbations` selects coupled numerical
+    chief/deputy propagation; those output times must be strictly monotonic
+    with zero at one endpoint.
+
+    Args:
+        initial_elements: Initial D'Amico or classical relative elements.
+        times_s: Requested elapsed output times.
+        chief_initial_state_eci: Chief Cartesian state at elapsed time zero.
+        mu_m3ps2: Central-body gravitational parameter.
+        representation: ``"damico"`` or ``"classical_elements"``.
+        central_body: Body constants used by numerical central gravity and J2.
+        perturbations: Optional differential J2, Moon, or Sun configuration.
+        initial_epoch: UTC or SPICE ET at time zero. Required for Sun or Moon.
+        max_step_s: Maximum internal RK4 step for numerical propagation.
+        ephemeris_step_s: Sun/Moon interpolation spacing.
+        bsp_path: SPICE BSP containing Earth-centered Sun/Moon states.
+
+    Returns:
+        An ``(N, 7)`` RIC state-and-time history ready for plotting.
+    """
+    if perturbations is not None:
+        numerical = _propagate_relative_elements_numerical(
+            initial_elements,
+            times_s,
+            chief_initial_state_eci=chief_initial_state_eci,
+            mu_m3ps2=mu_m3ps2,
+            representation=representation,
+            central_body=central_body,
+            perturbations=perturbations,
+            initial_epoch=initial_epoch,
+            max_step_s=max_step_s,
+            ephemeris_step_s=ephemeris_step_s,
+            bsp_path=bsp_path,
+        )
+        return numerical.relative_trajectory_ric
+
     element_history = propagate_relative_orbital_elements(
         initial_elements,
         times_s,
@@ -466,6 +573,70 @@ def propagate_relative_elements_to_ric(
         )
         output[index] = np.hstack([relative.r_m, relative.v_mps, row[6]])
     return output
+
+
+def _propagate_relative_elements_numerical(
+    initial_elements: RelativeElements | ArrayLike,
+    times_s: ArrayLike,
+    *,
+    chief_initial_state_eci: BoundaryState,
+    mu_m3ps2: float,
+    representation: str,
+    central_body: CelestialBody | str,
+    perturbations: Perturbations,
+    initial_epoch: str | datetime | float | int | None,
+    max_step_s: float,
+    ephemeris_step_s: float,
+    bsp_path: str | Path,
+):
+    """Convert element initial conditions and run coupled propagation."""
+    from .propagation import propagate_relative_numerical
+
+    normalized = _normalize_relative_representation(representation)
+    body = resolve_body(central_body)
+    if not np.isclose(
+        float(mu_m3ps2),
+        float(body.mu_m3ps2),
+        rtol=1.0e-12,
+        atol=0.0,
+    ):
+        raise ValueError(
+            "mu_m3ps2 must match central_body.mu_m3ps2 for perturbed "
+            "relative-element propagation"
+        )
+    initial_deputy = (
+        relative_orbital_elements_to_absolute_state(
+            chief_initial_state_eci,
+            initial_elements,
+            mu_m3ps2=mu_m3ps2,
+        )
+        if normalized == "damico"
+        else classical_relative_orbital_elements_to_absolute_state(
+            chief_initial_state_eci,
+            initial_elements,
+            mu_m3ps2=mu_m3ps2,
+        )
+    )
+    return propagate_relative_numerical(
+        chief_initial_state_eci,
+        None,
+        times_s,
+        deputy_initial_eci=initial_deputy,
+        central_body=body,
+        perturbations=perturbations,
+        initial_epoch=initial_epoch,
+        max_step_s=max_step_s,
+        ephemeris_step_s=ephemeris_step_s,
+        bsp_path=bsp_path,
+    )
+
+
+def _normalize_relative_representation(representation: str) -> str:
+    """Normalize and validate a relative-element representation name."""
+    normalized = str(representation).strip().lower().replace("-", "_")
+    if normalized not in {"damico", "classical_elements"}:
+        raise ValueError("representation must be 'damico' or 'classical_elements'")
+    return normalized
 
 
 def propagate_two_body_state(

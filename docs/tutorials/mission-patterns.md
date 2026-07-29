@@ -1,9 +1,10 @@
 # Mission Patterns
 
 This tutorial shows how to use the current Octavian options as building blocks.
-Start with the quick API when the mission is a standard two-impulse transfer.
-Move to the composable API when you need explicit phases, links, custom
-constraints, finite burns, or perturbations.
+Start with the quick API when the mission is a standard inertial transfer,
+relative hop, or chain of relative transfers. Move to the composable API when
+you need explicit phases, links, custom constraints, finite burns, or an
+arbitrary burn topology.
 
 ## Choose the API Layer
 
@@ -24,6 +25,11 @@ Use `Mission` and `Phase` directly when you need:
 - J2 perturbations,
 - custom objectives or per-phase mesh settings,
 - chief-centered relative motion, including exact finite burns and coasts.
+
+Use `relative_hop` or `relative_transfer_chain` when the relative mission is:
+
+- a bounded coast followed by a two-impulse hop, or
+- multiple two-impulse transfers separated by bounded natural coasts.
 
 ## Pattern 1: Standard Two-Impulse Transfer
 
@@ -304,6 +310,35 @@ missions. The compiler links the formulation's native state, so a coupled ECI
 chain preserves both spacecraft states without round-tripping through a
 boundary conversion.
 
+For the common coast–transfer–coast pattern, use the quick builder:
+
+```python
+mission = relative_hop(
+    initial_ric,
+    target_ric,
+    chief_initial_state_eci=chief_eci,
+    departure_coast_time_bounds_s=(120.0, 600.0),
+    transfer_time_bounds_s=(900.0, 1_800.0),
+    perturbations=Perturbations(j2=True),
+)
+```
+
+String complete transfers together by supplying ordered post-arrival states:
+
+```python
+mission = relative_transfer_chain(
+    initial_ric,
+    [inspection_point_ric, final_ric],
+    chief_initial_state_eci=chief_eci,
+    transfer_time_bounds_s=[(600.0, 1_200.0), (600.0, 1_200.0)],
+    coast_time_bounds_s=(300.0, 600.0),
+)
+```
+
+This example has four impulses. To optimize a three-burn topology, build three
+linked composable phases and leave the intermediate burn's velocity free while
+constraining only its RIC position waypoint, as shown in composable example 20.
+
 For exact two-body dynamics with native RIC decision variables, select
 `propagation_mode="nonlinear_ric"` for a circular chief or `"coupled_ric"` for
 a propagated circular/eccentric chief. Then target one component directly:
@@ -323,6 +358,22 @@ Save state, range, and solar-phase histories beside either trajectory plot:
 ```python
 solution.viz().save_diagnostics_html("relative_diagnostics.html")
 ```
+
+For analysis-only ROE propagation with the same force-model vocabulary:
+
+```python
+history = propagate_relative_orbital_elements(
+    initial_roe,
+    np.linspace(0.0, 6.0 * 3_600.0, 145),
+    chief_initial_state_eci=chief_eci,
+    mu_m3ps2=EARTH.mu_m3ps2,
+    perturbations=Perturbations(j2=True, sun=True),
+    initial_epoch="2026-01-01T00:00:00Z",
+)
+```
+
+Use times ending at zero, such as `[-600.0, -300.0, 0.0]`, to generate a
+pre-event coast. Use times starting at zero for a post-event coast.
 
 ## Pattern 13: Add Relative Safety And Lighting Geometry
 

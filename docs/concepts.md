@@ -149,7 +149,8 @@ transforms:
 - `ric_basis(...)` and the compatibility name `lvlh_basis(...)`.
 - absolute Cartesian, RIC, D'Amico ROE, and classical relative-element
   conversions in `octavian.relative.elements`;
-- `propagate_relative_orbital_elements(...)` for native two-body ROE history;
+- `propagate_relative_orbital_elements(...)` for analytical two-body or
+  numerically perturbed ROE history;
 - `propagate_nonlinear_relative_ric(...)` for the exact circular-chief RIC
   equations.
 
@@ -165,11 +166,27 @@ contains both absolute histories and the converted RIC history. It uses a
 fixed-step fourth-order Runge-Kutta integrator, so `max_step_s` is an explicit
 accuracy/cost choice rather than a hidden tolerance.
 
+Passing `perturbations=` to `propagate_relative_orbital_elements(...)` or
+`propagate_relative_elements_to_ric(...)` selects this same coupled numerical
+path. Octavian converts the initial relative elements to an absolute deputy
+state, propagates both vehicles, and reconstructs osculating D'Amico or
+classical relative elements. The requested times must be monotonic with zero
+at either endpoint, so both pre-event and post-event coast histories are
+supported.
+
 Relative phases may be composed into an ordered `previous=` chain. Continuous
 links preserve the formulation's native state and time; mass is also preserved
 through coasts between powered phases. All phases in a chain use the same
 relative formulation and chief reference. Mixing inertial and relative phases
 still requires an explicit frame-link model and is therefore rejected.
+
+`relative_hop(...)` packages a departure coast and two-impulse transfer for the
+quick API. `relative_transfer_chain(...)` repeats that pattern across ordered
+RIC targets and inserts a bounded post-arrival coast between transfers. Both
+return normal `Mission` objects, so their phases remain inspectable and
+editable. In composable missions, `tof_is_relative=True` applies the declared
+lower and upper bounds to that phase's duration rather than cumulative mission
+time.
 
 Finite-thrust relative phases use `propagation_mode="coupled_eci"`. The chief
 remains unpowered while the deputy receives the ECI vector-throttle

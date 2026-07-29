@@ -78,6 +78,8 @@ def _fake_solution() -> Solution:
         ("examples/composable/18_low_thrust_orbit_raise.py", 1),
         ("examples/composable/18_safety_ellipse_transfer.py", 1),
         ("examples/composable/19_relative_finite_burn_coast.py", 1),
+        ("examples/composable/20_relative_three_burn_transfer.py", 1),
+        ("examples/composable/21_perturbed_relative_element_propagation.py", 0),
     ],
 )
 def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int) -> None:
@@ -200,7 +202,11 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
     elif script_rel.endswith("18_safety_ellipse_transfer.py"):
         mission = missions[0]
         phase = mission.phases[0]
-        assert phase.dynamics.model.propagation_mode.value == "coupled_ric"
+        assert phase.dynamics.model.propagation_mode.value == "coupled_eci"
+        perturbations = phase.dynamics.active_perturbations()
+        assert perturbations.j2 is True
+        assert perturbations.sun is True
+        assert mission.initial_epoch is not None
         assert [constraint.kind for constraint in phase.constraints] == [
             "state",
             "state",
@@ -251,6 +257,25 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
         assert plotted == [
             "traj_composable_relative_finite_burn_coast.html",
             "diagnostics_composable_relative_finite_burn_coast.html",
+        ]
+    elif script_rel.endswith("20_relative_three_burn_transfer.py"):
+        mission = missions[0]
+        assert [phase.name for phase in mission.phases] == [
+            "initial_coast",
+            "transfer_1",
+            "transfer_2",
+        ]
+        assert all(phase.tof_is_relative for phase in mission.phases)
+        assert [len(phase.variables) for phase in mission.phases] == [0, 1, 2]
+        assert plotted == [
+            "traj_composable_relative_three_burn.html",
+            "diagnostics_composable_relative_three_burn.html",
+        ]
+    elif script_rel.endswith("21_perturbed_relative_element_propagation.py"):
+        assert missions == []
+        assert plotted == [
+            "traj_perturbed_relative_elements.html",
+            "diagnostics_perturbed_relative_elements.html",
         ]
     elif script_rel.endswith("15_perturbed_relative_solar.py"):
         mission = missions[0]
