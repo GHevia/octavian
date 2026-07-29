@@ -100,13 +100,16 @@ def _fake_solution() -> Solution:
         ("examples/composable/relative/15_perturbed_relative_solar.py", 1),
         ("examples/composable/relative/17_damico_free_time_target.py", 1),
         ("examples/composable/earth_centered/18_low_thrust_orbit_raise.py", 1),
+        ("examples/composable/earth_centered/19_thrust_frames_and_attitude.py", 1),
         ("examples/composable/relative/18_safety_ellipse_transfer.py", 1),
         ("examples/composable/relative/19_relative_finite_burn_coast.py", 1),
         ("examples/composable/relative/20_relative_three_burn_transfer.py", 1),
         ("examples/composable/relative/21_perturbed_relative_element_propagation.py", 0),
     ],
 )
-def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int) -> None:
+def test_composable_examples_run_as_scenarios(
+    monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int
+) -> None:
     missions = []
     plotted = []
     plotted_trajectories = []
@@ -171,10 +174,18 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
         assert len(missions[0].phases[0].variables) == 1
         assert len(missions[1].phases[0].variables) == 2
     elif script_rel.endswith("08_chemical_burn_j2.py"):
-        assert [phase.mode for phase in missions[0].phases] == ["chemical_burn", "coast", "chemical_burn"]
+        assert [phase.mode for phase in missions[0].phases] == [
+            "chemical_burn",
+            "coast",
+            "chemical_burn",
+        ]
         assert plotted == ["traj_composable_chemical_burn_j2.html"]
     elif script_rel.endswith("09_impulse_vs_chemical_burn.py"):
-        assert [phase.mode for phase in missions[0].phases] == ["chemical_burn", "coast", "chemical_burn"]
+        assert [phase.mode for phase in missions[0].phases] == [
+            "chemical_burn",
+            "coast",
+            "chemical_burn",
+        ]
         assert plotted == [
             "traj_composable_impulse_reference.html",
             "traj_composable_chemical_reference.html",
@@ -223,6 +234,13 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
             "traj_composable_low_thrust_orbit_raise.html",
             "diagnostics_composable_low_thrust_orbit_raise.html",
         ]
+    elif script_rel.endswith("19_thrust_frames_and_attitude.py"):
+        mission = missions[0]
+        control = mission.phases[0].thrust_control
+        assert control.representation == "euler"
+        assert control.frame == "ric"
+        assert control.max_slew_rate_radps == pytest.approx(np.deg2rad(0.5))
+        assert plotted == ["traj_composable_thrust_frames_and_attitude.html"]
     elif script_rel.endswith("18_safety_ellipse_transfer.py"):
         mission = missions[0]
         initial_coast, transfer = mission.phases
@@ -274,8 +292,7 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
             "finite_thrust",
         ]
         assert all(
-            phase.dynamics.model.propagation_mode.value == "coupled_eci"
-            for phase in mission.phases
+            phase.dynamics.model.propagation_mode.value == "coupled_eci" for phase in mission.phases
         )
         assert mission.phases[1].previous is mission.phases[0]
         assert mission.phases[2].previous is mission.phases[1]
@@ -311,9 +328,7 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
         assert perturbations.j2 is True
         assert perturbations.sun is True
         assert phase.dynamics.model.chief_initial_state_eci is not None
-        assert "solar_phase_angle" in [
-            constraint.kind for constraint in phase.constraints
-        ]
+        assert "solar_phase_angle" in [constraint.kind for constraint in phase.constraints]
         assert plotted == [
             "traj_composable_perturbed_relative_solar.html",
             "diagnostics_composable_perturbed_relative_solar.html",

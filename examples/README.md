@@ -28,7 +28,7 @@ mission:
 Move to the composable API when the mission needs explicit phases and
 constraints:
 
-- `composable/01_single_phase_terminal_dv_objective.py` — the quick example
+- `composable/earth_centered/01_single_phase_terminal_dv_objective.py` — the quick example
   expressed as vehicle, dynamics, phase, constraints, variables, and objective;
 - examples 02–07 — phase links, path constraints, and orbital targeting;
 - examples 08–10 — finite burns and perturbations;
@@ -38,6 +38,8 @@ constraints:
 - example 18 — low-thrust orbit raising with a dedicated initial guess;
 - example 19 — an exact relative finite burn–coast–burn chain with continuous
   deputy mass.
+- earth-centered example 19 — RIC-referenced thrust and bounded kinematic
+  attitude states.
 
 After either API path, run `outputs/01_ephemeris_files.py` to see the common
 ephemeris export interface.

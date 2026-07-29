@@ -28,6 +28,8 @@ The API reference is generated from source docstrings with `mkdocstrings`.
 
 ::: octavian.events
 
+::: octavian.control
+
 ## Models
 
 ::: octavian.models

@@ -171,6 +171,44 @@ COUPLED_RELATIVE_ECI_MASS_THRUST = StateLayout(
     control_groups=(("thrust", (0, 1, 2)),),
 )
 
+COUPLED_RELATIVE_ECI_MASS_FIXED_THRUST = StateLayout(
+    name="coupled_relative_eci_mass_fixed_thrust",
+    state_names=COUPLED_RELATIVE_ECI_MASS.state_names,
+    control_names=("throttle",),
+    state_groups=COUPLED_RELATIVE_ECI_MASS.state_groups,
+    control_groups=(("throttle", (0,)),),
+)
+
+_COUPLED_RELATIVE_ECI_MASS_ATTITUDE_STATES = (
+    *COUPLED_RELATIVE_ECI_MASS.state_names,
+    "yaw",
+    "pitch",
+    "roll",
+)
+_COUPLED_RELATIVE_ECI_MASS_ATTITUDE_GROUPS = (
+    *COUPLED_RELATIVE_ECI_MASS.state_groups,
+    ("attitude", (13, 14, 15)),
+)
+
+COUPLED_RELATIVE_ECI_MASS_EULER_THRUST = StateLayout(
+    name="coupled_relative_eci_mass_euler_thrust",
+    state_names=_COUPLED_RELATIVE_ECI_MASS_ATTITUDE_STATES,
+    control_names=("throttle", "yaw_rate", "pitch_rate", "roll_rate"),
+    state_groups=_COUPLED_RELATIVE_ECI_MASS_ATTITUDE_GROUPS,
+    control_groups=(
+        ("throttle", (0,)),
+        ("attitude_rate", (1, 2, 3)),
+    ),
+)
+
+COUPLED_RELATIVE_ECI_MASS_EULER_COAST = StateLayout(
+    name="coupled_relative_eci_mass_euler_coast",
+    state_names=_COUPLED_RELATIVE_ECI_MASS_ATTITUDE_STATES,
+    control_names=("yaw_rate", "pitch_rate", "roll_rate"),
+    state_groups=_COUPLED_RELATIVE_ECI_MASS_ATTITUDE_GROUPS,
+    control_groups=(("attitude_rate", (0, 1, 2)),),
+)
+
 COUPLED_RELATIVE_RIC = StateLayout(
     name="coupled_relative_ric",
     state_names=(
@@ -249,4 +287,42 @@ CARTESIAN_MASS_THRUST = StateLayout(
     control_names=("thrust_x", "thrust_y", "thrust_z"),
     state_groups=(*_CARTESIAN_GROUPS, ("mass", (6,))),
     control_groups=(("thrust", (0, 1, 2)),),
+)
+
+CARTESIAN_MASS_FIXED_THRUST = StateLayout(
+    name="cartesian_mass_fixed_thrust",
+    state_names=CARTESIAN_MASS.state_names,
+    control_names=("throttle",),
+    state_groups=CARTESIAN_MASS.state_groups,
+    control_groups=(("throttle", (0,)),),
+)
+
+_CARTESIAN_MASS_ATTITUDE_STATES = (
+    *CARTESIAN_MASS.state_names,
+    "yaw",
+    "pitch",
+    "roll",
+)
+_CARTESIAN_MASS_ATTITUDE_GROUPS = (
+    *CARTESIAN_MASS.state_groups,
+    ("attitude", (7, 8, 9)),
+)
+
+CARTESIAN_MASS_EULER_THRUST = StateLayout(
+    name="cartesian_mass_euler_thrust",
+    state_names=_CARTESIAN_MASS_ATTITUDE_STATES,
+    control_names=("throttle", "yaw_rate", "pitch_rate", "roll_rate"),
+    state_groups=_CARTESIAN_MASS_ATTITUDE_GROUPS,
+    control_groups=(
+        ("throttle", (0,)),
+        ("attitude_rate", (1, 2, 3)),
+    ),
+)
+
+CARTESIAN_MASS_EULER_COAST = StateLayout(
+    name="cartesian_mass_euler_coast",
+    state_names=_CARTESIAN_MASS_ATTITUDE_STATES,
+    control_names=("yaw_rate", "pitch_rate", "roll_rate"),
+    state_groups=_CARTESIAN_MASS_ATTITUDE_GROUPS,
+    control_groups=(("attitude_rate", (0, 1, 2)),),
 )

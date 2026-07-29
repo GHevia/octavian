@@ -161,6 +161,35 @@ class Solution:
         value = self.result.info.get("relative_propagation_mode")
         return None if value is None else str(value)
 
+    @property
+    def phase_control_trajectories(self) -> tuple[np.ndarray, ...]:
+        """Return ``[time, controls...]`` arrays for every compiled phase.
+
+        Vector-throttle components and scalar throttle are dimensionless.
+        Euler-rate columns are converted from normalized optimizer variables
+        to physical radians per second.
+        """
+        if self.result is None:
+            return ()
+        value = self.result.info.get("phase_control_trajectories")
+        if value is None:
+            return ()
+        return tuple(np.asarray(trajectory, dtype=float) for trajectory in value)
+
+    @property
+    def attitude_phase_trajectories(self) -> tuple[np.ndarray, ...]:
+        """Return Euler attitude histories for kinematic-attitude phases.
+
+        Each array contains ``[yaw, pitch, roll, time, yaw_rate, pitch_rate,
+        roll_rate]`` in radians, seconds, and radians per second.
+        """
+        if self.result is None:
+            return ()
+        value = self.result.info.get("attitude_phase_trajectories")
+        if value is None:
+            return ()
+        return tuple(np.asarray(trajectory, dtype=float) for trajectory in value)
+
     def to_ephemeris(
         self,
         *,
@@ -232,9 +261,7 @@ class Solution:
         if export_epoch is None:
             export_epoch = self.result.info.get("initial_epoch")
         if export_epoch is None:
-            raise ValueError(
-                "Ephemeris export requires epoch= or Mission(initial_epoch=...)."
-            )
+            raise ValueError("Ephemeris export requires epoch= or Mission(initial_epoch=...).")
 
         absolute_history = selected in {"chief", "deputy"}
         solution_frame = self.frame
@@ -258,9 +285,7 @@ class Solution:
             "CHIEF" if selected == "chief" else "DEPUTY" if selected == "deputy" else "SPACECRAFT"
         )
         resolved_center_id = (
-            int(center_id)
-            if center_id is not None
-            else _common_naif_center_id(resolved_center)
+            int(center_id) if center_id is not None else _common_naif_center_id(resolved_center)
         )
         return Ephemeris.from_trajectory(
             rows,
@@ -399,6 +424,4 @@ def _common_naif_center_id(center_name: str) -> int:
     try:
         return center_ids[normalized]
     except KeyError as exc:
-        raise ValueError(
-            f"center_id= is required for unrecognized center {center_name!r}"
-        ) from exc
+        raise ValueError(f"center_id= is required for unrecognized center {center_name!r}") from exc

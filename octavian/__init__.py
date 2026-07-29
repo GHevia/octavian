@@ -26,6 +26,7 @@ from . import (
 from .bodies import EARTH, MOON, SUN, CelestialBody
 from .config import MissionConfigError, load_mission, load_mission_mapping, mission_from_dict
 from .conops import rendezvous_precoast_then_transfer, rendezvous_two_impulse
+from .control import ThrustControl
 from .coordinates import CoordinateFrame, SolverScaling, StateLayout
 from .events import BoundaryEvent
 from .exports import Ephemeris
@@ -60,6 +61,7 @@ from .types import Maneuver
 __all__ = [
     # config-like API
     "Thruster",
+    "ThrustControl",
     "Spacecraft",
     "Dynamics",
     "Perturbations",

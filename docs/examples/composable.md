@@ -558,3 +558,22 @@ Expected outputs:
 
 - `traj_perturbed_relative_elements.html`
 - `diagnostics_perturbed_relative_elements.html`
+
+## Earth-Centered 19: Thrust Frames And Kinematic Attitude
+
+Path: `examples/composable/earth_centered/19_thrust_frames_and_attitude.py`
+
+This finite-thrust arc expresses yaw, pitch, and roll relative to the
+spacecraft RIC frame. The body +X axis supplies the thrust direction while the
+optimizer chooses scalar throttle and bounded Euler rates. The solution
+reports physical angle and rate histories without introducing rotational
+torques or a full six-degree-of-freedom model.
+
+Change `ThrustControl.euler(...)` to `ThrustControl.vector(frame="ric")` for a
+free RIC vector-throttle, or to
+`ThrustControl.fixed([0, 1, 0], frame="ric")` for an always-in-track
+direction.
+
+Expected output:
+
+- `traj_composable_thrust_frames_and_attitude.html`

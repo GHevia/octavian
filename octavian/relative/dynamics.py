@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from .._asset import oc, require_asset, vf
+from .._control_dynamics import thrust_vector_and_rate
+from ..control import ThrustControl
 from ..dynamics import ThirdBodyTable, _gravity_acceleration
 
 
@@ -108,9 +110,10 @@ class CoupledRelativeMassCoastODE(oc.ODEBase if oc is not None else object):
     """Propagate coupled chief/deputy ECI states and constant deputy mass.
 
     This is the coast member of a relative finite-thrust phase chain. Its
-    state is ``[chief r,v, deputy r,v, deputy mass]``. Carrying mass through
-    the coast lets ordinary continuous phase links preserve propellant state
-    between powered segments without changing either trajectory's gravity.
+    base state is ``[chief r,v, deputy r,v, deputy mass]``. Carrying mass
+    through the coast lets ordinary continuous phase links preserve propellant
+    state between powered segments without changing either trajectory's
+    gravity. Euler-controlled chains also carry their three attitude states.
     """
 
     def __init__(
@@ -121,16 +124,28 @@ class CoupledRelativeMassCoastODE(oc.ODEBase if oc is not None else object):
         central_body_radius_m: float = 6_378_136.3,
         j2_coefficient: float = 1.08262668e-3,
         third_body_tables: Sequence[ThirdBodyTable] = (),
+        thrust_control: ThrustControl | None = None,
     ) -> None:
         """Build a mass-carrying coupled relative coast ODE."""
         require_asset("mass-carrying coupled relative dynamics")
-        arguments = oc.ODEArguments(13, 0)
+        control_config = thrust_control or ThrustControl.vector()
+        carries_attitude = control_config.carries_attitude
+        state_dim = 16 if carries_attitude else 13
+        control_dim = 3 if carries_attitude else 0
+        arguments = oc.ODEArguments(state_dim, control_dim)
         state = arguments.XVec()
         chief_position = state.head(3)
         chief_velocity = state.segment(3, 3)
         deputy_position = state.segment(6, 3)
         deputy_velocity = state.segment(9, 3)
         mass = state[12]
+        attitude = state.segment(13, 3) if carries_attitude else None
+        slew_control = arguments.UVec() if carries_attitude else None
+        attitude_rate = (
+            float(control_config.max_slew_rate_radps) * slew_control
+            if slew_control is not None
+            else None
+        )
         time = arguments.TVar()
         force_options = {
             "mu_m3ps2": float(mu_m3ps2),
@@ -140,15 +155,16 @@ class CoupledRelativeMassCoastODE(oc.ODEBase if oc is not None else object):
             "time_var": time,
             "third_body_tables": tuple(third_body_tables),
         }
-        ode = vf.stack(
-            [
-                chief_velocity,
-                _gravity_acceleration(chief_position, **force_options),
-                deputy_velocity,
-                _gravity_acceleration(deputy_position, **force_options),
-                0.0 * mass,
-            ]
-        )
+        ode_terms = [
+            chief_velocity,
+            _gravity_acceleration(chief_position, **force_options),
+            deputy_velocity,
+            _gravity_acceleration(deputy_position, **force_options),
+            0.0 * mass,
+        ]
+        if attitude_rate is not None:
+            ode_terms.append(attitude_rate)
+        ode = vf.stack(ode_terms)
         groups = {
             ("ChiefR", "ChiefPosition"): chief_position,
             ("ChiefV", "ChiefVelocity"): chief_velocity,
@@ -157,17 +173,24 @@ class CoupledRelativeMassCoastODE(oc.ODEBase if oc is not None else object):
             ("M", "Mass"): [12],
             ("t", "time"): time,
         }
-        super().__init__(ode, 13, 0, Vgroups=groups)
+        if attitude is not None and attitude_rate is not None and slew_control is not None:
+            groups[("Attitude", "EulerAngles")] = attitude
+            groups[("AttitudeRate", "EulerRates")] = attitude_rate
+            groups[("SlewControl", "NormalizedAttitudeRate")] = slew_control
+            groups["Yaw"] = attitude[0]
+            groups["Pitch"] = attitude[1]
+            groups["Roll"] = attitude[2]
+        super().__init__(ode, state_dim, control_dim, Vgroups=groups)
 
 
 class FiniteThrustRelativeODE(oc.ODEBase if oc is not None else object):
     """Propagate an unpowered chief and a finite-thrust deputy in ECI.
 
-    The state is ``[chief r,v, deputy r,v, deputy mass]`` and the three
-    controls form a dimensionless ECI thrust-direction/throttle vector. The
-    compiler constrains its norm to at most one. Gravity and configured
-    perturbations are applied independently to chief and deputy; thrust and
-    mass depletion apply only to the deputy.
+    The base state is ``[chief r,v, deputy r,v, deputy mass]``. Direction can
+    use a free vector, prescribed direction, or Euler kinematics in inertial
+    or chief RIC axes. Gravity and configured perturbations are applied
+    independently to chief and deputy; thrust and mass depletion apply only
+    to the deputy.
     """
 
     def __init__(
@@ -181,6 +204,7 @@ class FiniteThrustRelativeODE(oc.ODEBase if oc is not None else object):
         j2_coefficient: float = 1.08262668e-3,
         third_body_tables: Sequence[ThirdBodyTable] = (),
         g0_mps2: float = 9.80665,
+        thrust_control: ThrustControl | None = None,
     ) -> None:
         """Build exact coupled relative finite-thrust dynamics."""
         require_asset("finite-thrust coupled relative dynamics")
@@ -194,7 +218,17 @@ class FiniteThrustRelativeODE(oc.ODEBase if oc is not None else object):
         if standard_gravity <= 0.0:
             raise ValueError("FiniteThrustRelativeODE requires g0_mps2 > 0")
 
-        arguments = oc.ODEArguments(13, 3)
+        control_config = thrust_control or ThrustControl.vector()
+        carries_attitude = control_config.carries_attitude
+        state_dim = 16 if carries_attitude else 13
+        control_dim = (
+            4
+            if control_config.representation == "euler"
+            else 1
+            if control_config.representation == "fixed"
+            else 3
+        )
+        arguments = oc.ODEArguments(state_dim, control_dim)
         state = arguments.XVec()
         control = arguments.UVec()
         chief_position = state.head(3)
@@ -202,6 +236,7 @@ class FiniteThrustRelativeODE(oc.ODEBase if oc is not None else object):
         deputy_position = state.segment(6, 3)
         deputy_velocity = state.segment(9, 3)
         mass = state[12]
+        attitude = state.segment(13, 3) if carries_attitude else None
         time = arguments.TVar()
         force_options = {
             "mu_m3ps2": float(mu_m3ps2),
@@ -213,29 +248,45 @@ class FiniteThrustRelativeODE(oc.ODEBase if oc is not None else object):
         }
         chief_acceleration = _gravity_acceleration(chief_position, **force_options)
         deputy_acceleration = _gravity_acceleration(deputy_position, **force_options)
-        thrust_acceleration = (thrust / mass) * control
-        mass_flow = (
-            -(thrust / (specific_impulse * standard_gravity)) * control.norm()
+        thrust_vector, throttle, attitude_rate = thrust_vector_and_rate(
+            control_config,
+            controls=control,
+            position=chief_position,
+            velocity=chief_velocity,
+            attitude=attitude,
         )
-        ode = vf.stack(
-            [
-                chief_velocity,
-                chief_acceleration,
-                deputy_velocity,
-                deputy_acceleration + thrust_acceleration,
-                mass_flow,
-            ]
-        )
+        thrust_acceleration = (thrust / mass) * thrust_vector
+        mass_flow = -(thrust / (specific_impulse * standard_gravity)) * throttle
+        ode_terms = [
+            chief_velocity,
+            chief_acceleration,
+            deputy_velocity,
+            deputy_acceleration + thrust_acceleration,
+            mass_flow,
+        ]
+        if attitude_rate is not None:
+            ode_terms.append(attitude_rate)
+        ode = vf.stack(ode_terms)
         groups = {
             ("ChiefR", "ChiefPosition"): chief_position,
             ("ChiefV", "ChiefVelocity"): chief_velocity,
             ("DeputyR", "DeputyPosition"): deputy_position,
             ("DeputyV", "DeputyVelocity"): deputy_velocity,
             ("M", "Mass"): [12],
-            ("U", "Control", "Throttle"): control,
             ("t", "time"): time,
         }
-        super().__init__(ode, 13, 3, Vgroups=groups)
+        if control_config.representation == "vector":
+            groups[("U", "Control", "Thrust")] = control
+        else:
+            groups["Throttle"] = vf.stack([control[0]])
+        if attitude is not None and attitude_rate is not None:
+            groups[("Attitude", "EulerAngles")] = attitude
+            groups[("AttitudeRate", "EulerRates")] = attitude_rate
+            groups[("SlewControl", "NormalizedAttitudeRate")] = control.segment(1, 3)
+            groups["Yaw"] = attitude[0]
+            groups["Pitch"] = attitude[1]
+            groups["Roll"] = attitude[2]
+        super().__init__(ode, state_dim, control_dim, Vgroups=groups)
 
 
 class CoupledRelativeRICODE(oc.ODEBase if oc is not None else object):
