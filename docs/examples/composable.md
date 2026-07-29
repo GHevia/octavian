@@ -476,6 +476,26 @@ relative-motion build-up. It demonstrates a dynamics-integrated spiral seed,
 free terminal orbital phase, propellant optimization, and inertial diagnostics
 for Cartesian state, radius, speed, and osculating elements.
 
+## 18B: Safety-Ellipse ROE Transfer
+
+Path: `examples/composable/18_safety_ellipse_transfer.py`
+
+This example defines both boundary orbits with D'Amico relative orbital
+elements, converts them to RIC states at their respective chief epochs, and
+optimizes a fixed-duration, two-impulse transfer between them. The transfer
+uses exact `coupled_ric` dynamics because native `damico` propagation is an
+unforced drift model and cannot represent an impulsive jump between arbitrary
+ROE sets. Both conversions remain relative; no absolute deputy constraint is
+introduced.
+
+Analysis-only propagation extends the departure and arrival ROE sets into
+safety ellipses before and after the optimized transfer.
+
+Expected outputs:
+
+- `traj_safety_ellipse_transfer.html`
+- `diagnostics_safety_ellipse_transfer.html`
+
 ## 19: Relative Finite Burn–Coast–Burn
 
 Path: `examples/composable/19_relative_finite_burn_coast.py`

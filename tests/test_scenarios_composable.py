@@ -76,6 +76,7 @@ def _fake_solution() -> Solution:
         ("examples/composable/15_perturbed_relative_solar.py", 1),
         ("examples/composable/17_damico_free_time_target.py", 1),
         ("examples/composable/18_low_thrust_orbit_raise.py", 1),
+        ("examples/composable/18_safety_ellipse_transfer.py", 1),
         ("examples/composable/19_relative_finite_burn_coast.py", 1),
     ],
 )
@@ -196,6 +197,27 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
             "traj_composable_low_thrust_orbit_raise.html",
             "diagnostics_composable_low_thrust_orbit_raise.html",
         ]
+    elif script_rel.endswith("18_safety_ellipse_transfer.py"):
+        mission = missions[0]
+        phase = mission.phases[0]
+        assert phase.dynamics.model.propagation_mode.value == "coupled_ric"
+        assert [constraint.kind for constraint in phase.constraints] == [
+            "state",
+            "state",
+        ]
+        assert [variable.where for variable in phase.variables] == [
+            "Front",
+            "Back",
+        ]
+        assert mission.objectives[0].kind == "delta_v"
+        assert plotted == [
+            "traj_safety_ellipse_transfer.html",
+            "diagnostics_safety_ellipse_transfer.html",
+        ]
+        assert len(plotted_trajectories) == 2
+        assert plotted_trajectories[0][0, 6] == pytest.approx(0.0)
+        assert plotted_trajectories[0][-1, 6] == pytest.approx(12_200.0)
+        assert plotted_trajectories[0].shape[0] > _fake_solution().traj.shape[0]
     elif script_rel.endswith("17_damico_free_time_target.py"):
         mission = missions[0]
         phase = mission.phases[0]
