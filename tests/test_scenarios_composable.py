@@ -74,6 +74,7 @@ def _fake_solution() -> Solution:
         ("examples/composable/12_cwh_safety_corridor.py", 1),
         ("examples/composable/14_nonlinear_relative_rendezvous.py", 1),
         ("examples/composable/15_perturbed_relative_solar.py", 1),
+        ("examples/composable/17_damico_free_time_target.py", 1),
         ("examples/composable/18_low_thrust_orbit_raise.py", 1),
         ("examples/composable/19_relative_finite_burn_coast.py", 1),
     ],
@@ -81,12 +82,15 @@ def _fake_solution() -> Solution:
 def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int) -> None:
     missions = []
     plotted = []
+    plotted_trajectories = []
 
     def fake_solve(self):  # type: ignore[no-untyped-def]
         missions.append(self)
         return _fake_solution()
 
     def fake_plot(*args, **kwargs):  # type: ignore[no-untyped-def]
+        if args:
+            plotted_trajectories.append(np.asarray(args[0], dtype=float))
         if "out_html" in kwargs:
             plotted.append(kwargs["out_html"])
         elif len(args) >= 2:
@@ -192,6 +196,22 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
             "traj_composable_low_thrust_orbit_raise.html",
             "diagnostics_composable_low_thrust_orbit_raise.html",
         ]
+    elif script_rel.endswith("17_damico_free_time_target.py"):
+        mission = missions[0]
+        phase = mission.phases[0]
+        assert phase.dynamics.model.propagation_mode.value == "damico"
+        assert [constraint.kind for constraint in phase.constraints] == [
+            "relative_orbital_elements",
+            "relative_orbital_element",
+        ]
+        assert plotted == [
+            "traj_composable_damico_free_time.html",
+            "diagnostics_composable_damico_free_time.html",
+        ]
+        assert len(plotted_trajectories) == 2
+        assert plotted_trajectories[0][0, 6] == pytest.approx(0.0)
+        assert plotted_trajectories[0][-1, 6] == pytest.approx(1_400.0)
+        assert plotted_trajectories[0].shape[0] > _fake_solution().traj.shape[0]
     elif script_rel.endswith("19_relative_finite_burn_coast.py"):
         mission = missions[0]
         assert [phase.mode for phase in mission.phases] == [

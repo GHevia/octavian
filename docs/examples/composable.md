@@ -457,7 +457,15 @@ This phase propagates D'Amico relative orbital elements directly. A six-element
 Front constraint fixes the initial orbit, while a scalar `delta_lambda` Back
 constraint selects the arrival time within `tof_bounds_s`. The Cartesian RIC
 states are only seed anchors—the target never becomes an absolute-state
-constraint.
+constraint. After the solve, analytic two-body propagation adds six-minute
+coasts before and after the optimized interval. Those coasts are not optimizer
+phases; they are stitched to the RIC history for the trajectory and diagnostic
+plots and colored separately through `phase_segments`.
+
+Expected outputs:
+
+- `traj_composable_damico_free_time.html`
+- `diagnostics_composable_damico_free_time.html`
 
 ## 18: Low-Thrust Orbit Raise
 
