@@ -22,6 +22,8 @@ This MVP includes:
 - Lambert-Izzo seed sweeps across time of flight, longway, and multi-rev cases.
 - Frame-aware Plotly trajectory and time-series diagnostics with maneuver
   markers, RIC state/range/solar phase, and inertial state/elements.
+- STK ``.e``, CCSDS OEM, SPICE BSP/SPK, and CSV trajectory exports with
+  explicit epoch, frame, center, and object metadata.
 
 `octavian` declares ASSET (`asset_asrl`) as a runtime dependency because the
 solver-backed workflows rely on it.
@@ -91,6 +93,7 @@ python -c "import asset_asrl; print(asset_asrl.__file__)"
 python examples/quick/01_two_impulse_free_time.py
 python examples/quick/02_two_impulse_precoast_impulsive_link.py
 python examples/composable/earth_centered/08_chemical_burn_j2.py
+python examples/outputs/01_ephemeris_files.py
 python -m octavian.config examples/config/01_two_impulse_transfer.json
 ```
 

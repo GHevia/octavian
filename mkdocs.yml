@@ -25,6 +25,7 @@ nav:
   - Development Environment: tutorials/development-environment.md
   - JSON And YAML Missions: tutorials/config-files.md
   - Mission Patterns: tutorials/mission-patterns.md
+  - Output Files: tutorials/output-files.md
   - Concepts: concepts.md
   - Developer Architecture: developer-architecture.md
   - Project Principles: project-principles.md

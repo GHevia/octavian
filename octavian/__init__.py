@@ -28,6 +28,7 @@ from .config import MissionConfigError, load_mission, load_mission_mapping, miss
 from .conops import rendezvous_precoast_then_transfer, rendezvous_two_impulse
 from .coordinates import CoordinateFrame, SolverScaling, StateLayout
 from .events import BoundaryEvent
+from .exports import Ephemeris
 from .guesses import LowThrustSpiralGuess
 from .links import Link
 from .mission import Mission
@@ -108,6 +109,7 @@ __all__ = [
     # constraints / events / links / objectives
     "Link",
     "BoundaryEvent",
+    "Ephemeris",
     "Objective",
     "links",
     "events",

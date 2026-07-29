@@ -11,11 +11,15 @@ adds:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from .coordinates import CoordinateFrame, SolverScaling
+from .exports import Ephemeris
+from .exports.ephemeris import EphemerisFormat
 from .solvers.preconfigured import RendezvousResult
 
 
@@ -157,6 +161,157 @@ class Solution:
         value = self.result.info.get("relative_propagation_mode")
         return None if value is None else str(value)
 
+    def to_ephemeris(
+        self,
+        *,
+        trajectory: str = "auto",
+        epoch: str | datetime | float | int | None = None,
+        frame_name: str | None = None,
+        center_name: str | None = None,
+        object_name: str | None = None,
+        object_id: int = -100_000,
+        center_id: int | None = None,
+    ) -> Ephemeris:
+        """Return a validated ephemeris selected from this solution.
+
+        Args:
+            trajectory: ``"auto"`` (the deputy for relative solutions,
+                otherwise the solved trajectory), ``"solved"``, ``"chief"``,
+                or ``"deputy"``. Chief and deputy histories are absolute ECI
+                trajectories reconstructed by exact relative formulations.
+            epoch: Epoch corresponding to trajectory time zero. When omitted,
+                use the originating mission's ``initial_epoch``.
+            frame_name: Frame label for the state values. This does not rotate
+                coordinates. Absolute ECI histories default to ``"J2000"``.
+            center_name: Center-of-motion label, normally inferred from the
+                solution metadata.
+            object_name: Exported object label.
+            object_id: NAIF object ID used by BSP output.
+            center_id: NAIF center ID used by BSP output, inferred for Earth,
+                Moon, and Sun when omitted.
+
+        Returns:
+            An :class:`octavian.exports.Ephemeris` ready to write.
+
+        Raises:
+            RuntimeError: If the solution has no result.
+            ValueError: If the selected trajectory or epoch is unavailable.
+
+        Note:
+            File export labels the selected data but does not perform a frame
+            rotation. Select ``"chief"`` or ``"deputy"`` when exporting a
+            relative solution to an inertial OEM or BSP.
+        """
+        if self.result is None:
+            raise RuntimeError("No result to export")
+
+        selected = str(trajectory).strip().lower()
+        if selected == "auto":
+            selected = (
+                "deputy"
+                if self.frame is not None
+                and self.frame.kind == "relative"
+                and self.deputy_trajectory_eci.size
+                else "solved"
+            )
+        if selected not in {"solved", "chief", "deputy"}:
+            raise ValueError("trajectory must be one of: auto, solved, chief, deputy")
+
+        if selected == "chief":
+            rows = self.chief_trajectory_eci
+        elif selected == "deputy":
+            rows = self.deputy_trajectory_eci
+        else:
+            rows = self.traj
+        if rows.ndim != 2 or rows.shape[1] != 7 or len(rows) < 2:
+            raise ValueError(f"The solution does not contain an exportable {selected} trajectory")
+
+        export_epoch = epoch
+        if export_epoch is None:
+            export_epoch = self.info.get("initial_epoch")
+        if export_epoch is None:
+            export_epoch = self.result.info.get("initial_epoch")
+        if export_epoch is None:
+            raise ValueError(
+                "Ephemeris export requires epoch= or Mission(initial_epoch=...)."
+            )
+
+        absolute_history = selected in {"chief", "deputy"}
+        solution_frame = self.frame
+        inferred_frame = "J2000"
+        if not absolute_history and solution_frame is not None:
+            orientation = solution_frame.orientation.strip()
+            inferred_frame = (
+                "J2000"
+                if orientation.upper() in {"ECI", "ICRF", "J2000", "EME2000"}
+                else orientation
+            )
+        inferred_center = str(
+            self.result.info.get("central_body")
+            or (solution_frame.origin if solution_frame is not None else "earth")
+        )
+        if not absolute_history and solution_frame is not None:
+            inferred_center = solution_frame.origin
+
+        resolved_center = str(center_name or inferred_center).strip().upper()
+        resolved_object = object_name or (
+            "CHIEF" if selected == "chief" else "DEPUTY" if selected == "deputy" else "SPACECRAFT"
+        )
+        resolved_center_id = (
+            int(center_id)
+            if center_id is not None
+            else _common_naif_center_id(resolved_center)
+        )
+        return Ephemeris.from_trajectory(
+            rows,
+            epoch=export_epoch,
+            frame_name=frame_name or inferred_frame,
+            center_name=resolved_center,
+            object_name=resolved_object,
+            object_id=object_id,
+            center_id=resolved_center_id,
+        )
+
+    def export_ephemeris(
+        self,
+        path: str | Path,
+        *,
+        trajectory: str = "auto",
+        epoch: str | datetime | float | int | None = None,
+        frame_name: str | None = None,
+        center_name: str | None = None,
+        object_name: str | None = None,
+        object_id: int = -100_000,
+        center_id: int | None = None,
+        format: EphemerisFormat | None = None,
+        overwrite: bool = False,
+        interpolation_degree: int = 7,
+    ) -> Path:
+        """Export a solved, chief, or deputy trajectory to an ephemeris file.
+
+        The output extension selects STK ``.e``, CCSDS ``.oem``, SPICE
+        ``.bsp``/``.spk``, or SI-unit ``.csv``. See :meth:`to_ephemeris` for
+        trajectory and frame semantics.
+
+        Returns:
+            The resolved path written by the selected exporter.
+        """
+        ephemeris = self.to_ephemeris(
+            trajectory=trajectory,
+            epoch=epoch,
+            frame_name=frame_name,
+            center_name=center_name,
+            object_name=object_name,
+            object_id=object_id,
+            center_id=center_id,
+        )
+        return ephemeris.write(
+            path,
+            format=format,
+            overwrite=overwrite,
+            interpolation_degree=interpolation_degree,
+        )
+
     def viz(self):
         """Namespace-style access to visualization helpers."""
         from .viz import plotly as _plotly
@@ -230,3 +385,20 @@ class Solution:
                 )
 
         return _Viz()
+
+
+def _common_naif_center_id(center_name: str) -> int:
+    """Return a NAIF center code for common Octavian central bodies."""
+    normalized = str(center_name).strip().upper().replace("-", "_").replace(" ", "_")
+    center_ids = {
+        "SOLAR_SYSTEM_BARYCENTER": 0,
+        "SUN": 10,
+        "EARTH": 399,
+        "MOON": 301,
+    }
+    try:
+        return center_ids[normalized]
+    except KeyError as exc:
+        raise ValueError(
+            f"center_id= is required for unrecognized center {center_name!r}"
+        ) from exc

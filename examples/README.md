@@ -11,6 +11,9 @@ it:
 3. solve the mission;
 4. inspect and plot the result.
 
+The `outputs/` examples start from a solved mission and demonstrate portable
+reporting artifacts such as STK ephemerides, CCSDS OEM, SPICE BSP, and CSV.
+
 ## Suggested Learning Path
 
 Start with the quick API when a standard transfer helper already describes the
@@ -35,6 +38,9 @@ constraints:
 - example 18 — low-thrust orbit raising with a dedicated initial guess;
 - example 19 — an exact relative finite burn–coast–burn chain with continuous
   deputy mass.
+
+After either API path, run `outputs/01_ephemeris_files.py` to see the common
+ephemeris export interface.
 
 All mission inputs use SI units unless a parameter name explicitly says
 otherwise. Generated Plotly HTML files are written to the current directory.
