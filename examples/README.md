@@ -1,10 +1,9 @@
 # Octavian Examples
 
-Every example is a flat, executable mission script. Treat one as a starting
-configuration: copy it, change the states or mission declarations, and run the
-file directly. The examples intentionally avoid application-style entry-point
-guards so the mission reads from top to bottom in the same order Octavian uses
-it:
+Every example is an executable mission or analysis script. Treat one as a
+starting configuration: copy it, change the states or declarations, and run
+the file directly. The examples intentionally avoid application-style
+entry-point guards so the workflow reads from top to bottom.
 
 1. define the physical constants and boundary states;
 2. configure the vehicle, dynamics, phases, and objectives;
@@ -13,6 +12,8 @@ it:
 
 The `outputs/` examples start from a solved mission and demonstrate portable
 reporting artifacts such as STK ephemerides, CCSDS OEM, SPICE BSP, and CSV.
+The `analysis/` examples demonstrate propagators and conversions without an
+optimization solve.
 
 ## Suggested Learning Path
 
@@ -44,8 +45,9 @@ constraints:
 After either API path, run `outputs/01_ephemeris_files.py` to see the common
 ephemeris export interface.
 
-After either API path, run `outputs/01_ephemeris_files.py` to see the common
-ephemeris export interface.
+For analysis without a solve, run
+`analysis/01_propagation_namespace.py` to compare the two-body, CWH, nonlinear
+RIC, coupled relative, relative-element, and CR3BP entry points.
 
 All mission inputs use SI units unless a parameter name explicitly says
 otherwise. Generated Plotly HTML files are written to the current directory.

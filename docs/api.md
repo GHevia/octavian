@@ -56,6 +56,8 @@ The API reference is generated from source docstrings with `mkdocstrings`.
 
 ::: octavian.relative.solar
 
+::: octavian.propagate
+
 ## Quick Builders And Specs
 
 ::: octavian.quick
