@@ -26,6 +26,7 @@ nav:
   - JSON And YAML Missions: tutorials/config-files.md
   - Mission Patterns: tutorials/mission-patterns.md
   - Thrust Direction And Attitude: tutorials/thrust-control.md
+  - Cannonball Drag And SRP: tutorials/cannonball-forces.md
   - Output Files: tutorials/output-files.md
   - Concepts: concepts.md
   - Developer Architecture: developer-architecture.md

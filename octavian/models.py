@@ -6,6 +6,7 @@ advanced solving behavior (continuation / retries) via sensible defaults.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -13,6 +14,8 @@ from typing import Any, Protocol
 from .bodies import CelestialBody
 from .bodies import resolve as resolve_body
 from .coordinates import EARTH_INERTIAL, CoordinateFrame, SolverScaling
+from .forces import SOLAR_PRESSURE_AT_1_AU_NPM2, ExponentialAtmosphere
+from .spacecraft import Spacecraft
 from .specs import BoundaryState
 
 
@@ -35,9 +38,23 @@ class Perturbations:
     """Perturbation flags for translational dynamics.
 
     The composable ASSET backend supports the core Earth-orbit perturbations:
-    J2, lunar third-body gravity, and solar third-body gravity. ``moon`` and
-    ``sun`` are convenience flags; ``third_bodies=("moon", "sun")`` remains
-    accepted for scripts that prefer a body list.
+    J2, lunar and solar third-body gravity, exponential-atmosphere cannonball
+    drag, and cannonball solar radiation pressure. ``moon`` and ``sun`` are
+    convenience flags; ``third_bodies=("moon", "sun")`` remains accepted for
+    scripts that prefer a body list.
+
+    Args:
+        j2: Enable central-body J2.
+        moon: Enable lunar third-body gravity.
+        sun: Enable solar third-body gravity.
+        srp: Enable cannonball solar radiation pressure. This does not
+            implicitly enable solar third-body gravity.
+        drag: Enable exponential-atmosphere cannonball drag.
+        third_bodies: Additional normalized third-body gravity names.
+        atmosphere: Atmosphere used by drag. ``None`` selects Octavian's
+            simple Earth model for Earth-centered dynamics; non-Earth central
+            bodies must supply a model explicitly.
+        solar_pressure_at_1au_Npm2: Radiation pressure at one astronomical unit.
     """
 
     j2: bool = False
@@ -46,6 +63,14 @@ class Perturbations:
     srp: bool = False
     drag: bool = False
     third_bodies: tuple[str, ...] = ()
+    atmosphere: ExponentialAtmosphere | None = None
+    solar_pressure_at_1au_Npm2: float = SOLAR_PRESSURE_AT_1_AU_NPM2
+
+    def __post_init__(self) -> None:
+        pressure = float(self.solar_pressure_at_1au_Npm2)
+        if not math.isfinite(pressure) or pressure <= 0.0:
+            raise ValueError("solar_pressure_at_1au_Npm2 must be finite and positive")
+        object.__setattr__(self, "solar_pressure_at_1au_Npm2", pressure)
 
     def active_third_bodies(self) -> tuple[str, ...]:
         """Return normalized third-body names requested by this config."""
@@ -164,6 +189,7 @@ class Dynamics:
         chief_initial_state_eci: BoundaryState,
         central_body: CelestialBody | str = "earth",
         chief_name: str = "chief",
+        chief_spacecraft: Spacecraft | None = None,
         reference_length_m: float = 1_000.0,
         propagation_mode: str = "coupled_eci",
         **kwargs: Any,
@@ -174,6 +200,9 @@ class Dynamics:
             chief_initial_state_eci: Absolute chief state defining the RIC frame.
             central_body: Central body name or object.
             chief_name: Name used for the returned chief-centered frame.
+            chief_spacecraft: Optional chief mass and cannonball properties.
+                Omit it to model a gravity-only chief while drag or SRP acts
+                on the phase spacecraft (the deputy).
             reference_length_m: Characteristic relative distance for scaling.
             propagation_mode: One of ``"coupled_eci"`` (default),
                 ``"coupled_ric"``, ``"nonlinear_ric"``, ``"damico"``, or
@@ -191,6 +220,7 @@ class Dynamics:
             chief_initial_state_eci=chief_initial_state_eci,
             central_body=body,
             chief_name=chief_name,
+            chief_spacecraft=chief_spacecraft,
             reference_length_m=reference_length_m,
             propagation_mode=propagation_mode,
         )

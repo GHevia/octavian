@@ -38,6 +38,7 @@ from ...dynamics import (
     ThirdBodyTable,
     TwoBodyECI,
 )
+from ...forces import EARTH_EXPONENTIAL_ATMOSPHERE
 from ...phase import Phase
 from ...relative import (
     ClohessyWiltshire,
@@ -57,9 +58,14 @@ from ...relative.dynamics import (
 )
 from ...relative.solar import circular_chief_state
 from ...relative.transforms import relative_to_inertial_state, ric_basis
+from ...spacecraft import Spacecraft
 from ...specs import BoundaryState
 from ...variables import ImpulsiveDeltaV
-from ..third_bodies import phase_perturbations, tables_for_phase
+from ..third_bodies import (
+    phase_perturbations,
+    sun_table_for_phase,
+    tables_for_phase,
+)
 
 
 @dataclass(slots=True)
@@ -246,11 +252,73 @@ def first_thruster(phase: Phase):
     raise KeyError(f"No thruster named {thruster_name!r} on spacecraft {spacecraft.name!r}")
 
 
+def _cannonball_force_options(
+    phase: Phase,
+    *,
+    sun_table: ThirdBodyTable | None,
+) -> dict[str, Any]:
+    """Return validated drag/SRP options for one phase spacecraft."""
+    dynamics = phase.dynamics
+    if dynamics is None:
+        raise ValueError(f"Phase {phase.name!r} is missing dynamics.")
+    perturbations = phase_perturbations(phase)
+    if not perturbations.drag and not perturbations.srp:
+        return {
+            "drag": False,
+            "srp": False,
+            "atmosphere": None,
+            "sun_table": None,
+            "solar_pressure_at_1au_Npm2": perturbations.solar_pressure_at_1au_Npm2,
+        }
+    spacecraft = phase.spacecraft
+    if not isinstance(spacecraft, Spacecraft):
+        raise ValueError(
+            f"Phase {phase.name!r} requires a Spacecraft object when drag or SRP is enabled."
+        )
+    if spacecraft.initial_mass_kg <= 0.0:
+        raise ValueError(f"Spacecraft {spacecraft.name!r} requires positive mass for drag or SRP.")
+    if perturbations.drag and spacecraft.cannonball.drag_area_m2 <= 0.0:
+        raise ValueError(
+            f"Spacecraft {spacecraft.name!r} requires cannonball.drag_area_m2 > 0 "
+            "when drag is enabled."
+        )
+    if perturbations.srp and spacecraft.cannonball.srp_area_m2 <= 0.0:
+        raise ValueError(
+            f"Spacecraft {spacecraft.name!r} requires cannonball.srp_area_m2 > 0 "
+            "when SRP is enabled."
+        )
+    atmosphere = perturbations.atmosphere
+    if perturbations.drag and atmosphere is None:
+        central_body = getattr(dynamics, "central_body", None)
+        central_body_name = getattr(central_body, "name", central_body)
+        if central_body_name is None:
+            central_body_name = getattr(
+                getattr(getattr(dynamics, "model", None), "central_body", None),
+                "name",
+                None,
+            )
+        if central_body_name is None:
+            central_body_name = getattr(dynamics.frame, "origin", "")
+        if str(central_body_name).strip().lower() != "earth":
+            raise ValueError("Non-Earth drag dynamics require Perturbations(atmosphere=...).")
+        atmosphere = EARTH_EXPONENTIAL_ATMOSPHERE
+    if perturbations.srp and sun_table is None:
+        raise ValueError("SRP dynamics require a sampled Sun ephemeris table.")
+    return {
+        "drag": bool(perturbations.drag),
+        "srp": bool(perturbations.srp),
+        "atmosphere": atmosphere,
+        "sun_table": sun_table,
+        "solar_pressure_at_1au_Npm2": perturbations.solar_pressure_at_1au_Npm2,
+    }
+
+
 def ode_for_phase(
     phase: Phase,
     *,
     carries_mass: bool = False,
     third_body_tables: Sequence[ThirdBodyTable] = (),
+    sun_table: ThirdBodyTable | None = None,
 ):
     """Construct the ASSET ODE selected by phase intent and environment."""
     dynamics = phase.dynamics
@@ -261,11 +329,11 @@ def ode_for_phase(
     if relative_model is not None:
         if is_powered_phase(phase) or carries_mass:
             raise ValueError("CWH phases do not yet support finite-thrust or mass states.")
-        if perturbations.j2 or third_body_tables:
+        if perturbations.j2 or perturbations.drag or perturbations.srp or third_body_tables:
             raise ValueError(
                 "Dynamics.cwh is an unforced linear model and cannot include "
                 "perturbations. Use Dynamics.relative(...) for exact nonlinear "
-                "chief/deputy propagation with J2 or third-body gravity."
+                "chief/deputy propagation with perturbations."
             )
         return ClohessyWiltshireODE(mean_motion_radps=relative_model.mean_motion_radps)
     nonlinear_model = nonlinear_relative_model(phase)
@@ -283,7 +351,7 @@ def ode_for_phase(
             raise ValueError(
                 f"Relative propagation mode {mode.value!r} is a two-body "
                 "formulation and cannot include perturbations. Use "
-                "propagation_mode='coupled_eci' for J2 or third-body gravity."
+                "propagation_mode='coupled_eci' for perturbations."
             )
         if (is_powered_phase(phase) or carries_mass) and (
             mode is not RelativePropagationMode.COUPLED_ECI
@@ -299,7 +367,27 @@ def ode_for_phase(
             "central_body_radius_m": float(dynamics.central_body_radius_m),
             "j2_coefficient": float(dynamics.j2_coefficient),
             "third_body_tables": tuple(third_body_tables),
+            **_cannonball_force_options(phase, sun_table=sun_table),
         }
+        deputy = phase.spacecraft
+        if not isinstance(deputy, Spacecraft):
+            raise ValueError(f"Relative phase {phase.name!r} requires a Spacecraft object.")
+        chief = nonlinear_model.chief_spacecraft
+        chief_uses_cannonball_force = chief is not None and (
+            (perturbations.drag and chief.cannonball.drag_area_m2 > 0.0)
+            or (perturbations.srp and chief.cannonball.srp_area_m2 > 0.0)
+        )
+        if chief_uses_cannonball_force and chief.initial_mass_kg <= 0.0:
+            raise ValueError(
+                f"Chief spacecraft {chief.name!r} requires positive mass " "for drag or SRP."
+            )
+        force_options.update(
+            {
+                "chief_mass_kg": (float(chief.initial_mass_kg) if chief is not None else 1.0),
+                "chief_cannonball": (chief.cannonball if chief is not None else None),
+                "deputy_cannonball": deputy.cannonball,
+            }
+        )
         if is_powered_phase(phase):
             thruster = first_thruster(phase)
             return FiniteThrustRelativeODE(
@@ -314,7 +402,10 @@ def ode_for_phase(
                 **force_options,
             )
         if mode is RelativePropagationMode.COUPLED_ECI:
-            return CoupledRelativeODE(**force_options)
+            return CoupledRelativeODE(
+                deputy_mass_kg=float(deputy.initial_mass_kg),
+                **force_options,
+            )
         if mode is RelativePropagationMode.COUPLED_RIC:
             return CoupledRelativeRICODE(
                 mu_m3ps2=float(dynamics.mu_m3ps2),
@@ -338,6 +429,9 @@ def ode_for_phase(
         )
     if is_powered_phase(phase):
         thruster = first_thruster(phase)
+        spacecraft = phase.spacecraft
+        if not isinstance(spacecraft, Spacecraft):
+            raise ValueError(f"Powered phase {phase.name!r} requires a Spacecraft object.")
         return FiniteThrustECI(
             mu_m3ps2=float(dynamics.mu_m3ps2),
             thrust_N=float(thruster.thrust_N),
@@ -347,8 +441,13 @@ def ode_for_phase(
             j2_coefficient=float(dynamics.j2_coefficient),
             third_body_tables=tuple(third_body_tables),
             thrust_control=thrust_control_for_phase(phase),
+            cannonball=spacecraft.cannonball,
+            **_cannonball_force_options(phase, sun_table=sun_table),
         )
     if carries_mass:
+        spacecraft = phase.spacecraft
+        if not isinstance(spacecraft, Spacecraft):
+            raise ValueError(f"Mass-carrying phase {phase.name!r} requires a Spacecraft object.")
         return MassCoastECI(
             mu_m3ps2=float(dynamics.mu_m3ps2),
             j2=bool(perturbations.j2),
@@ -356,14 +455,22 @@ def ode_for_phase(
             j2_coefficient=float(dynamics.j2_coefficient),
             third_body_tables=tuple(third_body_tables),
             thrust_control=thrust_control_for_phase(phase),
+            cannonball=spacecraft.cannonball,
+            **_cannonball_force_options(phase, sun_table=sun_table),
         )
-    if perturbations.j2 or third_body_tables:
+    if perturbations.j2 or perturbations.drag or perturbations.srp or third_body_tables:
+        spacecraft = phase.spacecraft
+        if not isinstance(spacecraft, Spacecraft):
+            raise ValueError(f"Perturbed phase {phase.name!r} requires a Spacecraft object.")
         return PerturbedECI(
             mu_m3ps2=float(dynamics.mu_m3ps2),
             j2=bool(perturbations.j2),
             central_body_radius_m=float(dynamics.central_body_radius_m),
             j2_coefficient=float(dynamics.j2_coefficient),
             third_body_tables=tuple(third_body_tables),
+            spacecraft_mass_kg=float(spacecraft.initial_mass_kg),
+            cannonball=spacecraft.cannonball,
+            **_cannonball_force_options(phase, sun_table=sun_table),
         )
     return TwoBodyECI(mu_m3ps2=float(dynamics.mu_m3ps2))
 
@@ -873,6 +980,7 @@ def make_asset_phase(
         phase,
         carries_mass=carries_mass,
         third_body_tables=tables_for_phase(phase, third_body_tables or {}),
+        sun_table=sun_table_for_phase(phase, third_body_tables or {}),
     )
     asset_phase = ode.phase(Tmodes.LGL3, prepared_guess, int(nsegs))
     return asset_phase, layout, propulsion_kind

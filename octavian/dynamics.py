@@ -21,6 +21,14 @@ from ._asset import oc, require_asset, vf
 from ._control_dynamics import thrust_vector_and_rate
 from .bodies import MOON, SUN
 from .control import ThrustControl
+from .forces import (
+    ASTRONOMICAL_UNIT_M,
+    SOLAR_PRESSURE_AT_1_AU_NPM2,
+    Cannonball,
+    ExponentialAtmosphere,
+    cannonball_drag_acceleration,
+    cannonball_srp_acceleration,
+)
 
 SUN_MU_M3PS2 = SUN.mu_m3ps2
 MOON_MU_M3PS2 = MOON.mu_m3ps2
@@ -196,6 +204,86 @@ def gravity_acceleration_components(
     return np.asarray(acceleration, dtype=float)
 
 
+def translational_acceleration_components(
+    position_m: ArrayLike,
+    velocity_mps: ArrayLike,
+    *,
+    time_s: float = 0.0,
+    mass_kg: float,
+    mu_m3ps2: float,
+    include_j2: bool = False,
+    central_body_radius_m: float = 6_378_136.3,
+    j2_coefficient: float = 1.08262668e-3,
+    third_body_tables: Sequence[ThirdBodyTable] = (),
+    include_drag: bool = False,
+    include_srp: bool = False,
+    cannonball: Cannonball | None = None,
+    atmosphere: ExponentialAtmosphere | None = None,
+    sun_table: ThirdBodyTable | None = None,
+    solar_pressure_at_1au_Npm2: float = SOLAR_PRESSURE_AT_1_AU_NPM2,
+) -> NDArray[np.float64]:
+    """Evaluate gravity plus optional cannonball drag and SRP numerically.
+
+    This function is the numerical counterpart of the common ASSET force
+    expression.  It is used by relative propagation and by RIC conversion,
+    where the chief acceleration determines the instantaneous frame rate.
+
+    Args:
+        position_m: Central-body inertial position.
+        velocity_mps: Central-body inertial velocity.
+        time_s: Mission-relative time used by ephemeris tables.
+        mass_kg: Instantaneous spacecraft mass.
+        mu_m3ps2: Central-body gravitational parameter.
+        include_j2: Include central-body J2.
+        central_body_radius_m: Central-body radius.
+        j2_coefficient: Central-body J2 coefficient.
+        third_body_tables: Gravity ephemeris tables.
+        include_drag: Include exponential-atmosphere drag.
+        include_srp: Include cannonball solar radiation pressure.
+        cannonball: Spacecraft area and coefficient properties.
+        atmosphere: Required when drag is enabled.
+        sun_table: Required when SRP is enabled.
+        solar_pressure_at_1au_Npm2: Radiation pressure at one AU.
+
+    Returns:
+        Three-component inertial acceleration in m/s².
+    """
+    position = np.asarray(position_m, dtype=float).reshape(3)
+    velocity = np.asarray(velocity_mps, dtype=float).reshape(3)
+    acceleration = gravity_acceleration_components(
+        position,
+        time_s=time_s,
+        mu_m3ps2=mu_m3ps2,
+        include_j2=include_j2,
+        central_body_radius_m=central_body_radius_m,
+        j2_coefficient=j2_coefficient,
+        third_body_tables=third_body_tables,
+    )
+    properties = cannonball or Cannonball()
+    if include_drag and properties.drag_area_m2 > 0.0:
+        if atmosphere is None:
+            raise ValueError("Drag acceleration requires an atmosphere model")
+        acceleration = acceleration + cannonball_drag_acceleration(
+            position,
+            velocity,
+            mass_kg=mass_kg,
+            central_body_radius_m=central_body_radius_m,
+            cannonball=properties,
+            atmosphere=atmosphere,
+        )
+    if include_srp and properties.srp_area_m2 > 0.0:
+        if sun_table is None:
+            raise ValueError("SRP acceleration requires a Sun ephemeris table")
+        acceleration = acceleration + cannonball_srp_acceleration(
+            position,
+            sun_table.position_at(float(time_s)),
+            mass_kg=mass_kg,
+            cannonball=properties,
+            solar_pressure_at_1au_Npm2=solar_pressure_at_1au_Npm2,
+        )
+    return np.asarray(acceleration, dtype=float)
+
+
 def _third_body_acceleration(position_vec, body_position_vec, *, mu_m3ps2: float):
     """Return third-body acceleration in an Earth-centered ASSET expression.
 
@@ -247,6 +335,99 @@ def _gravity_acceleration(
     return acceleration
 
 
+def _cannonball_acceleration(
+    position_vec,
+    velocity_vec,
+    mass,
+    *,
+    central_body_radius_m: float,
+    include_drag: bool,
+    include_srp: bool,
+    cannonball: Cannonball | None,
+    atmosphere: ExponentialAtmosphere | None,
+    time_var,
+    sun_table: ThirdBodyTable | None,
+    solar_pressure_at_1au_Npm2: float,
+):
+    """Build ASSET expressions for the configured non-gravitational forces."""
+    properties = cannonball or Cannonball()
+    acceleration = 0.0 * position_vec
+    if include_drag and properties.drag_area_m2 > 0.0:
+        if atmosphere is None:
+            raise ValueError("Drag dynamics require an atmosphere model")
+        atmospheric_velocity = vf.stack(
+            [
+                -atmosphere.rotation_rate_radps * position_vec[1],
+                atmosphere.rotation_rate_radps * position_vec[0],
+                0.0 * position_vec[2],
+            ]
+        )
+        relative_velocity = velocity_vec - atmospheric_velocity
+        altitude = position_vec.norm() - float(central_body_radius_m)
+        density = float(atmosphere.reference_density_kgpm3) * vf.exp(
+            -(altitude - float(atmosphere.reference_altitude_m)) / float(atmosphere.scale_height_m)
+        )
+        drag_scale = -0.5 * density * properties.drag_coefficient * properties.drag_area_m2 / mass
+        acceleration = acceleration + drag_scale * relative_velocity.norm() * relative_velocity
+    if include_srp and properties.srp_area_m2 > 0.0:
+        if time_var is None or sun_table is None:
+            raise ValueError("SRP dynamics require time and a Sun ephemeris table")
+        sun_to_spacecraft = position_vec - sun_table.position_table(time_var)
+        distance = sun_to_spacecraft.norm()
+        srp_scale = (
+            float(solar_pressure_at_1au_Npm2)
+            * properties.reflectivity_coefficient
+            * properties.srp_area_m2
+            / mass
+            * (ASTRONOMICAL_UNIT_M / distance) ** 2
+        )
+        acceleration = acceleration + srp_scale * sun_to_spacecraft.normalized()
+    return acceleration
+
+
+def _translational_acceleration(
+    position_vec,
+    velocity_vec,
+    mass,
+    *,
+    mu_m3ps2: float,
+    include_j2: bool = False,
+    central_body_radius_m: float = 6_378_136.3,
+    j2_coefficient: float = 1.08262668e-3,
+    time_var=None,
+    third_body_tables: Sequence[ThirdBodyTable] = (),
+    include_drag: bool = False,
+    include_srp: bool = False,
+    cannonball: Cannonball | None = None,
+    atmosphere: ExponentialAtmosphere | None = None,
+    sun_table: ThirdBodyTable | None = None,
+    solar_pressure_at_1au_Npm2: float = SOLAR_PRESSURE_AT_1_AU_NPM2,
+):
+    """Compose the shared gravity, drag, and SRP ASSET acceleration."""
+    gravity = _gravity_acceleration(
+        position_vec,
+        mu_m3ps2=mu_m3ps2,
+        include_j2=include_j2,
+        central_body_radius_m=central_body_radius_m,
+        j2_coefficient=j2_coefficient,
+        time_var=time_var,
+        third_body_tables=third_body_tables,
+    )
+    return gravity + _cannonball_acceleration(
+        position_vec,
+        velocity_vec,
+        mass,
+        central_body_radius_m=central_body_radius_m,
+        include_drag=include_drag,
+        include_srp=include_srp,
+        cannonball=cannonball,
+        atmosphere=atmosphere,
+        time_var=time_var,
+        sun_table=sun_table,
+        solar_pressure_at_1au_Npm2=solar_pressure_at_1au_Npm2,
+    )
+
+
 class TwoBodyECI(oc.ODEBase if oc is not None else object):
     """Two-body point-mass gravity in ECI.
 
@@ -287,9 +468,12 @@ class PerturbedECI(oc.ODEBase if oc is not None else object):
     Currently implemented perturbations:
         - J2 zonal harmonic
         - Sun and Moon third-body point-mass gravity through interpolation tables
+        - Exponential-atmosphere cannonball drag
+        - Cannonball solar radiation pressure
 
     The state is ``[r(3), v(3)]``. Time remains ASSET's phase time variable, not
-    a state, which is why third-body tables are sampled with ``XtU.TVar()``.
+    a state, which is why ephemeris tables are sampled with ``XtU.TVar()``.
+    Spacecraft mass is constant in this coast formulation.
     """
 
     def __init__(
@@ -300,6 +484,13 @@ class PerturbedECI(oc.ODEBase if oc is not None else object):
         central_body_radius_m: float = 6_378_136.3,
         j2_coefficient: float = 1.08262668e-3,
         third_body_tables: Sequence[ThirdBodyTable] = (),
+        spacecraft_mass_kg: float = 1.0,
+        cannonball: Cannonball | None = None,
+        drag: bool = False,
+        srp: bool = False,
+        atmosphere: ExponentialAtmosphere | None = None,
+        sun_table: ThirdBodyTable | None = None,
+        solar_pressure_at_1au_Npm2: float = SOLAR_PRESSURE_AT_1_AU_NPM2,
     ) -> None:
         _require_asset()
         self.mu = float(mu_m3ps2)
@@ -308,14 +499,22 @@ class PerturbedECI(oc.ODEBase if oc is not None else object):
         R = XtU.XVec().head(3)
         V = XtU.XVec().segment(3, 3)
 
-        A = _gravity_acceleration(
+        A = _translational_acceleration(
             R,
+            V,
+            float(spacecraft_mass_kg),
             mu_m3ps2=self.mu,
             include_j2=bool(j2),
             central_body_radius_m=float(central_body_radius_m),
             j2_coefficient=float(j2_coefficient),
             time_var=XtU.TVar(),
             third_body_tables=tuple(third_body_tables),
+            include_drag=bool(drag),
+            include_srp=bool(srp),
+            cannonball=cannonball,
+            atmosphere=atmosphere,
+            sun_table=sun_table,
+            solar_pressure_at_1au_Npm2=solar_pressure_at_1au_Npm2,
         )
         ode = vf.stack([V, A])
 
@@ -348,6 +547,12 @@ class MassCoastECI(oc.ODEBase if oc is not None else object):
         j2_coefficient: float = 1.08262668e-3,
         third_body_tables: Sequence[ThirdBodyTable] = (),
         thrust_control: ThrustControl | None = None,
+        cannonball: Cannonball | None = None,
+        drag: bool = False,
+        srp: bool = False,
+        atmosphere: ExponentialAtmosphere | None = None,
+        sun_table: ThirdBodyTable | None = None,
+        solar_pressure_at_1au_Npm2: float = SOLAR_PRESSURE_AT_1_AU_NPM2,
     ) -> None:
         _require_asset()
         self.mu = float(mu_m3ps2)
@@ -369,14 +574,22 @@ class MassCoastECI(oc.ODEBase if oc is not None else object):
             else None
         )
 
-        A = _gravity_acceleration(
+        A = _translational_acceleration(
             R,
+            V,
+            M,
             mu_m3ps2=self.mu,
             include_j2=bool(j2),
             central_body_radius_m=float(central_body_radius_m),
             j2_coefficient=float(j2_coefficient),
             time_var=XtU.TVar(),
             third_body_tables=tuple(third_body_tables),
+            include_drag=bool(drag),
+            include_srp=bool(srp),
+            cannonball=cannonball,
+            atmosphere=atmosphere,
+            sun_table=sun_table,
+            solar_pressure_at_1au_Npm2=solar_pressure_at_1au_Npm2,
         )
         ode_terms = [V, A, M * 0.0]
         if attitude_rate is not None:
@@ -422,6 +635,12 @@ class FiniteThrustECI(oc.ODEBase if oc is not None else object):
         third_body_tables: Sequence[ThirdBodyTable] = (),
         g0_mps2: float = 9.80665,
         thrust_control: ThrustControl | None = None,
+        cannonball: Cannonball | None = None,
+        drag: bool = False,
+        srp: bool = False,
+        atmosphere: ExponentialAtmosphere | None = None,
+        sun_table: ThirdBodyTable | None = None,
+        solar_pressure_at_1au_Npm2: float = SOLAR_PRESSURE_AT_1_AU_NPM2,
     ) -> None:
         _require_asset()
         self.mu = float(mu_m3ps2)
@@ -440,9 +659,7 @@ class FiniteThrustECI(oc.ODEBase if oc is not None else object):
         control_dim = (
             4
             if control_config.representation == "euler"
-            else 1
-            if control_config.representation == "fixed"
-            else 3
+            else 1 if control_config.representation == "fixed" else 3
         )
         XtU = oc.ODEArguments(state_dim, control_dim)
         X = XtU.XVec()
@@ -452,14 +669,22 @@ class FiniteThrustECI(oc.ODEBase if oc is not None else object):
         M = X[6]
         attitude = X.segment(7, 3) if carries_attitude else None
 
-        gravity = _gravity_acceleration(
+        environment_acceleration = _translational_acceleration(
             R,
+            V,
+            M,
             mu_m3ps2=self.mu,
             include_j2=bool(j2),
             central_body_radius_m=float(central_body_radius_m),
             j2_coefficient=float(j2_coefficient),
             time_var=XtU.TVar(),
             third_body_tables=tuple(third_body_tables),
+            include_drag=bool(drag),
+            include_srp=bool(srp),
+            cannonball=cannonball,
+            atmosphere=atmosphere,
+            sun_table=sun_table,
+            solar_pressure_at_1au_Npm2=solar_pressure_at_1au_Npm2,
         )
         thrust_vector, throttle, attitude_rate = thrust_vector_and_rate(
             control_config,
@@ -470,7 +695,7 @@ class FiniteThrustECI(oc.ODEBase if oc is not None else object):
         )
         thrust_acceleration = (self.thrust_N / M) * thrust_vector
         mass_flow = -(self.thrust_N / (self.isp_s * self.g0_mps2)) * throttle
-        ode_terms = [V, gravity + thrust_acceleration, mass_flow]
+        ode_terms = [V, environment_acceleration + thrust_acceleration, mass_flow]
         if attitude_rate is not None:
             ode_terms.append(attitude_rate)
         ode = vf.stack(ode_terms)

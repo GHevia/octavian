@@ -577,3 +577,22 @@ direction.
 Expected output:
 
 - `traj_composable_thrust_frames_and_attitude.html`
+
+## 23: Differential Cannonball Drag And SRP
+
+Path: `examples/composable/relative/23_cannonball_drag_srp.py`
+
+This optimizer-free example assigns different drag and optical properties to
+the chief and deputy, then propagates D'Amico initial conditions with J2,
+exponential atmospheric drag, and BSP-driven solar radiation pressure. The
+same coupled absolute force model reconstructs both osculating relative
+elements and the plotted RIC history.
+
+The example also shows the `Dynamics.relative(..., chief_spacecraft=...)`
+declaration used by composable coasts and relative finite burns. SRP samples
+the Sun independently of solar third-body gravity.
+
+Expected outputs:
+
+- `traj_cannonball_drag_srp.html`
+- `diagnostics_cannonball_drag_srp.html`

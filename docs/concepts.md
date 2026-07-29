@@ -67,11 +67,13 @@ powered mass state, so a burn-coast-burn chain is not double-counted.
 
 `Dynamics` configures the gravitational parameter, central-body radius, J2
 coefficient, reference frame, characteristic scaling, and perturbation flags.
-J2, Moon, and Sun perturbations are
-implemented in the composable ASSET backend for coast and finite-thrust phases.
-Moon and Sun use the bundled reduced DE440 ephemeris in the `ECI_TOD` frame and
-require a mission initial epoch so Octavian can build ASSET interpolation
-tables over the mission time bounds.
+J2, Moon/Sun gravity, exponential cannonball drag, and cannonball solar
+radiation pressure are implemented in the composable ASSET backend for coast
+and finite-thrust phases. Moon, Sun, and SRP use the bundled reduced DE440
+ephemeris in the `ECI_TOD` frame and require a mission initial epoch so
+Octavian can build ASSET interpolation tables over the mission time bounds.
+SRP's Sun table is an ephemeris dependency, not an implicit request for solar
+third-body gravity.
 
 For multi-phase missions, ephemeris coverage uses the latest cumulative
 absolute Back-time upper bound. `Dynamics.third_body_table_margin_s` extends
@@ -132,7 +134,8 @@ and C is cross-track. Two dynamics levels are deliberately separate:
   state explicit:
 
   - `"coupled_eci"` (default) propagates independent chief and deputy absolute
-    Cartesian states. It supports central gravity, J2, Moon, and Sun.
+    Cartesian states. It supports central gravity, J2, Moon/Sun gravity,
+    exponential drag, and SRP.
   - `"coupled_ric"` propagates the chief ECI state stacked with the deputy RIC
     state. It retains exact nonlinear central gravity for circular or
     eccentric chiefs.
@@ -196,8 +199,9 @@ time.
 
 Finite-thrust relative phases use `propagation_mode="coupled_eci"`. The chief
 remains unpowered while the deputy receives the ECI vector-throttle
-acceleration and loses mass. Gravity and configured J2 or third-body forces are
-evaluated independently at both spacecraft. A `relative_coast` between powered
+acceleration and loses mass. Gravity and configured perturbations are evaluated
+independently at both spacecraft; drag and SRP use their individual cannonball
+properties and instantaneous deputy mass. A `relative_coast` between powered
 phases propagates the same coupled state with constant deputy mass. Native RIC
 and relative-element formulations remain propulsion-free; CWH can still supply
 fast initial guesses without becoming the optimized dynamics.
@@ -242,8 +246,12 @@ available through `solution.scaling`.
 ## Spacecraft And Thrusters
 
 `Spacecraft` and `Thruster` hold mass and propulsion configuration. Impulsive
-examples only need a lightweight thruster placeholder. Chemical-burn examples
+examples only need a lightweight thruster placeholder. Finite-burn examples
 use thrust, specific impulse, and propellant mass to propagate mass depletion.
+`Spacecraft.cannonball` holds constant projected drag/SRP areas and their
+coefficients. Keeping these properties on each spacecraft lets exact relative
+dynamics model differential ballistic behavior without mixing vehicle
+geometry into environment flags.
 
 ## Solution
 

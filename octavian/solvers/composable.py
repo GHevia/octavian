@@ -77,7 +77,11 @@ from .preconfigured import RendezvousResult  # reuse stable result type
 from .relative_environment import (
     build_solar_direction_tables,
 )
-from .third_bodies import build_third_body_tables, tables_for_phase
+from .third_bodies import (
+    build_third_body_tables,
+    sun_table_for_phase,
+    tables_for_phase,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..mission import Mission
@@ -1834,7 +1838,10 @@ def solve_composable_mission(
     set_ocp_threads(ocp, opts.asset_threads)
     nonlinear_ephemeris_phase = any(
         _nonlinear_relative_model(build.ph) is not None
-        and bool(tables_for_phase(build.ph, third_body_tables))
+        and bool(
+            tables_for_phase(build.ph, third_body_tables)
+            or sun_table_for_phase(build.ph, third_body_tables)
+        )
         for build in built
     )
     adaptive_mesh_enabled = bool(opts.enable_adaptive_mesh and not nonlinear_ephemeris_phase)
@@ -2500,9 +2507,7 @@ def solve_composable_mission(
                 "mode": (
                     str(build.powered_kind)
                     if is_powered
-                    else "relative_coast"
-                    if is_relative
-                    else "coast"
+                    else "relative_coast" if is_relative else "coast"
                 ),
                 "t_start_s": float(phase_traj[0, 6]),
                 "t_end_s": float(phase_traj[-1, 6]),
@@ -2569,9 +2574,7 @@ def solve_composable_mission(
             "relative_propagation_mode": (
                 _nonlinear_relative_model(phases[0]).propagation_mode.value
                 if relative_phases and _nonlinear_relative_model(phases[0]) is not None
-                else "cwh"
-                if relative_phases
-                else None
+                else "cwh" if relative_phases else None
             ),
             "native_relative_trajectory": (
                 native_relative_trajectory.tolist()

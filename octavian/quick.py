@@ -170,8 +170,8 @@ def relative_hop(
             ``Dynamics.relative`` is built from the remaining dynamics inputs.
         central_body: Central body used when constructing default dynamics.
         propagation_mode: Relative formulation used by default dynamics.
-        perturbations: Optional differential J2, Moon, or Sun configuration.
-        initial_epoch: Mission epoch required by Sun or Moon perturbations.
+        perturbations: Optional differential perturbation configuration.
+        initial_epoch: Mission epoch required by Sun, Moon, or SRP.
         spacecraft: Optional deputy configuration.
         reference_length_m: Relative-distance scaling for default dynamics.
         nsegs_coast: Mesh segments on the initial coast.
@@ -252,8 +252,8 @@ def relative_transfer_chain(
         dynamics: Optional preconfigured relative dynamics.
         central_body: Central body used when constructing default dynamics.
         propagation_mode: Relative formulation used by default dynamics.
-        perturbations: Optional differential J2, Moon, or Sun configuration.
-        initial_epoch: Mission epoch required by Sun or Moon perturbations.
+        perturbations: Optional differential perturbation configuration.
+        initial_epoch: Mission epoch required by Sun, Moon, or SRP.
         spacecraft: Optional deputy configuration.
         reference_length_m: Relative-distance scaling for default dynamics.
         nsegs_coast: Mesh segments used for coast phases.

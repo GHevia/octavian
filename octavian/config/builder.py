@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from ..forces import Cannonball
 from ..mission import Mission
 from ..phase import Phase, state
 from ..spacecraft import Spacecraft, Thruster
@@ -129,9 +130,7 @@ def _add_execution_options(
     if "objectives" in mission_config:
         mission_kwargs["objectives"] = build_objectives(mission_config["objectives"])
     if "solver_options" in mission_config:
-        mission_kwargs["solver_options"] = build_solver_options(
-            mission_config["solver_options"]
-        )
+        mission_kwargs["solver_options"] = build_solver_options(mission_config["solver_options"])
     if "solve_config" in mission_config:
         mission_kwargs["solve_config"] = build_solve_config(mission_config["solve_config"])
     if "retry" in mission_config:
@@ -156,9 +155,7 @@ def _add_numerical_options(
     if "nrevs_to_try" in mission_config:
         mission_kwargs["nrevs_to_try"] = tuple(
             int(item)
-            for item in sequence(
-                mission_config["nrevs_to_try"], "config.mission.nrevs_to_try"
-            )
+            for item in sequence(mission_config["nrevs_to_try"], "config.mission.nrevs_to_try")
         )
     if "limit_precoast_to_one_period" in mission_config:
         mission_kwargs["limit_precoast_to_one_period"] = boolean(
@@ -189,20 +186,47 @@ def _build_spacecraft(value: Any) -> dict[str, Spacecraft]:
     for reference_name, raw_config in configs.items():
         path = f"config.spacecraft.{reference_name}"
         config = mapping(raw_config, path)
-        reject_unknown(config, {"name", "dry_mass_kg", "thrusters", "info"}, path)
+        reject_unknown(
+            config,
+            {"name", "dry_mass_kg", "thrusters", "cannonball", "info"},
+            path,
+        )
         thrusters = [
             _build_thruster(item, f"{path}.thrusters[{index}]")
-            for index, item in enumerate(
-                sequence(config.get("thrusters", []), f"{path}.thrusters")
-            )
+            for index, item in enumerate(sequence(config.get("thrusters", []), f"{path}.thrusters"))
         ]
         result[str(reference_name)] = Spacecraft(
             name=str(config.get("name", reference_name)),
             dry_mass_kg=float(config.get("dry_mass_kg", 0.0)),
             thrusters=thrusters,
+            cannonball=_build_cannonball(
+                config.get("cannonball", {}),
+                f"{path}.cannonball",
+            ),
             info=dict(mapping(config.get("info", {}), f"{path}.info")),
         )
     return result
+
+
+def _build_cannonball(value: Any, path: str) -> Cannonball:
+    """Build constant-area drag and SRP spacecraft properties."""
+    config = mapping(value, path)
+    reject_unknown(
+        config,
+        {
+            "drag_area_m2",
+            "drag_coefficient",
+            "srp_area_m2",
+            "reflectivity_coefficient",
+        },
+        path,
+    )
+    return Cannonball(
+        drag_area_m2=float(config.get("drag_area_m2", 0.0)),
+        drag_coefficient=float(config.get("drag_coefficient", 2.2)),
+        srp_area_m2=float(config.get("srp_area_m2", 0.0)),
+        reflectivity_coefficient=float(config.get("reflectivity_coefficient", 1.3)),
+    )
 
 
 def _build_thruster(value: Any, path: str) -> Thruster:
@@ -309,9 +333,7 @@ def _build_one_phase(
         ],
         variables=[
             build_variable(item, f"{path}.variables[{index}]")
-            for index, item in enumerate(
-                sequence(config.get("variables", []), f"{path}.variables")
-            )
+            for index, item in enumerate(sequence(config.get("variables", []), f"{path}.variables"))
         ],
         previous=previous,
         link=build_link(config["link"], f"{path}.link") if "link" in config else None,
