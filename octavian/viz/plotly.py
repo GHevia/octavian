@@ -9,8 +9,13 @@ from typing import Any
 
 import numpy as np
 
+from ..cislunar import CR3BPSystem
 from ..types import Maneuver
-from .diagnostics import inertial_diagnostic_panels, relative_diagnostic_panels
+from .diagnostics import (
+    cr3bp_diagnostic_panels,
+    inertial_diagnostic_panels,
+    relative_diagnostic_panels,
+)
 
 EARTH_RADIUS_M = 6378137.0
 
@@ -295,6 +300,133 @@ def save_trajectory_html(
     figure.write_html(out_html, include_plotlyjs="cdn")
 
 
+def cr3bp_trajectory_figure(
+    traj: np.ndarray,
+    *,
+    system: CR3BPSystem,
+    dimensional: bool = True,
+    title: str = "octavian CR3BP trajectory",
+) -> Any:
+    """Build an interactive barycentric-synodic CR3BP trajectory figure.
+
+    Args:
+        traj: Rows ``[x, y, z, xdot, ydot, zdot, time]``.
+        system: Primary-secondary CR3BP system.
+        dimensional: Interpret positions as meters when true or canonical
+            distance units otherwise.
+        title: Figure title.
+
+    Returns:
+        A Plotly 3D figure with both bodies and all five Lagrange points.
+    """
+    try:
+        import plotly.graph_objects as go
+    except ImportError as exc:
+        raise RuntimeError(
+            "Plotly visualization requires the optional viz dependencies. "
+            "Install them with `pip install \"octavian[viz]\"`."
+        ) from exc
+
+    trajectory = np.asarray(traj, dtype=float)
+    if (
+        trajectory.ndim != 2
+        or trajectory.shape[0] < 1
+        or trajectory.shape[1] < 7
+        or not np.all(np.isfinite(trajectory[:, 0:7]))
+    ):
+        raise ValueError("traj must contain finite [x, y, z, xdot, ydot, zdot, time] rows")
+    scale = 1.0 / 1_000.0 if dimensional else 1.0
+    unit = "km" if dimensional else "DU"
+    primary_position = (
+        system.primary_position_m if dimensional else system.primary_position_nondimensional
+    )
+    secondary_position = (
+        system.secondary_position_m if dimensional else system.secondary_position_nondimensional
+    )
+    lagrange_points = system.lagrange_points(dimensional=dimensional)
+    positions = scale * trajectory[:, 0:3]
+    hover_text = [
+        (
+            f"t = {row[6]:.3f}<br>"
+            f"x,y,z = [{position[0]:.6f}, {position[1]:.6f}, "
+            f"{position[2]:.6f}] {unit}"
+        )
+        for row, position in zip(trajectory, positions, strict=True)
+    ]
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter3d(
+            x=positions[:, 0],
+            y=positions[:, 1],
+            z=positions[:, 2],
+            mode="lines",
+            name="Trajectory",
+            line=dict(width=6, color="#00CC96"),
+            text=hover_text,
+            hovertemplate="%{text}<extra></extra>",
+        )
+    )
+    figure.add_trace(
+        go.Scatter3d(
+            x=[scale * primary_position[0], scale * secondary_position[0]],
+            y=[0.0, 0.0],
+            z=[0.0, 0.0],
+            mode="markers+text",
+            name="Primaries",
+            text=[system.primary.name.title(), system.secondary.name.title()],
+            textposition="top center",
+            marker=dict(size=[16, 9], color=["#636EFA", "#AB63FA"]),
+        )
+    )
+    figure.add_trace(
+        go.Scatter3d(
+            x=[scale * point[0] for point in lagrange_points.values()],
+            y=[scale * point[1] for point in lagrange_points.values()],
+            z=[scale * point[2] for point in lagrange_points.values()],
+            mode="markers+text",
+            name="Lagrange points",
+            text=list(lagrange_points),
+            textposition="top center",
+            marker=dict(size=5, color="#EF553B", symbol="diamond"),
+        )
+    )
+    axis_style = dict(
+        backgroundcolor="black",
+        gridcolor="rgba(255,255,255,0.12)",
+        zerolinecolor="rgba(255,255,255,0.25)",
+    )
+    figure.update_layout(
+        title=dict(text=title, x=0.5),
+        template="plotly_dark",
+        scene=dict(
+            xaxis=dict(title=f"Synodic X ({unit})", **axis_style),
+            yaxis=dict(title=f"Synodic Y ({unit})", **axis_style),
+            zaxis=dict(title=f"Synodic Z ({unit})", **axis_style),
+            aspectmode="data",
+        ),
+        margin=dict(l=0, r=0, t=55, b=0),
+    )
+    return figure
+
+
+def save_cr3bp_trajectory_html(
+    traj: np.ndarray,
+    out_html: str,
+    *,
+    system: CR3BPSystem,
+    dimensional: bool = True,
+    title: str = "octavian CR3BP trajectory",
+) -> None:
+    """Save a barycentric-synodic CR3BP trajectory as interactive HTML."""
+    figure = cr3bp_trajectory_figure(
+        traj,
+        system=system,
+        dimensional=dimensional,
+        title=title,
+    )
+    figure.write_html(out_html, include_plotlyjs="cdn")
+
+
 def relative_trajectory_figure(
     traj: np.ndarray,
     *,
@@ -527,6 +659,7 @@ def trajectory_diagnostics_figure(
     frame_kind: str,
     mu_m3ps2: float | None = None,
     solar_directions_ric: np.ndarray | None = None,
+    cr3bp_system: CR3BPSystem | None = None,
     title: str = "octavian trajectory diagnostics",
 ) -> Any:
     """Build stacked, shared-time plots appropriate to the trajectory frame."""
@@ -545,6 +678,13 @@ def trajectory_diagnostics_figure(
         panels = relative_diagnostic_panels(
             trajectory,
             solar_directions_ric=solar_directions_ric,
+        )
+    elif normalized_frame == "rotating":
+        if cr3bp_system is None:
+            raise ValueError("Rotating trajectory diagnostics require cr3bp_system")
+        panels = cr3bp_diagnostic_panels(
+            trajectory,
+            system=cr3bp_system,
         )
     else:
         if mu_m3ps2 is None or float(mu_m3ps2) <= 0.0:
@@ -599,6 +739,7 @@ def save_trajectory_diagnostics_html(
     frame_kind: str,
     mu_m3ps2: float | None = None,
     solar_directions_ric: np.ndarray | None = None,
+    cr3bp_system: CR3BPSystem | None = None,
     title: str = "octavian trajectory diagnostics",
 ) -> None:
     """Save frame-aware trajectory time histories as interactive HTML."""
@@ -607,6 +748,7 @@ def save_trajectory_diagnostics_html(
         frame_kind=frame_kind,
         mu_m3ps2=mu_m3ps2,
         solar_directions_ric=solar_directions_ric,
+        cr3bp_system=cr3bp_system,
         title=title,
     )
     figure.write_html(out_html, include_plotlyjs="cdn")

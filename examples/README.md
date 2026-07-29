@@ -40,6 +40,8 @@ constraints:
   deputy mass.
 - earth-centered example 19 — RIC-referenced thrust and bounded kinematic
   attitude states.
+- cislunar example 22 — dimensional Earth–Moon CR3BP propagation, a
+  composable synodic solve, Jacobi diagnostics, and inertial conversion.
 
 After either API path, run `outputs/01_ephemeris_files.py` to see the common
 ephemeris export interface.

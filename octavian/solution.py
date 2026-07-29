@@ -17,6 +17,7 @@ from typing import Any
 
 import numpy as np
 
+from .cislunar import CR3BPSystem
 from .coordinates import CoordinateFrame, SolverScaling
 from .exports import Ephemeris
 from .exports.ephemeris import EphemerisFormat
@@ -160,6 +161,21 @@ class Solution:
             return None
         value = self.result.info.get("relative_propagation_mode")
         return None if value is None else str(value)
+
+    @property
+    def cr3bp_system(self) -> CR3BPSystem | None:
+        """Return the solved CR3BP system, or ``None`` for other dynamics."""
+        if self.result is None:
+            return None
+        value = self.result.info.get("cr3bp_system")
+        if not isinstance(value, dict):
+            return None
+        return CR3BPSystem(
+            primary=str(value["primary"]),
+            secondary=str(value["secondary"]),
+            separation_m=float(value["separation_m"]),
+            name=str(value["name"]),
+        )
 
     @property
     def phase_control_trajectories(self) -> tuple[np.ndarray, ...]:
@@ -347,8 +363,9 @@ class Solution:
             def save_html(self, out_html: str, *, title: str = "trajectory") -> None:
                 """Save a frame-aware trajectory plot.
 
-                Relative results use RIC axes and a chief marker; inertial
-                results retain the Earth-centered trajectory view.
+                Relative results use RIC axes and a chief marker, rotating
+                CR3BP results show both primaries and Lagrange points, and
+                inertial results retain the Earth-centered trajectory view.
                 """
                 if self_outer.result is None:
                     raise RuntimeError("No result to visualize")
@@ -360,6 +377,19 @@ class Solution:
                         out_html,
                         maneuvers=self_outer.result.maneuvers,
                         phase_segments=phase_segments,
+                        title=title,
+                    )
+                    return
+                if frame is not None and frame.kind == "rotating":
+                    system = self_outer.cr3bp_system
+                    if system is None:
+                        raise RuntimeError(
+                            "Rotating-frame visualization requires CR3BP system metadata"
+                        )
+                    _plotly.save_cr3bp_trajectory_html(
+                        self_outer.result.traj,
+                        out_html,
+                        system=system,
                         title=title,
                     )
                     return
@@ -406,6 +436,7 @@ class Solution:
                     frame_kind=(frame.kind if frame is not None else "inertial"),
                     mu_m3ps2=self_outer.result.info.get("mu_m3ps2"),
                     solar_directions_ric=self_outer.result.info.get("solar_directions_ric"),
+                    cr3bp_system=self_outer.cr3bp_system,
                     title=title,
                 )
 

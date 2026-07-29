@@ -222,6 +222,32 @@ BSP at `Mission.initial_epoch`, subtracts the chief position, and rotates the
 line into RIC throughout the arc. It requires `chief_initial_state_eci` so the
 rotation is defined. Neither lighting constraint is an eclipse or power model.
 
+### Cislunar CR3BP
+
+`Dynamics.cr3bp(...)` uses a barycentric frame that rotates with a circular
+primary-secondary pair. Public composable states remain dimensional SI values,
+while `CR3BPSystem.scaling` supplies canonical distance, velocity, and time
+units to the solver.
+
+The model is intentionally distinct from an inertial third-body perturbation.
+Both primaries define the baseline equations, and neither follows a SPICE
+ephemeris. Extra perturbations and mixed inertial/synodic phase links are
+rejected in this initial implementation.
+
+`octavian.cislunar` provides:
+
+- dimensional/canonical state and time conversion;
+- barycentric synodic conversion to and from barycenter-, primary-, or
+  secondary-centered inertial states;
+- all five Lagrange points;
+- deterministic forward or backward RK4 propagation;
+- dimensional or canonical Jacobi constants;
+- a cubic Hermite seed used by composable CR3BP collocation phases.
+
+The rotating-frame trajectory plot shows both primaries and the Lagrange
+points. Diagnostics report synodic state, range to each primary, speed, and
+Jacobi conservation.
+
 ## Frames, Layouts, And Scaling
 
 Every `Dynamics` declaration carries a `CoordinateFrame`; existing missions

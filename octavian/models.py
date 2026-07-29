@@ -196,6 +196,50 @@ class Dynamics:
         )
         return cls(central_body=body, model=model, **kwargs)
 
+    @classmethod
+    def cr3bp(
+        cls,
+        *,
+        primary: CelestialBody | str = "earth",
+        secondary: CelestialBody | str = "moon",
+        separation_m: float = 384_400_000.0,
+        **kwargs: Any,
+    ) -> Dynamics:
+        """Create dimensional barycentric-synodic CR3BP dynamics.
+
+        Args:
+            primary: More massive body or catalog name.
+            secondary: Less massive body or catalog name.
+            separation_m: Constant circular body separation.
+            **kwargs: Additional :class:`Dynamics` metadata. Perturbations are
+                not supported by this first-order CR3BP model.
+
+        Returns:
+            Dynamics configured with natural CR3BP scaling and a synodic frame.
+        """
+        from .cislunar import CR3BPSystem
+
+        model = CR3BPSystem(
+            primary=primary,
+            secondary=secondary,
+            separation_m=separation_m,
+        )
+        dynamics = cls(model=model, **kwargs)
+        perturbations = dynamics.active_perturbations()
+        if any(
+            (
+                perturbations.j2,
+                perturbations.srp,
+                perturbations.drag,
+                bool(perturbations.active_third_bodies()),
+            )
+        ):
+            raise ValueError(
+                "Dynamics.cr3bp is the unperturbed circular restricted "
+                "three-body model and cannot include additional perturbations."
+            )
+        return dynamics
+
     def active_perturbations(self) -> Perturbations:
         """Return normalized perturbation flags for solver compilation."""
         if self.perturbations is not None:

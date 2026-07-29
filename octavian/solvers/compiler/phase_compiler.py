@@ -11,6 +11,7 @@ import numpy as np
 from ..._asset import Tmodes
 from ...astro.kepler import cartesian_to_classic
 from ...astro.types import as_vec3
+from ...cislunar import CR3BPODE, CR3BPSystem
 from ...control import ThrustControl
 from ...coordinates import (
     CARTESIAN,
@@ -167,6 +168,13 @@ def is_relative_phase(phase: Phase) -> bool:
     return cwh_model(phase) is not None or nonlinear_relative_model(phase) is not None
 
 
+def cr3bp_model(phase: Phase) -> CR3BPSystem | None:
+    """Return a phase's CR3BP system, when configured."""
+    dynamics = phase.dynamics
+    model = dynamics.model if dynamics is not None else None
+    return model if isinstance(model, CR3BPSystem) else None
+
+
 def mass_state_phase_indices(phases: Sequence[Phase]) -> set[int]:
     """Return phases that carry mass across a continuous powered chain."""
     powered_indices = [idx for idx, phase in enumerate(phases) if is_powered_phase(phase)]
@@ -257,6 +265,20 @@ def ode_for_phase(
     if dynamics is None:
         raise ValueError(f"Phase {phase.name!r} is missing dynamics.")
     perturbations = phase_perturbations(phase)
+    three_body_model = cr3bp_model(phase)
+    if three_body_model is not None:
+        if is_powered_phase(phase) or carries_mass:
+            raise ValueError("CR3BP phases currently support ballistic coast dynamics only")
+        if any(
+            (
+                perturbations.j2,
+                perturbations.srp,
+                perturbations.drag,
+                bool(third_body_tables),
+            )
+        ):
+            raise ValueError("CR3BP phases cannot include additional perturbations")
+        return CR3BPODE(system=three_body_model)
     relative_model = cwh_model(phase)
     if relative_model is not None:
         if is_powered_phase(phase) or carries_mass:
@@ -376,6 +398,8 @@ def phase_dimensions(phase: Phase) -> tuple[int, int, bool]:
 
 def layout_for_phase(phase: Phase, *, carries_mass: bool = False) -> StateLayout:
     """Return the named state/control layout required by a phase."""
+    if cr3bp_model(phase) is not None:
+        return CARTESIAN
     if cwh_model(phase) is not None:
         return RELATIVE_CARTESIAN
     relative_model = nonlinear_relative_model(phase)

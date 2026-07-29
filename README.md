@@ -26,6 +26,9 @@ This MVP includes:
   markers, RIC state/range/solar phase, and inertial state/elements.
 - STK ``.e``, CCSDS OEM, SPICE BSP/SPK, and CSV trajectory exports with
   explicit epoch, frame, center, and object metadata.
+- Dimensional Earth–Moon/general CR3BP propagation and composable coast
+  phases, canonical/synodic conversions, Lagrange points, Jacobi diagnostics,
+  and synodic plotting.
 
 `octavian` declares ASSET (`asset_asrl`) as a runtime dependency because the
 solver-backed workflows rely on it.
@@ -96,6 +99,7 @@ python examples/quick/01_two_impulse_free_time.py
 python examples/quick/02_two_impulse_precoast_impulsive_link.py
 python examples/composable/earth_centered/08_chemical_burn_j2.py
 python examples/composable/earth_centered/19_thrust_frames_and_attitude.py
+python examples/composable/cislunar/22_earth_moon_cr3bp.py
 python examples/outputs/01_ephemeris_files.py
 python -m octavian.config examples/config/01_two_impulse_transfer.json
 ```

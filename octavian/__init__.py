@@ -13,6 +13,7 @@ _NATIVE_RUNTIME_HANDLES = enable_native_runtime()
 # Public, config-like objects
 from . import (
     bodies,
+    cislunar,
     config,
     constraints,
     coordinates,
@@ -24,6 +25,7 @@ from . import (
     variables,
 )
 from .bodies import EARTH, MOON, SUN, CelestialBody
+from .cislunar import CR3BPSystem
 from .config import MissionConfigError, load_mission, load_mission_mapping, mission_from_dict
 from .conops import rendezvous_precoast_then_transfer, rendezvous_two_impulse
 from .control import ThrustControl
@@ -75,6 +77,7 @@ __all__ = [
     "SolverScaling",
     "StateLayout",
     "CelestialBody",
+    "CR3BPSystem",
     "ClohessyWiltshire",
     "NonlinearRelative",
     "RelativePropagationMode",
@@ -118,6 +121,7 @@ __all__ = [
     "guesses",
     "objectives",
     "constraints",
+    "cislunar",
     "bodies",
     "config",
     "coordinates",
