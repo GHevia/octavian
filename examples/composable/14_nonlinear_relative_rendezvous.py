@@ -38,6 +38,7 @@ phase = Phase(
         chief_initial_state_eci=chief_initial_state_eci,
         chief_name="Chief",
         reference_length_m=1_000.0,
+        propagation_mode="coupled_eci",
     ),
     initial_state=initial_relative_state,
     final_state=final_relative_state,

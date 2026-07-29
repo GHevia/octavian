@@ -19,7 +19,24 @@ from .specs import BoundaryState
 
 @dataclass(slots=True)
 class Phase:
-    """One phase of a mission script."""
+    """One dynamics segment in a composable mission.
+
+    ``initial_state`` and ``final_state`` are seed anchors unless matching
+    constraints are declared; this distinction permits free-time and partial
+    terminal targets. Relative-element phases may therefore keep convenient
+    RIC seed anchors while applying native ROE constraints.
+
+    Args:
+        name: Human-readable phase identifier.
+        mode: Coast, relative-coast, or powered phase semantics.
+        spacecraft: Vehicle configuration or registry name.
+        dynamics: Translational dynamics configuration.
+        initial_state: Optional Cartesian state used to seed the phase.
+        final_state: Optional Cartesian state used to seed the phase.
+        constraints: Boundary, path, geometry, and element constraints.
+        tof_bounds_s: Lower and upper phase-end time or duration.
+        initial_guess: Optional specialized guess configuration.
+    """
 
     name: str = "phase"
     mode: str = "coast"
@@ -55,7 +72,11 @@ class Phase:
 
         if self.link is None:
             normalized_mode = (self.mode or "").lower()
-            self.link = impulsive_link() if normalized_mode in ("rendezvous", "transfer") else continuous_link()
+            self.link = (
+                impulsive_link()
+                if normalized_mode in ("rendezvous", "transfer")
+                else continuous_link()
+            )
 
     def has_impulse(self, where: str) -> bool:
         """Return whether the phase declares an impulse at a boundary.
@@ -70,7 +91,9 @@ class Phase:
         boundary = (
             "Front"
             if normalized_where in ("front", "start", "initial", "t0")
-            else "Back" if normalized_where in ("back", "end", "final", "tf") else None
+            else "Back"
+            if normalized_where in ("back", "end", "final", "tf")
+            else None
         )
         if boundary is None:
             raise ValueError("where must be 'front' or 'back'.")

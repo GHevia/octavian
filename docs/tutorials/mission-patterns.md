@@ -284,19 +284,34 @@ Relative positions and velocities use the chief LVLH/RTN frame. Use
 known chief state. CWH assumes a circular chief and small deputy separation;
 use a nonlinear model when those assumptions are not appropriate.
 
-For exact central gravity or perturbations, keep the same public RIC states and
-replace the dynamics declaration:
+For exact central gravity with perturbations, keep the same public RIC states
+and use the coupled-ECI formulation:
 
 ```python
 dynamics = Dynamics.relative(
     chief_initial_state_eci=chief_initial_state_eci,
     central_body=EARTH,
+    propagation_mode="coupled_eci",
     perturbations=Perturbations(j2=True, sun=True),
 )
 ```
 
 The compiler uses CWH only to seed the solve. It propagates the chief and deputy
 as two absolute states and converts them to RIC for constraints and results.
+
+For exact two-body dynamics with native RIC decision variables, select
+`propagation_mode="nonlinear_ric"` for a circular chief or `"coupled_ric"` for
+a propagated circular/eccentric chief. Then target one component directly:
+
+```python
+constraints.ric_state("I", -100.0, where="Back")
+```
+
+For a native D'Amico phase, use
+`propagation_mode="damico"`, fix the Front vector with
+`constraints.relative_orbital_elements(...)`, and target any individual
+element with `constraints.relative_orbital_element(...)`. Time remains free
+when `tof_bounds_s` is a nonzero interval.
 
 Save state, range, and solar-phase histories beside either trajectory plot:
 

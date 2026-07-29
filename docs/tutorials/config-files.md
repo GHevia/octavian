@@ -126,14 +126,15 @@ Schema version 1 covers the current public mission building blocks:
 - two-body dynamics with `central_body`, optional perturbations, frame, and scaling;
 - unforced linear CWH dynamics with `model: cwh`, chief orbit radius, optional
   inline `chief_initial_state_eci`, and relative scaling;
-- full nonlinear relative dynamics with `model: relative`, a required inline
-  `chief_initial_state_eci`, optional J2/Moon/Sun perturbations, and relative
-  scaling;
+- nonlinear and relative-element dynamics with `model: relative`, a required
+  inline `chief_initial_state_eci`, and `propagation_mode` set to
+  `coupled_eci`, `coupled_ric`, `nonlinear_ric`, `damico`, or
+  `classical_elements`; J2/Moon/Sun perturbations require `coupled_eci`;
 - coast, rendezvous, relative-coast, finite-thrust, chemical-burn, and low-thrust phase modes;
 - continuous and impulsive links;
-- boundary state, position, minimum-radius, orbital-element, keep-out,
-  approach-cone, fixed lighting-angle, and ephemeris solar-phase-angle
-  constraints;
+- boundary state, position, minimum-radius, absolute orbital-element, native
+  `ric_state`, native relative-orbital-element, keep-out, approach-cone, fixed
+  lighting-angle, and ephemeris solar-phase-angle constraints;
 - impulsive delta-v variables and boundary impulse events;
 - delta-v, time, and propellant objectives;
 - low-thrust spiral initial guesses;

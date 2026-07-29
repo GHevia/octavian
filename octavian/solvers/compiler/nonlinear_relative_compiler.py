@@ -29,8 +29,18 @@ from ...dynamics import (
     gravity_acceleration_components,
 )
 from ...phase import Phase
-from ...relative import NonlinearRelative
-from ...relative.transforms import inertial_to_relative_state, ric_basis
+from ...relative import (
+    NonlinearRelative,
+    RelativePropagationMode,
+    classical_relative_orbital_elements_to_relative_state,
+    propagate_two_body_state,
+    relative_orbital_elements_to_relative_state,
+)
+from ...relative.transforms import (
+    inertial_to_relative_state,
+    relative_to_inertial_state,
+    ric_basis,
+)
 from ...specs import BoundaryState
 from ..third_bodies import phase_perturbations, tables_for_phase
 from .relative_constraint_compiler import RelativeGeometryConstraint
@@ -67,7 +77,12 @@ def relative_state_expressions(
 ) -> RelativeStateExpressions:
     """Build the instantaneous RIC state from 12 absolute states and time."""
     dynamics = phase.dynamics
-    if dynamics is None or model_for_phase(phase) is None:
+    model = model_for_phase(phase)
+    if (
+        dynamics is None
+        or model is None
+        or model.propagation_mode is not RelativePropagationMode.COUPLED_ECI
+    ):
         raise TypeError("Exact RIC expressions require Dynamics.relative(...)")
     arguments = vf.Arguments(13)
     chief_position = arguments.head(3)
@@ -82,6 +97,7 @@ def relative_state_expressions(
     in_track = cross_track.cross(radial)
 
     def rotate_to_ric(vector):
+        """Rotate one symbolic inertial vector into instantaneous RIC."""
         return vf.stack(
             [
                 radial.dot(vector),
@@ -91,9 +107,7 @@ def relative_state_expressions(
         )
 
     relative_position = rotate_to_ric(deputy_position - chief_position)
-    inertial_velocity_difference_ric = rotate_to_ric(
-        deputy_velocity - chief_velocity
-    )
+    inertial_velocity_difference_ric = rotate_to_ric(deputy_velocity - chief_velocity)
     perturbations = phase_perturbations(phase)
     chief_acceleration = _gravity_acceleration(
         chief_position,
@@ -106,16 +120,12 @@ def relative_state_expressions(
     )
     frame_rate_ric = vf.stack(
         [
-            chief_position.norm()
-            * cross_track.dot(chief_acceleration)
-            / angular_momentum.norm(),
+            chief_position.norm() * cross_track.dot(chief_acceleration) / angular_momentum.norm(),
             chief_position[0] * 0.0,
             angular_momentum.norm() / chief_position.dot(chief_position),
         ]
     )
-    relative_velocity = inertial_velocity_difference_ric - frame_rate_ric.cross(
-        relative_position
-    )
+    relative_velocity = inertial_velocity_difference_ric - frame_rate_ric.cross(relative_position)
     return RelativeStateExpressions(
         position=relative_position,
         velocity=relative_velocity,
@@ -131,7 +141,12 @@ def relative_state_expressions(
 
 
 def fix_initial_chief(asset_phase: Any, model: NonlinearRelative) -> None:
-    """Fix the absolute chief state that defines the public RIC frame."""
+    """Fix a propagated chief state at the front of a coupled formulation."""
+    if model.propagation_mode not in {
+        RelativePropagationMode.COUPLED_ECI,
+        RelativePropagationMode.COUPLED_RIC,
+    }:
+        return
     chief = model.chief_initial_state_eci
     asset_phase.addBoundaryValue(
         "Front",
@@ -178,9 +193,7 @@ def apply_minimum_range(
     expressions: RelativeStateExpressions,
 ) -> None:
     """Keep deputy range above a lower bound in the public RIC frame."""
-    violation = float(minimum_range_m) ** 2 - expressions.position.dot(
-        expressions.position
-    )
+    violation = float(minimum_range_m) ** 2 - expressions.position.dot(expressions.position)
     asset_phase.addInequalCon(
         where,
         vf.stack([violation]),
@@ -202,9 +215,7 @@ def apply_geometry_constraint(
     if isinstance(constraint, KeepOutSphere):
         offset = position - np.asarray(constraint.center_m, dtype=float)
         violation = constraint.radius_m**2 - offset.dot(offset)
-        asset_phase.addInequalCon(
-            where, vf.stack([violation]), COUPLED_ARGUMENT_INDICES
-        )
+        asset_phase.addInequalCon(where, vf.stack([violation]), COUPLED_ARGUMENT_INDICES)
         return
 
     if isinstance(constraint, ApproachCone):
@@ -212,12 +223,8 @@ def apply_geometry_constraint(
         axial_distance = offset.dot(np.asarray(constraint.axis, dtype=float))
         cosine_sq = float(np.cos(np.deg2rad(constraint.half_angle_deg)) ** 2)
         cone_violation = cosine_sq * offset.dot(offset) - axial_distance**2
-        asset_phase.addInequalCon(
-            where, vf.stack([cone_violation]), COUPLED_ARGUMENT_INDICES
-        )
-        asset_phase.addInequalCon(
-            where, vf.stack([-axial_distance]), COUPLED_ARGUMENT_INDICES
-        )
+        asset_phase.addInequalCon(where, vf.stack([cone_violation]), COUPLED_ARGUMENT_INDICES)
+        asset_phase.addInequalCon(where, vf.stack([-axial_distance]), COUPLED_ARGUMENT_INDICES)
         return
 
     if isinstance(constraint, LightingAngle):
@@ -235,9 +242,7 @@ def apply_geometry_constraint(
 
     if isinstance(constraint, SolarPhaseAngle):
         if solar_position_table is None:
-            raise ValueError(
-                "SolarPhaseAngle requires a SPICE-derived ECI Sun position table"
-            )
+            raise ValueError("SolarPhaseAngle requires a SPICE-derived ECI Sun position table")
         offset_ric = position - np.asarray(constraint.origin_m, dtype=float)
         sun_line_eci = solar_position_table(expressions.time) - expressions.chief_position
         sun_line_ric = vf.stack(
@@ -313,10 +318,108 @@ def coupled_trajectory_rvt(
             deputy,
             chief_acceleration_mps2=chief_acceleration,
         )
-        converted[index] = np.hstack(
-            [relative.r_m, relative.v_mps, float(row[12])]
-        )
+        converted[index] = np.hstack([relative.r_m, relative.v_mps, float(row[12])])
     return converted
+
+
+def relative_trajectory_rvt(
+    raw_trajectory: np.ndarray,
+    phase: Phase,
+    third_body_tables: dict[str, ThirdBodyTable],
+) -> np.ndarray:
+    """Return the public RIC view for any nonlinear relative formulation."""
+    raw = np.asarray(raw_trajectory, dtype=float)
+    model = model_for_phase(phase)
+    dynamics = phase.dynamics
+    if model is None or dynamics is None:
+        raise TypeError("Relative extraction requires Dynamics.relative(...)")
+    mode = model.propagation_mode
+    if mode is RelativePropagationMode.COUPLED_ECI:
+        return coupled_trajectory_rvt(raw, phase, third_body_tables)
+    if raw.ndim != 2 or raw.shape[1] < 7:
+        raise ValueError("Relative trajectory must contain state and time columns")
+    if mode is RelativePropagationMode.COUPLED_RIC:
+        if raw.shape[1] < 13:
+            raise ValueError("Coupled RIC trajectory must contain 13 columns")
+        return np.column_stack([raw[:, 6:12], raw[:, 12]])
+    if mode is RelativePropagationMode.NONLINEAR_RIC:
+        return raw[:, 0:7].copy()
+
+    converted = np.empty((raw.shape[0], 7), dtype=float)
+    for index, row in enumerate(raw):
+        chief = propagate_two_body_state(
+            model.chief_initial_state_eci,
+            float(row[6]),
+            float(dynamics.mu_m3ps2),
+        )
+        relative = (
+            relative_orbital_elements_to_relative_state(
+                chief,
+                row[0:6],
+                mu_m3ps2=float(dynamics.mu_m3ps2),
+            )
+            if mode is RelativePropagationMode.DAMICO
+            else classical_relative_orbital_elements_to_relative_state(
+                chief,
+                row[0:6],
+                mu_m3ps2=float(dynamics.mu_m3ps2),
+            )
+        )
+        converted[index] = np.hstack([relative.r_m, relative.v_mps, float(row[6])])
+    return converted
+
+
+def absolute_trajectories(
+    raw_trajectory: np.ndarray,
+    phase: Phase,
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """Return chief/deputy ECI histories when reconstructable from a mode."""
+    raw = np.asarray(raw_trajectory, dtype=float)
+    model = model_for_phase(phase)
+    dynamics = phase.dynamics
+    if model is None or dynamics is None:
+        return None, None
+    mode = model.propagation_mode
+    if mode is RelativePropagationMode.COUPLED_ECI:
+        return (
+            np.column_stack([raw[:, 0:6], raw[:, 12]]),
+            np.column_stack([raw[:, 6:12], raw[:, 12]]),
+        )
+
+    chief_history = np.empty((raw.shape[0], 7), dtype=float)
+    deputy_history = np.empty((raw.shape[0], 7), dtype=float)
+    for index, row in enumerate(raw):
+        time_index = 12 if mode is RelativePropagationMode.COUPLED_RIC else 6
+        time_s = float(row[time_index])
+        chief = (
+            BoundaryState(row[0:3], row[3:6])
+            if mode is RelativePropagationMode.COUPLED_RIC
+            else propagate_two_body_state(
+                model.chief_initial_state_eci,
+                time_s,
+                float(dynamics.mu_m3ps2),
+            )
+        )
+        if mode is RelativePropagationMode.COUPLED_RIC:
+            relative = BoundaryState(row[6:9], row[9:12])
+        elif mode is RelativePropagationMode.NONLINEAR_RIC:
+            relative = BoundaryState(row[0:3], row[3:6])
+        elif mode is RelativePropagationMode.DAMICO:
+            relative = relative_orbital_elements_to_relative_state(
+                chief,
+                row[0:6],
+                mu_m3ps2=float(dynamics.mu_m3ps2),
+            )
+        else:
+            relative = classical_relative_orbital_elements_to_relative_state(
+                chief,
+                row[0:6],
+                mu_m3ps2=float(dynamics.mu_m3ps2),
+            )
+        deputy = relative_to_inertial_state(chief, relative)
+        chief_history[index] = np.hstack([chief.r_m, chief.v_mps, time_s])
+        deputy_history[index] = np.hstack([deputy.r_m, deputy.v_mps, time_s])
+    return chief_history, deputy_history
 
 
 def solar_directions_ric(
@@ -327,9 +430,7 @@ def solar_directions_ric(
     raw = np.asarray(raw_trajectory, dtype=float)
     sun_positions = solar_table.sun_position_at(raw[:, 12])
     directions = np.empty((raw.shape[0], 3), dtype=float)
-    for index, (row, sun_position) in enumerate(
-        zip(raw, sun_positions, strict=True)
-    ):
+    for index, (row, sun_position) in enumerate(zip(raw, sun_positions, strict=True)):
         line_eci = sun_position - row[0:3]
         line_ric = ric_basis(row[0:3], row[3:6]) @ line_eci
         directions[index] = line_ric / np.linalg.norm(line_ric)

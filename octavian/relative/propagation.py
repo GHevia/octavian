@@ -21,7 +21,11 @@ from ..bodies import EARTH, MOON, SUN, CelestialBody
 from ..data.ephemeris import DEFAULT_EPHEMERIS_BSP, sample_sun_moon_positions_eci_tod
 from ..dynamics import j2_acceleration_components, third_body_acceleration_components
 from ..specs import BoundaryState
-from .transforms import inertial_to_relative_state, relative_to_inertial_state
+from .transforms import (
+    inertial_to_relative_state,
+    relative_to_inertial_state,
+    ric_basis,
+)
 
 StateHistory = NDArray[np.float64]
 
@@ -159,6 +163,7 @@ def propagate_relative_numerical(
     absolute_history[0] = combined_state
 
     def derivative(time_s: float, state: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Evaluate the stacked chief/deputy absolute derivative."""
         chief_position = state[0:3]
         chief_velocity = state[3:6]
         deputy_position = state[6:9]
@@ -195,15 +200,11 @@ def propagate_relative_numerical(
             k2 = derivative(current_time + 0.5 * step, combined_state + 0.5 * step * k1)
             k3 = derivative(current_time + 0.5 * step, combined_state + 0.5 * step * k2)
             k4 = derivative(current_time + step, combined_state + step * k3)
-            combined_state = combined_state + (step / 6.0) * (
-                k1 + 2.0 * k2 + 2.0 * k3 + k4
-            )
+            combined_state = combined_state + (step / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
             current_time += step
         current_time = float(output_time)
         if not np.all(np.isfinite(combined_state)):
-            raise RuntimeError(
-                f"Relative propagation became non-finite at t={current_time:.6f} s"
-            )
+            raise RuntimeError(f"Relative propagation became non-finite at t={current_time:.6f} s")
         absolute_history[output_index] = combined_state
 
     chief_states = absolute_history[:, 0:6]
@@ -235,12 +236,176 @@ def propagate_relative_numerical(
     )
 
 
+def nonlinear_relative_ric_derivative(
+    relative_state_ric: ArrayLike,
+    *,
+    mu_m3ps2: float,
+    chief_orbit_radius_m: float,
+) -> NDArray[np.float64]:
+    """Evaluate exact circular-chief RIC dynamics before linearization.
+
+    Args:
+        relative_state_ric: ``[R, I, C, Rdot, Idot, Cdot]`` in SI units.
+        mu_m3ps2: Central-body gravitational parameter.
+        chief_orbit_radius_m: Circular chief radius in meters.
+
+    Returns:
+        Six state derivatives in SI units.
+    """
+    state = np.asarray(relative_state_ric, dtype=float).reshape(6)
+    mu = float(mu_m3ps2)
+    chief_radius = float(chief_orbit_radius_m)
+    if not np.all(np.isfinite(state)):
+        raise ValueError("relative_state_ric must contain finite values")
+    if mu <= 0.0 or chief_radius <= 0.0:
+        raise ValueError("mu_m3ps2 and chief_orbit_radius_m must be positive")
+    x, y, z, xdot, ydot, zdot = state
+    deputy_radius = float(np.sqrt((chief_radius + x) ** 2 + y**2 + z**2))
+    if deputy_radius <= 0.0:
+        raise ValueError("Relative state places the deputy at the central body")
+    mean_motion = float(np.sqrt(mu / chief_radius**3))
+    gravity_rate = mu / deputy_radius**3
+    return np.asarray(
+        [
+            xdot,
+            ydot,
+            zdot,
+            2.0 * mean_motion * ydot + (chief_radius + x) * (mean_motion**2 - gravity_rate),
+            -2.0 * mean_motion * xdot + y * (mean_motion**2 - gravity_rate),
+            -gravity_rate * z,
+        ],
+        dtype=float,
+    )
+
+
+def coupled_relative_ric_derivative(
+    stacked_state: ArrayLike,
+    *,
+    mu_m3ps2: float,
+) -> NDArray[np.float64]:
+    """Evaluate exact two-body chief-ECI/deputy-RIC stacked dynamics.
+
+    Args:
+        stacked_state: ``[chief_r, chief_v, rho_RIC, rho_dot_RIC]`` in SI.
+        mu_m3ps2: Central-body gravitational parameter.
+
+    Returns:
+        Twelve derivatives in the same state ordering.
+    """
+    state = np.asarray(stacked_state, dtype=float).reshape(12)
+    mu = float(mu_m3ps2)
+    if not np.all(np.isfinite(state)):
+        raise ValueError("stacked_state must contain finite values")
+    if mu <= 0.0:
+        raise ValueError("mu_m3ps2 must be positive")
+    chief = BoundaryState(state[0:3], state[3:6])
+    relative = BoundaryState(state[6:9], state[9:12])
+    deputy = relative_to_inertial_state(chief, relative)
+    chief_radius = float(np.linalg.norm(chief.r_m))
+    deputy_radius = float(np.linalg.norm(deputy.r_m))
+    if chief_radius <= 0.0 or deputy_radius <= 0.0:
+        raise ValueError("Chief and deputy positions must have non-zero norm")
+
+    chief_acceleration = -mu * chief.r_m / chief_radius**3
+    deputy_acceleration = -mu * deputy.r_m / deputy_radius**3
+    basis = ric_basis(chief.r_m, chief.v_mps)
+    gravity_difference_ric = basis @ (
+        deputy_acceleration - chief_acceleration
+    )
+    angular_momentum = float(np.linalg.norm(np.cross(chief.r_m, chief.v_mps)))
+    frame_rate = angular_momentum / chief_radius**2
+    frame_rate_derivative = (
+        -2.0
+        * frame_rate
+        * float(np.dot(chief.r_m, chief.v_mps))
+        / chief_radius**2
+    )
+    x, y, _ = relative.r_m
+    xdot, ydot, _ = relative.v_mps
+    rotating_terms = np.asarray(
+        [
+            2.0 * frame_rate * ydot
+            + frame_rate_derivative * y
+            + frame_rate**2 * x,
+            -2.0 * frame_rate * xdot
+            - frame_rate_derivative * x
+            + frame_rate**2 * y,
+            0.0,
+        ],
+        dtype=float,
+    )
+    return np.hstack(
+        [
+            chief.v_mps,
+            chief_acceleration,
+            relative.v_mps,
+            gravity_difference_ric + rotating_terms,
+        ]
+    )
+
+
+def propagate_nonlinear_relative_ric(
+    initial_state_ric: ArrayLike,
+    times_s: ArrayLike,
+    *,
+    mu_m3ps2: float,
+    chief_orbit_radius_m: float,
+    max_step_s: float = 10.0,
+) -> NDArray[np.float64]:
+    """Propagate the exact autonomous circular-chief RIC equations with RK4.
+
+    Args:
+        initial_state_ric: Initial six-state RIC vector in SI units.
+        times_s: Strictly increasing elapsed times beginning at zero.
+        mu_m3ps2: Central-body gravitational parameter.
+        chief_orbit_radius_m: Circular chief radius in meters.
+        max_step_s: Maximum internal Runge-Kutta step.
+
+    Returns:
+        An ``(N, 7)`` history containing RIC state and elapsed time.
+    """
+    output_times = np.asarray(times_s, dtype=float).reshape(-1)
+    state = np.asarray(initial_state_ric, dtype=float).reshape(6)
+    maximum_step = float(max_step_s)
+    if output_times.size == 0 or not np.all(np.isfinite(output_times)):
+        raise ValueError("times_s must contain at least one finite value")
+    if not np.isclose(output_times[0], 0.0, atol=1.0e-12):
+        raise ValueError("times_s must begin at 0.0")
+    if output_times.size > 1 and np.any(np.diff(output_times) <= 0.0):
+        raise ValueError("times_s must be strictly increasing")
+    if maximum_step <= 0.0 or not np.isfinite(maximum_step):
+        raise ValueError("max_step_s must be finite and positive")
+    history = np.empty((output_times.size, 7), dtype=float)
+    history[0] = np.hstack([state, output_times[0]])
+
+    def derivative(value: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Evaluate the autonomous RIC derivative for one RK4 stage."""
+        return nonlinear_relative_ric_derivative(
+            value,
+            mu_m3ps2=mu_m3ps2,
+            chief_orbit_radius_m=chief_orbit_radius_m,
+        )
+
+    current_time = 0.0
+    for output_index, output_time in enumerate(output_times[1:], start=1):
+        interval = float(output_time - current_time)
+        substeps = max(1, int(np.ceil(interval / maximum_step)))
+        step = interval / substeps
+        for _ in range(substeps):
+            k1 = derivative(state)
+            k2 = derivative(state + 0.5 * step * k1)
+            k3 = derivative(state + 0.5 * step * k2)
+            k4 = derivative(state + step * k3)
+            state = state + (step / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
+        current_time = float(output_time)
+        history[output_index] = np.hstack([state, current_time])
+    return history
+
+
 def _normalize_perturbations(perturbations: Any | None) -> dict[str, Any]:
     if perturbations is None:
         return {"j2": False, "third_bodies": ()}
-    unsupported = [
-        name for name in ("srp", "drag") if bool(getattr(perturbations, name, False))
-    ]
+    unsupported = [name for name in ("srp", "drag") if bool(getattr(perturbations, name, False))]
     if unsupported:
         raise NotImplementedError(
             "Perturbed relative propagation currently supports J2, Moon, and Sun; "
@@ -249,7 +414,9 @@ def _normalize_perturbations(perturbations: Any | None) -> dict[str, Any]:
     if hasattr(perturbations, "active_third_bodies"):
         bodies = tuple(perturbations.active_third_bodies())
     else:
-        bodies = tuple(str(name).strip().lower() for name in getattr(perturbations, "third_bodies", ()))
+        bodies = tuple(
+            str(name).strip().lower() for name in getattr(perturbations, "third_bodies", ())
+        )
         for enabled_name in ("moon", "sun"):
             if bool(getattr(perturbations, enabled_name, False)) and enabled_name not in bodies:
                 bodies += (enabled_name,)
@@ -318,6 +485,7 @@ def _build_body_position_interpolator(
     )
 
     def interpolate(time_s: float) -> dict[str, NDArray[np.float64]]:
+        """Interpolate requested third-body positions at elapsed time."""
         return {
             name: np.asarray(
                 [

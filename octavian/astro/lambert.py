@@ -14,6 +14,8 @@ _COLLINEAR_ROTATION_RAD = 1.0e-8
 
 @dataclass(frozen=True)
 class LambertSeed:
+    """One Lambert branch and its endpoint velocity cost."""
+
     tof_s: float
     longway: bool
     nrev: int

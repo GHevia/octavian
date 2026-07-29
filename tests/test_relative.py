@@ -5,19 +5,40 @@ import pytest
 
 from octavian import EARTH, Dynamics, Perturbations, state
 from octavian.astro import classical_to_cartesian
-from octavian.coordinates import COUPLED_RELATIVE_ECI, RELATIVE_CARTESIAN, lvlh, ric
+from octavian.coordinates import (
+    CLASSICAL_RELATIVE_ELEMENTS,
+    COUPLED_RELATIVE_ECI,
+    COUPLED_RELATIVE_RIC,
+    DAMICO_RELATIVE_ELEMENTS,
+    RELATIVE_CARTESIAN,
+    lvlh,
+    ric,
+)
 from octavian.relative import (
+    ClassicalRelativeOrbitalElements,
     ClohessyWiltshire,
     NonlinearRelative,
+    RelativeOrbitalElements,
+    RelativePropagationMode,
+    absolute_to_classical_relative_orbital_elements,
     absolute_to_relative_history,
     absolute_to_relative_orbital_elements,
+    classical_relative_orbital_elements_to_absolute_state,
+    classical_to_damico_relative_orbital_elements,
+    coupled_relative_ric_derivative,
     cwh_derivative,
     cwh_rendezvous_velocity,
     cwh_state_transition,
+    damico_to_classical_relative_orbital_elements,
     inertial_to_relative_state,
+    nonlinear_relative_ric_derivative,
     propagate_cwh,
+    propagate_nonlinear_relative_ric,
     propagate_relative_numerical,
+    propagate_relative_orbital_elements,
     relative_orbital_elements_to_absolute_state,
+    relative_orbital_elements_to_relative_state,
+    relative_state_to_relative_orbital_elements,
     relative_to_absolute_history,
     relative_to_inertial_state,
     ric_basis,
@@ -37,9 +58,7 @@ def test_cwh_model_from_circular_orbit_provides_frame_and_scaling() -> None:
     assert model.frame == lvlh("ISS")
     assert model.scaling.length_m == 2_000.0
     assert model.scaling.time_s == pytest.approx(1.0 / model.mean_motion_radps)
-    assert model.scaling.velocity_mps == pytest.approx(
-        model.mean_motion_radps * 2_000.0
-    )
+    assert model.scaling.velocity_mps == pytest.approx(model.mean_motion_radps * 2_000.0)
 
     dynamics = Dynamics.cwh(
         chief_orbit_radius_m=radius_m,
@@ -59,6 +78,9 @@ def test_relative_layout_has_semantic_position_velocity_groups() -> None:
     assert ric("ISS").orientation == "RIC/RTN/LVLH"
     assert COUPLED_RELATIVE_ECI.state_indices("chief_position") == (0, 1, 2)
     assert COUPLED_RELATIVE_ECI.state_indices("deputy_velocity") == (9, 10, 11)
+    assert COUPLED_RELATIVE_RIC.state_indices("position") == (6, 7, 8)
+    assert DAMICO_RELATIVE_ELEMENTS.state_indices("delta_lambda") == (1,)
+    assert CLASSICAL_RELATIVE_ELEMENTS.state_indices("delta_mean_anomaly") == (5,)
 
 
 def test_nonlinear_relative_model_uses_chief_and_relative_scaling() -> None:
@@ -77,6 +99,34 @@ def test_nonlinear_relative_model_uses_chief_and_relative_scaling() -> None:
     assert isinstance(dynamics.model, NonlinearRelative)
     assert dynamics.frame == ric("ISS")
     assert dynamics.scaling.length_m == 2_000.0
+    assert dynamics.model.propagation_mode is RelativePropagationMode.COUPLED_ECI
+
+
+@pytest.mark.parametrize(
+    ("requested", "expected"),
+    [
+        ("coupled_eci", RelativePropagationMode.COUPLED_ECI),
+        ("stacked_ric", RelativePropagationMode.COUPLED_RIC),
+        ("exact_ric", RelativePropagationMode.NONLINEAR_RIC),
+        ("roe", RelativePropagationMode.DAMICO),
+        ("classical", RelativePropagationMode.CLASSICAL_ELEMENTS),
+    ],
+)
+def test_relative_model_normalizes_propagation_modes(
+    requested: str,
+    expected: RelativePropagationMode,
+) -> None:
+    radius_m = EARTH.mean_radius_m + 400_000.0
+    chief = state(
+        [radius_m, 0.0, 0.0],
+        [0.0, np.sqrt(EARTH.mu_m3ps2 / radius_m), 0.0],
+    )
+    dynamics = Dynamics.relative(
+        chief_initial_state_eci=chief,
+        propagation_mode=requested,
+    )
+    assert dynamics.model is not None
+    assert dynamics.model.propagation_mode is expected
 
 
 def test_cwh_state_transition_matches_derivative_and_semigroup() -> None:
@@ -218,6 +268,162 @@ def test_relative_orbital_elements_cartesian_round_trip() -> None:
     np.testing.assert_allclose(recovered.v_mps, deputy.v_mps, rtol=0.0, atol=1e-9)
 
 
+def test_relative_element_representations_and_ric_round_trip() -> None:
+    chief_position, chief_velocity = classical_to_cartesian(
+        a_m=7_200_000.0,
+        e=0.02,
+        inc_deg=48.0,
+        raan_deg=25.0,
+        argp_deg=35.0,
+        true_anomaly_deg=15.0,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    chief = state(chief_position, chief_velocity)
+    relative = state([150.0, -400.0, 75.0], [0.04, -0.02, 0.01])
+
+    damico = relative_state_to_relative_orbital_elements(
+        chief,
+        relative,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    recovered_relative = relative_orbital_elements_to_relative_state(
+        chief,
+        damico,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    classical = damico_to_classical_relative_orbital_elements(
+        chief,
+        damico,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    recovered_damico = classical_to_damico_relative_orbital_elements(
+        chief,
+        classical,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+
+    np.testing.assert_allclose(recovered_relative.r_m, relative.r_m, atol=1e-6)
+    np.testing.assert_allclose(
+        recovered_relative.v_mps,
+        relative.v_mps,
+        atol=1e-9,
+    )
+    np.testing.assert_allclose(
+        recovered_damico.as_vector(),
+        damico.as_vector(),
+        atol=1e-12,
+    )
+
+
+def test_classical_relative_elements_absolute_round_trip() -> None:
+    chief_position, chief_velocity = classical_to_cartesian(
+        a_m=7_200_000.0,
+        e=0.02,
+        inc_deg=48.0,
+        raan_deg=25.0,
+        argp_deg=35.0,
+        true_anomaly_deg=15.0,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    deputy_position, deputy_velocity = classical_to_cartesian(
+        a_m=7_205_000.0,
+        e=0.021,
+        inc_deg=48.1,
+        raan_deg=25.2,
+        argp_deg=34.8,
+        true_anomaly_deg=15.3,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    chief = state(chief_position, chief_velocity)
+    deputy = state(deputy_position, deputy_velocity)
+    relative = absolute_to_classical_relative_orbital_elements(
+        chief,
+        deputy,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    assert isinstance(relative, ClassicalRelativeOrbitalElements)
+    recovered = classical_relative_orbital_elements_to_absolute_state(
+        chief,
+        relative,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    np.testing.assert_allclose(recovered.r_m, deputy.r_m, atol=1e-6)
+    np.testing.assert_allclose(recovered.v_mps, deputy.v_mps, atol=1e-9)
+
+
+def test_relative_element_propagation_advances_only_relative_longitude() -> None:
+    radius_m = 7_000_000.0
+    chief = state(
+        [radius_m, 0.0, 0.0],
+        [0.0, np.sqrt(EARTH.mu_m3ps2 / radius_m), 0.0],
+    )
+    initial = RelativeOrbitalElements(
+        delta_a=2.0e-4,
+        delta_lambda_rad=-0.004,
+        delta_ex=1.0e-4,
+        delta_ey=-2.0e-4,
+        delta_ix_rad=3.0e-4,
+        delta_iy_rad=-4.0e-4,
+    )
+    history = propagate_relative_orbital_elements(
+        initial,
+        [0.0, 1_800.0],
+        chief_initial_state_eci=chief,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    deputy_a_m = radius_m * (1.0 + initial.delta_a)
+    expected_rate = np.sqrt(EARTH.mu_m3ps2 / deputy_a_m**3) - np.sqrt(
+        EARTH.mu_m3ps2 / radius_m**3
+    )
+    expected_constants = np.repeat(
+        initial.as_vector()[None, [0, 2, 3, 4, 5]],
+        history.shape[0],
+        axis=0,
+    )
+    np.testing.assert_allclose(history[:, [0, 2, 3, 4, 5]], expected_constants)
+    assert history[-1, 1] == pytest.approx(
+        initial.delta_lambda_rad + expected_rate * 1_800.0
+    )
+
+
+def test_classical_relative_element_propagation_advances_mean_anomaly() -> None:
+    radius_m = 7_000_000.0
+    chief = state(
+        [radius_m, 0.0, 0.0],
+        [0.0, np.sqrt(EARTH.mu_m3ps2 / radius_m), 0.0],
+    )
+    initial = ClassicalRelativeOrbitalElements(
+        delta_a_m=1_500.0,
+        delta_e=1.0e-4,
+        delta_i_rad=2.0e-4,
+        delta_raan_rad=-3.0e-4,
+        delta_argp_rad=4.0e-4,
+        delta_mean_anomaly_rad=-0.002,
+    )
+    history = propagate_relative_orbital_elements(
+        initial,
+        [0.0, 900.0],
+        chief_initial_state_eci=chief,
+        mu_m3ps2=EARTH.mu_m3ps2,
+        representation="classical_elements",
+    )
+    expected_rate = np.sqrt(
+        EARTH.mu_m3ps2 / (radius_m + initial.delta_a_m) ** 3
+    ) - np.sqrt(EARTH.mu_m3ps2 / radius_m**3)
+
+    assert history[-1, 5] == pytest.approx(
+        initial.delta_mean_anomaly_rad + expected_rate * 900.0
+    )
+    np.testing.assert_allclose(
+        history[:, [0, 1, 2, 3, 4]],
+        np.repeat(
+            initial.as_vector()[None, [0, 1, 2, 3, 4]],
+            2,
+            axis=0,
+        ),
+    )
+
+
 def test_coupled_relative_propagation_preserves_identical_states() -> None:
     radius_m = EARTH.mean_radius_m + 400_000.0
     speed_mps = np.sqrt(EARTH.mu_m3ps2 / radius_m)
@@ -258,9 +464,98 @@ def test_j2_changes_coupled_relative_propagation() -> None:
         max_step_s=2.0,
     )
 
-    assert np.linalg.norm(
-        perturbed.relative_states_ric[-1] - unperturbed.relative_states_ric[-1]
-    ) > 1e-4
+    assert (
+        np.linalg.norm(perturbed.relative_states_ric[-1] - unperturbed.relative_states_ric[-1])
+        > 1e-4
+    )
+
+
+def test_exact_nonlinear_ric_matches_coupled_two_body_propagation() -> None:
+    radius_m = EARTH.mean_radius_m + 400_000.0
+    chief = state(
+        [radius_m, 0.0, 0.0],
+        [0.0, np.sqrt(EARTH.mu_m3ps2 / radius_m), 0.0],
+    )
+    initial = state([500.0, -800.0, 100.0], [0.05, -0.02, 0.01])
+    times = np.linspace(0.0, 600.0, 7)
+    coupled = propagate_relative_numerical(
+        chief,
+        initial,
+        times,
+        max_step_s=0.5,
+    )
+    direct = propagate_nonlinear_relative_ric(
+        np.hstack([initial.r_m, initial.v_mps]),
+        times,
+        mu_m3ps2=EARTH.mu_m3ps2,
+        chief_orbit_radius_m=radius_m,
+        max_step_s=0.5,
+    )
+    np.testing.assert_allclose(
+        direct[:, 0:6],
+        coupled.relative_states_ric,
+        atol=2e-6,
+    )
+
+
+def test_coupled_ric_derivative_matches_eccentric_absolute_propagation() -> None:
+    chief_position, chief_velocity = classical_to_cartesian(
+        a_m=7_500_000.0,
+        e=0.1,
+        inc_deg=35.0,
+        raan_deg=20.0,
+        argp_deg=15.0,
+        true_anomaly_deg=40.0,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    chief = state(chief_position, chief_velocity)
+    relative = state([500.0, -800.0, 100.0], [0.05, -0.02, 0.01])
+    derivative = coupled_relative_ric_derivative(
+        np.hstack(
+            [
+                chief.r_m,
+                chief.v_mps,
+                relative.r_m,
+                relative.v_mps,
+            ]
+        ),
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    interval_s = 0.01
+    propagated = propagate_relative_numerical(
+        chief,
+        relative,
+        [0.0, interval_s],
+        max_step_s=1.0e-4,
+    )
+    finite_difference = (
+        propagated.relative_states_ric[1]
+        - propagated.relative_states_ric[0]
+    ) / interval_s
+
+    np.testing.assert_allclose(
+        derivative[6:9],
+        finite_difference[0:3],
+        atol=1.1e-5,
+    )
+    np.testing.assert_allclose(
+        derivative[9:12],
+        finite_difference[3:6],
+        atol=3e-8,
+    )
+
+
+def test_exact_nonlinear_ric_linearizes_to_cwh_near_the_chief() -> None:
+    radius_m = EARTH.mean_radius_m + 400_000.0
+    mean_motion = np.sqrt(EARTH.mu_m3ps2 / radius_m**3)
+    relative_state = np.asarray([1.0, -2.0, 0.5, 1e-3, -2e-3, 5e-4])
+    exact = nonlinear_relative_ric_derivative(
+        relative_state,
+        mu_m3ps2=EARTH.mu_m3ps2,
+        chief_orbit_radius_m=radius_m,
+    )
+    linear = cwh_derivative(relative_state, mean_motion)
+    np.testing.assert_allclose(exact, linear, rtol=0.0, atol=2e-12)
 
 
 @pytest.mark.parametrize(

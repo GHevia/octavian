@@ -405,15 +405,15 @@ it afterward.
 Path: `examples/composable/13_relative_representations.py`
 
 This optimizer-free example builds a chief ECI state and deputy RIC state,
-converts RIC to absolute ECI and back, and derives quasi-nonsingular relative
-orbital elements. It is the representation layer used by both CWH and nonlinear
-missions.
+converts RIC to absolute ECI and back, and moves between D'Amico and classical
+relative orbital elements. It is the representation layer used by both CWH and
+nonlinear missions.
 
 ## 14: Nonlinear Relative Rendezvous
 
 Path: `examples/composable/14_nonlinear_relative_rendezvous.py`
 
-`Dynamics.relative(...)` propagates chief and deputy as two exact
+`Dynamics.relative(..., propagation_mode="coupled_eci")` propagates chief and deputy as two exact
 central-gravity states. CWH supplies only the initial guess. Public boundary
 states, keep-out geometry, maneuvers, the trajectory, and diagnostics remain
 in RIC.
@@ -438,9 +438,30 @@ line. The diagnostics file includes solar phase angle over time.
 | `Perturbations(j2=True, sun=True)` | Applies the same force model independently to chief and deputy. |
 | `constraints.solar_phase_angle(...)` | Bounds the changing relative-position/Sun angle. |
 
-## 16: Low-Thrust Orbit Raise
+## 16: Exact RIC Formulations
 
-Path: `examples/composable/16_low_thrust_orbit_raise.py`
+Path: `examples/composable/16_exact_ric_formulations.py`
+
+This optimizer-free comparison propagates the exact six-state circular-chief
+RIC equations and an independent coupled chief/deputy two-body model. It also
+shows the explicit `"nonlinear_ric"` and `"coupled_ric"` dynamics declarations.
+The first is the nonlinear equation from which CWH is linearized; the second
+stacks a propagated chief ECI state with the deputy's RIC state and also
+supports eccentric chiefs.
+
+## 17: Native D'Amico Free-Time Target
+
+Path: `examples/composable/17_damico_free_time_target.py`
+
+This phase propagates D'Amico relative orbital elements directly. A six-element
+Front constraint fixes the initial orbit, while a scalar `delta_lambda` Back
+constraint selects the arrival time within `tof_bounds_s`. The Cartesian RIC
+states are only seed anchors—the target never becomes an absolute-state
+constraint.
+
+## 18: Low-Thrust Orbit Raise
+
+Path: `examples/composable/18_low_thrust_orbit_raise.py`
 
 The low-thrust example remains part of the broader composable suite after the
 relative-motion build-up. It demonstrates a dynamics-integrated spiral seed,

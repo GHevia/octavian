@@ -1,7 +1,7 @@
-"""Composable example 16: fuel-optimal low-thrust orbit raising.
+"""Composable example 18: fuel-optimal low-thrust orbit raising.
 
 Run:
-  python examples/composable/16_low_thrust_orbit_raise.py
+  python examples/composable/18_low_thrust_orbit_raise.py
 """
 
 from __future__ import annotations

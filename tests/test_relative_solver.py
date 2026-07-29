@@ -17,8 +17,17 @@ from octavian import (
     state,
     variables,
 )
-from octavian.relative import cwh_rendezvous_velocity, propagate_cwh
+from octavian.astro import classical_to_cartesian
+from octavian.relative import (
+    RelativeOrbitalElements,
+    cwh_rendezvous_velocity,
+    propagate_cwh,
+    propagate_relative_orbital_elements,
+    propagate_two_body_state,
+    relative_orbital_elements_to_relative_state,
+)
 from octavian.solvers import SolverOptions
+from octavian.solvers.compiler import phase_compiler
 
 
 def _relative_rendezvous_mission() -> Mission:
@@ -88,8 +97,7 @@ def test_cwh_relative_rendezvous_compiles_solves_and_reports_frame() -> None:
         model.mean_motion_radps,
     )
     expected_dv_mps = float(
-        np.linalg.norm(departure_velocity)
-        + np.linalg.norm(analytic_arrival[3:6])
+        np.linalg.norm(departure_velocity) + np.linalg.norm(analytic_arrival[3:6])
     )
     assert result.total_dv_mps() == pytest.approx(expected_dv_mps, rel=2e-5)
     assert result.traj[-1, 3:6] == pytest.approx(analytic_arrival[3:6], abs=1e-7)
@@ -181,12 +189,69 @@ def test_nonlinear_relative_j2_compiles_solves_and_reports_absolute_states() -> 
     assert "nonlinear_relative" in solution.result.to_json()
 
 
+@pytest.mark.parametrize(
+    ("propagation_mode", "expected_layout"),
+    [
+        ("coupled_ric", "coupled_relative_ric"),
+        ("nonlinear_ric", "relative_cartesian"),
+    ],
+)
+def test_native_exact_ric_formulations_compile_solve_and_report(
+    propagation_mode: str,
+    expected_layout: str,
+) -> None:
+    chief_radius_m = EARTH.mean_radius_m + 400_000.0
+    chief_state = state(
+        [chief_radius_m, 0.0, 0.0],
+        [0.0, np.sqrt(EARTH.mu_m3ps2 / chief_radius_m), 0.0],
+    )
+    mission = _relative_rendezvous_mission()
+    mission.mesh_nsegs_transfer = 20
+    mission.lambert_grid_size = 20
+    mission.phases[0].dynamics = Dynamics.relative(
+        chief_initial_state_eci=chief_state,
+        propagation_mode=propagation_mode,
+    )
+    mission.phases[0].constraints.append(
+        constraints.ric_state("I", 0.0, where="Back")
+    )
+
+    solution = mission.solve()
+
+    assert solution.ok
+    assert solution.result is not None
+    assert solution.relative_propagation_mode == propagation_mode
+    assert solution.result.info["state_layouts"] == [expected_layout]
+    assert solution.traj[-1, 0:3] == pytest.approx([0.0, 0.0, 0.0], abs=1e-6)
+    assert solution.result.info["constraint_report"][-1]["constraint"] == "ric_I"
+    assert solution.result.info["constraint_report"][-1]["satisfied"] is True
+    assert solution.chief_trajectory_eci.shape[1] == 7
+    assert solution.deputy_trajectory_eci.shape[1] == 7
+
+
 def test_cwh_rejects_perturbations_with_relative_model_guidance() -> None:
     with pytest.raises(ValueError, match=r"Dynamics\.relative"):
         Dynamics.cwh(
             chief_orbit_radius_m=EARTH.mean_radius_m + 400_000.0,
             perturbations=Perturbations(j2=True),
         )
+
+
+def test_native_ric_mode_rejects_perturbations_with_coupled_eci_guidance() -> None:
+    chief_radius_m = EARTH.mean_radius_m + 400_000.0
+    chief_state = state(
+        [chief_radius_m, 0.0, 0.0],
+        [0.0, np.sqrt(EARTH.mu_m3ps2 / chief_radius_m), 0.0],
+    )
+    phase = _relative_rendezvous_mission().phases[0]
+    phase.dynamics = Dynamics.relative(
+        chief_initial_state_eci=chief_state,
+        propagation_mode="coupled_ric",
+        perturbations=Perturbations(j2=True),
+    )
+
+    with pytest.raises(ValueError, match="propagation_mode='coupled_eci'"):
+        phase_compiler.ode_for_phase(phase)
 
 
 def test_nonlinear_spice_solar_phase_angle_compiles_solves_and_reports() -> None:
@@ -224,11 +289,95 @@ def test_nonlinear_spice_solar_phase_angle_compiles_solves_and_reports() -> None
     assert solution.ok
     assert solution.result is not None
     report = solution.result.info["constraint_report"]
-    solar_rows = [
-        row for row in report if str(row["constraint"]).startswith("solar_phase_")
-    ]
+    solar_rows = [row for row in report if str(row["constraint"]).startswith("solar_phase_")]
     assert [row["constraint"] for row in solar_rows] == [
         "solar_phase_min_angle_deg",
         "solar_phase_max_angle_deg",
     ]
     assert all(row["satisfied"] for row in solar_rows)
+
+
+def test_damico_target_selects_free_arrival_time_without_absolute_constraint() -> None:
+    chief_position, chief_velocity = classical_to_cartesian(
+        a_m=7_000_000.0,
+        e=0.001,
+        inc_deg=40.0,
+        raan_deg=20.0,
+        argp_deg=10.0,
+        true_anomaly_deg=30.0,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    chief = state(chief_position, chief_velocity)
+    initial_elements = RelativeOrbitalElements(
+        delta_a=2.0e-4,
+        delta_lambda_rad=-0.004,
+        delta_ex=1.0e-4,
+        delta_ey=-2.0e-4,
+        delta_ix_rad=1.0e-4,
+        delta_iy_rad=2.0e-4,
+    )
+    target_time_s = 1_800.0
+    target_elements = propagate_relative_orbital_elements(
+        initial_elements,
+        [target_time_s],
+        chief_initial_state_eci=chief,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )[0]
+    initial_relative = relative_orbital_elements_to_relative_state(
+        chief,
+        initial_elements,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    target_chief = propagate_two_body_state(
+        chief,
+        target_time_s,
+        EARTH.mu_m3ps2,
+    )
+    target_relative = relative_orbital_elements_to_relative_state(
+        target_chief,
+        target_elements[0:6],
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    phase = Phase(
+        name="damico_free_time",
+        mode="relative_coast",
+        spacecraft=Spacecraft(name="Deputy", dry_mass_kg=250.0),
+        dynamics=Dynamics.relative(
+            chief_initial_state_eci=chief,
+            propagation_mode="damico",
+        ),
+        # These Cartesian states seed the optimizer only; native constraints
+        # below are the values enforced by the NLP.
+        initial_state=initial_relative,
+        final_state=target_relative,
+        tof_bounds_s=(1_500.0, 2_100.0),
+        constraints=[
+            constraints.relative_orbital_elements(
+                initial_elements,
+                where="Front",
+            ),
+            constraints.relative_orbital_element(
+                "delta_lambda",
+                float(target_elements[1]),
+                where="Back",
+            ),
+        ],
+    )
+    solution = Mission(
+        phases=[phase],
+        objectives=[],
+        mesh_nsegs_transfer=10,
+        lambert_grid_size=10,
+        solver_options=SolverOptions(
+            print_level=0,
+            max_ls_iters=5,
+            asset_threads=(1, 1),
+        ),
+    ).solve()
+
+    assert solution.ok
+    assert solution.result is not None
+    assert solution.result.tf_s() == pytest.approx(target_time_s, abs=1e-5)
+    assert solution.result.info["state_layouts"] == ["damico_relative_elements"]
+    assert solution.result.info["relative_propagation_mode"] == "damico"
+    assert solution.result.info["constraint_report"][-1]["satisfied"] is True

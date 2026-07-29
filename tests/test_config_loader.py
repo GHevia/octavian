@@ -226,12 +226,50 @@ def test_relative_config_accepts_chief_state_perturbations_and_solar_phase() -> 
     mission = load_mission_mapping(config)
     dynamics = mission.phases[0].dynamics
 
-    assert dynamics.model.chief_initial_state_eci.r_m == pytest.approx(
-        [radius_m, 0.0, 0.0]
-    )
+    assert dynamics.model.chief_initial_state_eci.r_m == pytest.approx([radius_m, 0.0, 0.0])
     assert dynamics.active_perturbations().j2 is True
     assert dynamics.active_perturbations().sun is True
     assert mission.phases[0].constraints[-1].kind == "solar_phase_angle"
+
+
+def test_relative_element_mode_and_native_constraints_are_declarative() -> None:
+    config = _basic_config()
+    radius_m = 6_778_136.3
+    speed_mps = np.sqrt(3.986004418e14 / radius_m)
+    config["dynamics"] = {
+        "relative": {
+            "model": "relative",
+            "propagation_mode": "damico",
+            "chief_initial_state_eci": {
+                "r_m": [radius_m, 0.0, 0.0],
+                "v_mps": [0.0, speed_mps, 0.0],
+            },
+        }
+    }
+    phase = config["mission"]["phases"][0]
+    phase["dynamics"] = "relative"
+    phase["mode"] = "relative_coast"
+    phase["constraints"] = [
+        {
+            "type": "relative_orbital_elements",
+            "elements": [1e-4, -0.01, 0.0, 0.0, 0.0, 0.0],
+            "where": "Front",
+        },
+        {
+            "type": "relative_orbital_element",
+            "element": "delta_lambda",
+            "target": -0.02,
+            "where": "Back",
+        },
+    ]
+
+    mission = load_mission_mapping(config)
+
+    assert mission.phases[0].dynamics.model.propagation_mode.value == "damico"
+    assert [constraint.kind for constraint in mission.phases[0].constraints] == [
+        "relative_orbital_elements",
+        "relative_orbital_element",
+    ]
 
 
 def test_low_thrust_guess_and_orbital_constraints_are_declarative() -> None:

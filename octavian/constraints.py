@@ -17,6 +17,7 @@ import numpy as np
 from .specs import BoundaryState
 
 Where = Literal["Front", "Back", "Path"]
+RelativeElementRepresentation = Literal["damico", "classical_elements"]
 
 
 def _normalize_where(where: str) -> Where:
@@ -96,10 +97,12 @@ class SemiMajorAxis(OrbitalElementConstraint):
 
     @property
     def element_name(self) -> str:
+        """Return the compiler-facing element identifier."""
         return "semi_major_axis"
 
     @property
     def value(self) -> dict[str, float | None]:
+        """Return the target and optional tolerance in meters."""
         return {"a_m": float(self.a_m), "tol_m": self.tol_m}
 
 
@@ -133,10 +136,12 @@ class Eccentricity(OrbitalElementConstraint):
 
     @property
     def element_name(self) -> str:
+        """Return the compiler-facing element identifier."""
         return "eccentricity"
 
     @property
     def value(self) -> dict[str, float | None]:
+        """Return the dimensionless target and optional tolerance."""
         return {"e": float(self.e), "tol": self.tol}
 
 
@@ -172,10 +177,12 @@ class InclinationDeg(OrbitalElementConstraint):
 
     @property
     def element_name(self) -> str:
+        """Return the compiler-facing element identifier."""
         return "inclination_deg"
 
     @property
     def value(self) -> dict[str, float | None]:
+        """Return the target and optional tolerance in degrees."""
         return {"inc_deg": float(self.inc_deg), "tol_deg": self.tol_deg}
 
 
@@ -194,6 +201,7 @@ class MinRadius(Constraint):
 
     @property
     def value(self) -> float:
+        """Return the minimum radius in meters."""
         return float(self.r_min_m)
 
 
@@ -235,6 +243,7 @@ class KeepOutSphere(Constraint):
 
     @property
     def value(self) -> dict[str, Any]:
+        """Return the keep-out radius and center."""
         return {"radius_m": self.radius_m, "center_m": self.center_m}
 
 
@@ -261,6 +270,7 @@ class ApproachCone(Constraint):
 
     @property
     def value(self) -> dict[str, Any]:
+        """Return the normalized cone declaration."""
         return {
             "axis": self.axis,
             "half_angle_deg": self.half_angle_deg,
@@ -302,6 +312,7 @@ class LightingAngle(Constraint):
 
     @property
     def value(self) -> dict[str, Any]:
+        """Return the fixed-direction lighting declaration."""
         return {
             "sun_direction": self.sun_direction,
             "min_angle_deg": self.min_angle_deg,
@@ -341,6 +352,7 @@ class SolarPhaseAngle(Constraint):
 
     @property
     def value(self) -> dict[str, Any]:
+        """Return solar-phase angle bounds and origin."""
         return {
             "min_angle_deg": self.min_angle_deg,
             "max_angle_deg": self.max_angle_deg,
@@ -364,6 +376,7 @@ class State(Constraint):
 
     @property
     def value(self) -> dict[str, Any]:
+        """Return the Cartesian state and selected groups."""
         return {"x": self.x, "groups": tuple(str(group) for group in self.groups)}
 
 
@@ -382,7 +395,230 @@ class Position(Constraint):
 
     @property
     def value(self) -> np.ndarray:
+        """Return the constrained position as a three-vector."""
         return np.asarray(self.r_m, dtype=float).reshape(3)
+
+
+@dataclass(frozen=True, slots=True)
+class RelativeStateComponent(Constraint):
+    """Constrain one native RIC position or velocity component.
+
+    Components are ``R``, ``I``, ``C``, ``Rdot``, ``Idot``, and ``Cdot``.
+    The target and optional tolerance use meters for position and meters per
+    second for velocity. The compiler applies this constraint directly to a
+    native RIC formulation; it never reconstructs an absolute deputy state.
+    """
+
+    kind: ClassVar[str] = "relative_state_component"
+    family: ClassVar[str] = "relative_state"
+
+    component: str = "R"
+    target: float = 0.0
+    where: Where = "Back"
+    tolerance: float | None = None
+
+    def __post_init__(self) -> None:
+        aliases = {
+            "r": "R",
+            "radial": "R",
+            "x": "R",
+            "i": "I",
+            "in_track": "I",
+            "intrack": "I",
+            "y": "I",
+            "c": "C",
+            "cross_track": "C",
+            "crosstrack": "C",
+            "z": "C",
+            "rdot": "Rdot",
+            "r_dot": "Rdot",
+            "xdot": "Rdot",
+            "idot": "Idot",
+            "i_dot": "Idot",
+            "ydot": "Idot",
+            "cdot": "Cdot",
+            "c_dot": "Cdot",
+            "zdot": "Cdot",
+        }
+        normalized = str(self.component).strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized not in aliases:
+            raise ValueError("component must be one of R, I, C, Rdot, Idot, or Cdot")
+        object.__setattr__(self, "component", aliases[normalized])
+        object.__setattr__(self, "target", _finite_float("target", self.target))
+        object.__setattr__(self, "where", _normalize_where(self.where))
+        object.__setattr__(
+            self,
+            "tolerance",
+            _optional_nonnegative_float("tolerance", self.tolerance),
+        )
+
+    @property
+    def value(self) -> dict[str, float | str | None]:
+        """Return the normalized component target payload."""
+        return {
+            "component": self.component,
+            "target": self.target,
+            "tolerance": self.tolerance,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RelativeOrbitalElementConstraint(Constraint):
+    """Constrain one native relative orbital element.
+
+    D'Amico names are ``delta_a``, ``delta_lambda``, ``delta_ex``,
+    ``delta_ey``, ``delta_ix``, and ``delta_iy``. Classical-difference names
+    are ``delta_a_m``, ``delta_e``, ``delta_i``, ``delta_raan``,
+    ``delta_argp``, and ``delta_mean_anomaly``. Angles are radians.
+    """
+
+    kind: ClassVar[str] = "relative_orbital_element"
+    family: ClassVar[str] = "relative_orbital_element"
+
+    element: str = "delta_a"
+    target: float = 0.0
+    representation: RelativeElementRepresentation | str = "damico"
+    where: Where = "Back"
+    tolerance: float | None = None
+
+    def __post_init__(self) -> None:
+        representation = _normalize_relative_element_representation(self.representation)
+        element = _normalize_relative_element_name(
+            self.element,
+            representation,
+        )
+        object.__setattr__(self, "representation", representation)
+        object.__setattr__(self, "element", element)
+        object.__setattr__(self, "target", _finite_float("target", self.target))
+        object.__setattr__(self, "where", _normalize_where(self.where))
+        object.__setattr__(
+            self,
+            "tolerance",
+            _optional_nonnegative_float("tolerance", self.tolerance),
+        )
+
+    @property
+    def value(self) -> dict[str, float | str | None]:
+        """Return the normalized relative-element target payload."""
+        return {
+            "representation": self.representation,
+            "element": self.element,
+            "target": self.target,
+            "tolerance": self.tolerance,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RelativeOrbitalElementsConstraint(Constraint):
+    """Constrain all six native relative orbital elements at one location."""
+
+    kind: ClassVar[str] = "relative_orbital_elements"
+    family: ClassVar[str] = "relative_orbital_element"
+
+    elements: Any = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    representation: RelativeElementRepresentation | str | None = None
+    where: Where = "Front"
+
+    def __post_init__(self) -> None:
+        inferred_representation = (
+            "classical_elements"
+            if hasattr(self.elements, "delta_a_m")
+            else "damico"
+            if hasattr(self.elements, "delta_lambda_rad")
+            else None
+        )
+        representation = _normalize_relative_element_representation(
+            self.representation or inferred_representation or "damico"
+        )
+        if (
+            inferred_representation is not None
+            and inferred_representation != representation
+        ):
+            raise ValueError(
+                "elements object does not match the requested "
+                f"{representation!r} representation"
+            )
+        source = (
+            self.elements.as_vector()  # type: ignore[attr-defined]
+            if hasattr(self.elements, "as_vector")
+            else self.elements
+        )
+        elements = np.asarray(source, dtype=float).reshape(6)
+        if not np.all(np.isfinite(elements)):
+            raise ValueError("elements must contain six finite values")
+        object.__setattr__(self, "representation", representation)
+        object.__setattr__(self, "elements", elements)
+        object.__setattr__(self, "where", _normalize_where(self.where))
+
+    @property
+    def value(self) -> dict[str, Any]:
+        """Return the normalized six-element target payload."""
+        return {
+            "representation": self.representation,
+            "elements": np.asarray(self.elements, dtype=float),
+        }
+
+
+def _normalize_relative_element_representation(
+    representation: RelativeElementRepresentation | str,
+) -> RelativeElementRepresentation:
+    """Normalize a relative-element representation name."""
+    normalized = str(representation).strip().lower().replace("-", "_")
+    aliases = {
+        "damico": "damico",
+        "d_amico": "damico",
+        "roe": "damico",
+        "classical": "classical_elements",
+        "classical_elements": "classical_elements",
+    }
+    if normalized not in aliases:
+        raise ValueError("representation must be 'damico' or 'classical_elements'")
+    return aliases[normalized]  # type: ignore[return-value]
+
+
+def _normalize_relative_element_name(
+    element: str,
+    representation: RelativeElementRepresentation,
+) -> str:
+    """Normalize one relative-element name for its representation."""
+    normalized = str(element).strip().lower().replace("δ", "delta_").replace("-", "_")
+    aliases = {
+        "da": "delta_a" if representation == "damico" else "delta_a_m",
+        "dlambda": "delta_lambda",
+        "dex": "delta_ex",
+        "dey": "delta_ey",
+        "dix": "delta_ix",
+        "diy": "delta_iy",
+        "de": "delta_e",
+        "di": "delta_i",
+        "draan": "delta_raan",
+        "dargp": "delta_argp",
+        "dm": "delta_mean_anomaly",
+    }
+    normalized = aliases.get(normalized, normalized)
+    valid = (
+        {
+            "delta_a",
+            "delta_lambda",
+            "delta_ex",
+            "delta_ey",
+            "delta_ix",
+            "delta_iy",
+        }
+        if representation == "damico"
+        else {
+            "delta_a_m",
+            "delta_e",
+            "delta_i",
+            "delta_raan",
+            "delta_argp",
+            "delta_mean_anomaly",
+        }
+    )
+    if normalized not in valid:
+        choices = ", ".join(sorted(valid))
+        raise ValueError(f"Unknown {representation} element {element!r}; choose one of {choices}")
+    return normalized
 
 
 def state(x: BoundaryState, where: str = "Front", groups: Sequence[str] = ("R", "V")) -> State:
@@ -395,9 +631,64 @@ def position(r_m: Sequence[float], where: str = "Front") -> Position:
     return Position(r_m=r_m, where=where)
 
 
-def semi_major_axis(
-    a_m: float, where: str = "Path", tol_m: float | None = None
-) -> SemiMajorAxis:
+def ric_state(
+    component: str,
+    target: float,
+    *,
+    where: str = "Back",
+    tolerance: float | None = None,
+) -> RelativeStateComponent:
+    """Create a direct constraint on one native RIC state component.
+
+    Use a native RIC propagation mode (CWH, ``"nonlinear_ric"``, or
+    ``"coupled_ric"``) so the optimizer applies the target without converting
+    through absolute coordinates.
+    """
+    return RelativeStateComponent(
+        component=component,
+        target=target,
+        where=where,
+        tolerance=tolerance,
+    )
+
+
+def relative_orbital_element(
+    element: str,
+    target: float,
+    *,
+    representation: RelativeElementRepresentation | str = "damico",
+    where: str = "Back",
+    tolerance: float | None = None,
+) -> RelativeOrbitalElementConstraint:
+    """Create a direct scalar relative-orbital-element constraint."""
+    return RelativeOrbitalElementConstraint(
+        element=element,
+        target=target,
+        representation=representation,
+        where=where,
+        tolerance=tolerance,
+    )
+
+
+def relative_orbital_elements(
+    elements: Any,
+    *,
+    representation: RelativeElementRepresentation | str | None = None,
+    where: str = "Front",
+) -> RelativeOrbitalElementsConstraint:
+    """Create a direct six-element relative-orbit boundary constraint.
+
+    ``elements`` may be a six-value sequence or one of the relative-element
+    dataclasses from :mod:`octavian.relative`.
+    """
+    return RelativeOrbitalElementsConstraint(
+        elements=elements,
+        representation=representation,
+        where=where,
+    )
+
+
+def semi_major_axis(a_m: float, where: str = "Path", tol_m: float | None = None) -> SemiMajorAxis:
     """Create a semi-major-axis constraint."""
     return SemiMajorAxis(a_m=a_m, where=where, tol_m=tol_m)
 

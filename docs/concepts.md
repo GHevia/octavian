@@ -121,12 +121,24 @@ and C is cross-track. Two dynamics levels are deliberately separate:
 - `Dynamics.cwh(...)` is the unforced, linear Clohessy-Wiltshire model for a
   circular chief and small separation. It is useful for quick studies and fast
   initial guesses. Adding perturbations to it is rejected.
-- `Dynamics.relative(chief_initial_state_eci=...)` is the full nonlinear
-  model. The optimizer propagates independent chief and deputy absolute
-  Cartesian states under central gravity and any enabled J2, Moon, or Sun
-  perturbations. Constraints, maneuvers, results, and plots are converted to
-  instantaneous RIC at the compiler boundary. The propagated absolute
-  histories remain available as `solution.chief_trajectory_eci` and
+- `Dynamics.relative(chief_initial_state_eci=...)` selects nonlinear or
+  relative-element propagation. Its `propagation_mode` makes the native solver
+  state explicit:
+
+  - `"coupled_eci"` (default) propagates independent chief and deputy absolute
+    Cartesian states. It supports central gravity, J2, Moon, and Sun.
+  - `"coupled_ric"` propagates the chief ECI state stacked with the deputy RIC
+    state. It retains exact nonlinear central gravity for circular or
+    eccentric chiefs.
+  - `"nonlinear_ric"` propagates the exact six-state circular-chief equations
+    before linearization. Linearizing this model produces CWH.
+  - `"damico"` propagates `[δa, δλ, δex, δey, δix, δiy]` directly.
+  - `"classical_elements"` propagates `[Δa, Δe, Δi, ΔΩ, Δω, ΔM]` directly.
+
+  The non-default RIC and element formulations are currently two-body models.
+  Select `"coupled_eci"` when perturbations are required. Regardless of native
+  state, results and plots expose an RIC trajectory, and reconstructable
+  absolute histories remain available as `solution.chief_trajectory_eci` and
   `solution.deputy_trajectory_eci`.
 
 `octavian.relative` includes explicit single-state and vectorized history
@@ -135,9 +147,11 @@ transforms:
 - `absolute_to_relative_state(...)` and `relative_to_absolute_state(...)`;
 - `absolute_to_relative_history(...)` and `relative_to_absolute_history(...)`;
 - `ric_basis(...)` and the compatibility name `lvlh_basis(...)`.
-- `absolute_to_relative_orbital_elements(...)` and
-  `relative_orbital_elements_to_absolute_state(...)` for six
-  quasi-nonsingular elements `[δa, δλ, δex, δey, δix, δiy]`.
+- absolute Cartesian, RIC, D'Amico ROE, and classical relative-element
+  conversions in `octavian.relative.elements`;
+- `propagate_relative_orbital_elements(...)` for native two-body ROE history;
+- `propagate_nonlinear_relative_ric(...)` for the exact circular-chief RIC
+  equations.
 
 The transforms include the RIC angular-rate term in velocity. When chief
 acceleration is supplied, they also include orbit-plane rotation from
@@ -155,6 +169,16 @@ The relative compiler currently supports one optimized relative phase. Inertial
 orbital-element constraints, finite thrust, and inertial/relative phase links
 remain rejected until an explicit acceleration or frame-link model is
 configured.
+
+`constraints.ric_state(...)` targets one native RIC component. Use it with CWH,
+`"nonlinear_ric"`, or `"coupled_ric"` so no absolute-coordinate expression is
+introduced. `constraints.relative_orbital_elements(...)` fixes a six-element
+boundary and `constraints.relative_orbital_element(...)` targets one D'Amico or
+classical relative element. A Back target combined with `tof_bounds_s` leaves
+arrival time free; the target is applied directly to the propagated element
+state. `solution.traj` remains an RIC view for plotting, while
+`solution.native_relative_trajectory` exposes the actual solver states and
+`solution.relative_propagation_mode` identifies their formulation.
 
 Relative geometry constraints operate on Cartesian position in the phase
 frame. `keep_out_sphere` accepts an arbitrary center, `approach_cone` defines a

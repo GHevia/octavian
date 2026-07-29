@@ -74,7 +74,7 @@ def _fake_solution() -> Solution:
         ("examples/composable/12_cwh_safety_corridor.py", 1),
         ("examples/composable/14_nonlinear_relative_rendezvous.py", 1),
         ("examples/composable/15_perturbed_relative_solar.py", 1),
-        ("examples/composable/16_low_thrust_orbit_raise.py", 1),
+        ("examples/composable/18_low_thrust_orbit_raise.py", 1),
     ],
 )
 def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int) -> None:
@@ -181,7 +181,7 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
             "traj_composable_nonlinear_relative_rendezvous.html",
             "diagnostics_composable_nonlinear_relative_rendezvous.html",
         ]
-    elif script_rel.endswith("16_low_thrust_orbit_raise.py"):
+    elif script_rel.endswith("18_low_thrust_orbit_raise.py"):
         mission = missions[0]
         phase = mission.phases[0]
         assert phase.mode == "low_thrust"

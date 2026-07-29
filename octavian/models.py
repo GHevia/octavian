@@ -20,10 +20,14 @@ class TranslationalModel(Protocol):
     """Configuration contract for non-default translational dynamics models."""
 
     @property
-    def frame(self) -> CoordinateFrame: ...
+    def frame(self) -> CoordinateFrame:
+        """Return the coordinate frame used by the model."""
+        ...
 
     @property
-    def scaling(self) -> SolverScaling: ...
+    def scaling(self) -> SolverScaling:
+        """Return the model's recommended solver scaling."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,13 +163,24 @@ class Dynamics:
         central_body: CelestialBody | str = "earth",
         chief_name: str = "chief",
         reference_length_m: float = 1_000.0,
+        propagation_mode: str = "coupled_eci",
         **kwargs: Any,
     ) -> Dynamics:
-        """Create full nonlinear chief/deputy relative dynamics.
+        """Create nonlinear or relative-element dynamics.
 
-        Chief and deputy absolute Cartesian states are propagated under the
-        configured force model.  Mission states and results remain
-        chief-centered RIC coordinates.
+        Args:
+            chief_initial_state_eci: Absolute chief state defining the RIC frame.
+            central_body: Central body name or object.
+            chief_name: Name used for the returned chief-centered frame.
+            reference_length_m: Characteristic relative distance for scaling.
+            propagation_mode: One of ``"coupled_eci"`` (default),
+                ``"coupled_ric"``, ``"nonlinear_ric"``, ``"damico"``, or
+                ``"classical_elements"``. Only ``"coupled_eci"`` currently
+                accepts J2 and third-body perturbations.
+            **kwargs: Additional :class:`Dynamics` configuration.
+
+        Returns:
+            A dynamics configuration whose public reporting frame is RIC.
         """
         from .relative import NonlinearRelative
 
@@ -175,6 +190,7 @@ class Dynamics:
             central_body=body,
             chief_name=chief_name,
             reference_length_m=reference_length_m,
+            propagation_mode=propagation_mode,
         )
         return cls(central_body=body, model=model, **kwargs)
 
@@ -218,6 +234,7 @@ class RunPlan:
 
     @staticmethod
     def default() -> RunPlan:
+        """Return an empty continuation plan."""
         return RunPlan(stages=())
 
 
@@ -230,4 +247,5 @@ class RetryPolicy:
 
     @staticmethod
     def default() -> RetryPolicy:
+        """Return the default enabled retry policy."""
         return RetryPolicy(enabled=True, max_retries=2)

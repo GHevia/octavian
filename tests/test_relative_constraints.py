@@ -4,8 +4,18 @@ import numpy as np
 import pytest
 
 from octavian import constraints
+from octavian.coordinates import (
+    COUPLED_RELATIVE_ECI,
+    COUPLED_RELATIVE_RIC,
+    DAMICO_RELATIVE_ELEMENTS,
+)
+from octavian.relative import ClassicalRelativeOrbitalElements
 from octavian.solvers.compiler.relative_constraint_compiler import (
     relative_constraint_report_rows,
+)
+from octavian.solvers.compiler.relative_state_constraint_compiler import (
+    apply_native_relative_constraint,
+    relative_state_constraint_report_rows,
 )
 
 
@@ -115,3 +125,107 @@ def test_solar_phase_angle_uses_time_varying_ric_directions() -> None:
     assert rows[0]["actual"] == pytest.approx(0.0)
     assert rows[1]["actual"] == pytest.approx(0.0)
     assert all(row["satisfied"] for row in rows)
+
+
+def test_native_relative_constraint_factories_normalize_names() -> None:
+    ric_target = constraints.ric_state(
+        "in-track",
+        -25.0,
+        where="end",
+        tolerance=0.5,
+    )
+    damico_target = constraints.relative_orbital_element(
+        "dlambda",
+        0.01,
+        where="end",
+    )
+    classical_target = constraints.relative_orbital_element(
+        "dm",
+        0.02,
+        representation="classical",
+    )
+
+    assert ric_target.component == "I"
+    assert ric_target.where == "Back"
+    assert damico_target.element == "delta_lambda"
+    assert damico_target.representation == "damico"
+    assert classical_target.element == "delta_mean_anomaly"
+    assert classical_target.representation == "classical_elements"
+
+
+def test_relative_element_vector_constraint_rejects_mislabeled_dataclass() -> None:
+    classical = ClassicalRelativeOrbitalElements(
+        delta_a_m=100.0,
+        delta_e=0.0,
+        delta_i_rad=0.0,
+        delta_raan_rad=0.0,
+        delta_argp_rad=0.0,
+        delta_mean_anomaly_rad=0.0,
+    )
+    inferred = constraints.relative_orbital_elements(classical)
+
+    assert inferred.representation == "classical_elements"
+    with pytest.raises(ValueError, match="does not match"):
+        constraints.relative_orbital_elements(
+            classical,
+            representation="damico",
+        )
+
+
+class _NativeConstraintPhase:
+    def __init__(self) -> None:
+        self.boundaries: list[tuple[str, tuple[int, ...], np.ndarray]] = []
+        self.equalities: list[tuple[str, object, tuple[int, ...]]] = []
+
+    def addBoundaryValue(self, where, indices, values):  # type: ignore[no-untyped-def]
+        self.boundaries.append(
+            (
+                str(where),
+                tuple(int(index) for index in indices),
+                np.asarray(values, dtype=float),
+            )
+        )
+
+    def addEqualCon(self, where, expression, indices):  # type: ignore[no-untyped-def]
+        self.equalities.append((str(where), expression, tuple(int(index) for index in indices)))
+
+
+def test_native_relative_vector_constraint_uses_direct_roe_indices() -> None:
+    phase = _NativeConstraintPhase()
+    elements = np.asarray([1e-4, -0.01, 2e-4, 3e-4, -4e-4, 5e-4])
+    constraint = constraints.relative_orbital_elements(elements, where="Front")
+
+    apply_native_relative_constraint(
+        phase,
+        constraint,
+        DAMICO_RELATIVE_ELEMENTS,
+    )
+
+    assert phase.boundaries[0][0:2] == ("Front", (0, 1, 2, 3, 4, 5))
+    np.testing.assert_allclose(phase.boundaries[0][2], elements)
+
+
+def test_ric_constraint_rejects_coupled_eci_conversion() -> None:
+    with pytest.raises(ValueError, match="RIC component constraints"):
+        apply_native_relative_constraint(
+            _NativeConstraintPhase(),
+            constraints.ric_state("R", 0.0),
+            COUPLED_RELATIVE_ECI,
+        )
+
+
+def test_native_relative_constraint_report_uses_selected_state_index() -> None:
+    trajectory = np.zeros((2, 13), dtype=float)
+    trajectory[:, 12] = [0.0, 100.0]
+    trajectory[-1, 7] = -25.0
+    declared = constraints.ric_state("I", -25.0, where="Back")
+    rows = relative_state_constraint_report_rows(
+        phase_name="native_ric",
+        constraint=declared,
+        native_trajectory=trajectory,
+        layout=COUPLED_RELATIVE_RIC,
+    )
+
+    assert rows[0]["constraint"] == "ric_I"
+    assert rows[0]["actual"] == pytest.approx(-25.0)
+    assert rows[0]["satisfied"] is True

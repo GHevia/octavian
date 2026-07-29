@@ -118,6 +118,29 @@ class Solution:
             return np.empty((0, 7), dtype=float)
         return np.asarray(value, dtype=float)
 
+    @property
+    def native_relative_trajectory(self) -> np.ndarray:
+        """Return the solver's native relative state and time history.
+
+        For a D'Amico phase, for example, columns are
+        ``[δa, δλ, δex, δey, δix, δiy, t]``. The ordinary :attr:`traj`
+        accessor always remains the reconstructed ``[RIC state, t]`` view.
+        """
+        if self.result is None:
+            return np.empty((0, 7), dtype=float)
+        value = self.result.info.get("native_relative_trajectory")
+        if value is None:
+            return np.empty((0, 7), dtype=float)
+        return np.asarray(value, dtype=float)
+
+    @property
+    def relative_propagation_mode(self) -> str | None:
+        """Return the selected relative formulation, or ``None`` if inertial."""
+        if self.result is None:
+            return None
+        value = self.result.info.get("relative_propagation_mode")
+        return None if value is None else str(value)
+
     def viz(self):
         """Namespace-style access to visualization helpers."""
         from .viz import plotly as _plotly
@@ -184,13 +207,9 @@ class Solution:
                 _plotly.save_trajectory_diagnostics_html(
                     self_outer.result.traj,
                     out_html,
-                    frame_kind=(
-                        frame.kind if frame is not None else "inertial"
-                    ),
+                    frame_kind=(frame.kind if frame is not None else "inertial"),
                     mu_m3ps2=self_outer.result.info.get("mu_m3ps2"),
-                    solar_directions_ric=self_outer.result.info.get(
-                        "solar_directions_ric"
-                    ),
+                    solar_directions_ric=self_outer.result.info.get("solar_directions_ric"),
                     title=title,
                 )
 

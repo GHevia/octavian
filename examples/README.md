@@ -29,9 +29,10 @@ constraints:
   expressed as vehicle, dynamics, phase, constraints, variables, and objective;
 - examples 02–07 — phase links, path constraints, and orbital targeting;
 - examples 08–10 — finite burns and perturbations;
-- examples 11–12 — relative motion, RIC plotting, and operational geometry;
-- example 13 — low-thrust orbit raising with a dedicated initial guess.
-- example 14 — differential relative perturbations and SPICE solar-phase geometry.
+- examples 11–12 — CWH relative motion, RIC plotting, and operational geometry;
+- examples 13–17 — relative representations, exact dynamics formulations,
+  perturbations, SPICE solar geometry, and native D'Amico targeting;
+- example 18 — low-thrust orbit raising with a dedicated initial guess.
 
 All mission inputs use SI units unless a parameter name explicitly says
 otherwise. Generated Plotly HTML files are written to the current directory.
