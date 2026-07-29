@@ -1,10 +1,10 @@
-"""Composable example 09: compare an impulsive transfer with a finite chemical burn.
+"""Earth-centered composable example 09: impulsive versus finite chemical burn.
 
 The impulsive reference is the best two-impulse Lambert seed over the same
 coast-time window used by the finite-burn transfer.
 
 Run:
-  python examples/composable/09_impulse_vs_chemical_burn.py
+  python examples/composable/earth_centered/09_impulse_vs_chemical_burn.py
 """
 
 from __future__ import annotations

@@ -9,11 +9,18 @@ from typing import Any
 import numpy as np
 
 from ..._asset import Tmodes
+from ...astro.kepler import cartesian_to_classic
 from ...astro.types import as_vec3
 from ...coordinates import (
     CARTESIAN,
     CARTESIAN_MASS,
     CARTESIAN_MASS_THRUST,
+    CLASSICAL_RELATIVE_ELEMENTS,
+    COUPLED_RELATIVE_ECI,
+    COUPLED_RELATIVE_ECI_MASS,
+    COUPLED_RELATIVE_ECI_MASS_THRUST,
+    COUPLED_RELATIVE_RIC,
+    DAMICO_RELATIVE_ELEMENTS,
     RELATIVE_CARTESIAN,
     StateLayout,
 )
@@ -25,8 +32,25 @@ from ...dynamics import (
     TwoBodyECI,
 )
 from ...phase import Phase
-from ...relative import ClohessyWiltshire
-from ...relative.dynamics import ClohessyWiltshireODE
+from ...relative import (
+    ClohessyWiltshire,
+    NonlinearRelative,
+    RelativePropagationMode,
+    relative_state_to_classical_relative_orbital_elements,
+    relative_state_to_relative_orbital_elements,
+)
+from ...relative.dynamics import (
+    ClohessyWiltshireODE,
+    CoupledRelativeMassCoastODE,
+    CoupledRelativeODE,
+    CoupledRelativeRICODE,
+    FiniteThrustRelativeODE,
+    NonlinearRelativeRICODE,
+    RelativeOrbitalElementsODE,
+)
+from ...relative.solar import circular_chief_state
+from ...relative.transforms import relative_to_inertial_state, ric_basis
+from ...specs import BoundaryState
 from ...variables import ImpulsiveDeltaV
 from ..third_bodies import phase_perturbations, tables_for_phase
 
@@ -74,22 +98,12 @@ class PhaseBuild:
 def has_impulsive_variable(phase: Phase, where: str) -> bool:
     """Return whether a phase declares an impulsive delta-v at a boundary."""
     normalized_where = (where or "").strip().lower()
-    location = (
-        "Front"
-        if normalized_where in ("front", "start", "initial", "t0")
-        else "Back"
-    )
+    location = "Front" if normalized_where in ("front", "start", "initial", "t0") else "Back"
     for variable in getattr(phase, "variables", []) or []:
-        if (
-            isinstance(variable, ImpulsiveDeltaV)
-            and getattr(variable, "where", "") == location
-        ):
+        if isinstance(variable, ImpulsiveDeltaV) and getattr(variable, "where", "") == location:
             return True
     for event in getattr(phase, "events", []) or []:
-        if (
-            getattr(event, "kind", "") == "impulse"
-            and getattr(event, "where", "") == location
-        ):
+        if getattr(event, "kind", "") == "impulse" and getattr(event, "where", "") == location:
             return True
     return False
 
@@ -129,6 +143,18 @@ def cwh_model(phase: Phase) -> ClohessyWiltshire | None:
     return model if isinstance(model, ClohessyWiltshire) else None
 
 
+def nonlinear_relative_model(phase: Phase) -> NonlinearRelative | None:
+    """Return the phase's full nonlinear relative model, when configured."""
+    dynamics = phase.dynamics
+    model = dynamics.model if dynamics is not None else None
+    return model if isinstance(model, NonlinearRelative) else None
+
+
+def is_relative_phase(phase: Phase) -> bool:
+    """Return whether a phase uses either full relative dynamics or CWH."""
+    return cwh_model(phase) is not None or nonlinear_relative_model(phase) is not None
+
+
 def mass_state_phase_indices(phases: Sequence[Phase]) -> set[int]:
     """Return phases that carry mass across a continuous powered chain."""
     powered_indices = [idx for idx, phase in enumerate(phases) if is_powered_phase(phase)]
@@ -161,9 +187,7 @@ def validate_powered_phase_chain(phases: Sequence[Phase]) -> None:
             )
         spacecraft = getattr(phase, "spacecraft", None)
         if isinstance(spacecraft, str) or spacecraft is None:
-            raise ValueError(
-                f"Mass-carrying phase {phase.name!r} requires a Spacecraft object."
-            )
+            raise ValueError(f"Mass-carrying phase {phase.name!r} requires a Spacecraft object.")
         if reference_spacecraft is None:
             reference_spacecraft = spacecraft
         elif spacecraft != reference_spacecraft:
@@ -213,23 +237,76 @@ def ode_for_phase(
     if relative_model is not None:
         if is_powered_phase(phase) or carries_mass:
             raise ValueError("CWH phases do not yet support finite-thrust or mass states.")
-        if any(
+        if perturbations.j2 or third_body_tables:
+            raise ValueError(
+                "Dynamics.cwh is an unforced linear model and cannot include "
+                "perturbations. Use Dynamics.relative(...) for exact nonlinear "
+                "chief/deputy propagation with J2 or third-body gravity."
+            )
+        return ClohessyWiltshireODE(mean_motion_radps=relative_model.mean_motion_radps)
+    nonlinear_model = nonlinear_relative_model(phase)
+    if nonlinear_model is not None:
+        mode = nonlinear_model.propagation_mode
+        has_perturbations = any(
             (
                 perturbations.j2,
-                perturbations.moon,
-                perturbations.sun,
                 perturbations.srp,
                 perturbations.drag,
-                bool(perturbations.third_bodies),
                 bool(third_body_tables),
             )
+        )
+        if mode is not RelativePropagationMode.COUPLED_ECI and has_perturbations:
+            raise ValueError(
+                f"Relative propagation mode {mode.value!r} is a two-body "
+                "formulation and cannot include perturbations. Use "
+                "propagation_mode='coupled_eci' for J2 or third-body gravity."
+            )
+        if (is_powered_phase(phase) or carries_mass) and (
+            mode is not RelativePropagationMode.COUPLED_ECI
         ):
             raise ValueError(
-                "CWH phases currently support the unforced linear model only; "
-                "relative-frame perturbations require an explicit acceleration model."
+                "Relative finite-thrust and mass-carrying coast phases require "
+                "propagation_mode='coupled_eci'. Native RIC and relative-element "
+                "thrust formulations are not implemented yet."
             )
-        return ClohessyWiltshireODE(
-            mean_motion_radps=relative_model.mean_motion_radps
+        force_options = {
+            "mu_m3ps2": float(dynamics.mu_m3ps2),
+            "j2": bool(perturbations.j2),
+            "central_body_radius_m": float(dynamics.central_body_radius_m),
+            "j2_coefficient": float(dynamics.j2_coefficient),
+            "third_body_tables": tuple(third_body_tables),
+        }
+        if is_powered_phase(phase):
+            thruster = first_thruster(phase)
+            return FiniteThrustRelativeODE(
+                thrust_N=float(thruster.thrust_N),
+                isp_s=float(thruster.isp_s),
+                **force_options,
+            )
+        if carries_mass:
+            return CoupledRelativeMassCoastODE(**force_options)
+        if mode is RelativePropagationMode.COUPLED_ECI:
+            return CoupledRelativeODE(**force_options)
+        if mode is RelativePropagationMode.COUPLED_RIC:
+            return CoupledRelativeRICODE(
+                mu_m3ps2=float(dynamics.mu_m3ps2),
+            )
+        if mode is RelativePropagationMode.NONLINEAR_RIC:
+            return NonlinearRelativeRICODE(
+                mu_m3ps2=float(dynamics.mu_m3ps2),
+                chief_orbit_radius_m=float(
+                    np.linalg.norm(nonlinear_model.chief_initial_state_eci.r_m)
+                ),
+            )
+        chief_elements = cartesian_to_classic(
+            r_m=nonlinear_model.chief_initial_state_eci.r_m,
+            v_mps=nonlinear_model.chief_initial_state_eci.v_mps,
+            mu_m3ps2=float(dynamics.mu_m3ps2),
+        )
+        return RelativeOrbitalElementsODE(
+            mu_m3ps2=float(dynamics.mu_m3ps2),
+            chief_semi_major_axis_m=float(chief_elements["a_m"]),
+            representation=mode.value,
         )
     if is_powered_phase(phase):
         thruster = first_thruster(phase)
@@ -271,6 +348,21 @@ def layout_for_phase(phase: Phase, *, carries_mass: bool = False) -> StateLayout
     """Return the named state/control layout required by a phase."""
     if cwh_model(phase) is not None:
         return RELATIVE_CARTESIAN
+    relative_model = nonlinear_relative_model(phase)
+    if relative_model is not None:
+        if relative_model.propagation_mode is RelativePropagationMode.COUPLED_ECI:
+            if is_powered_phase(phase):
+                return COUPLED_RELATIVE_ECI_MASS_THRUST
+            if carries_mass:
+                return COUPLED_RELATIVE_ECI_MASS
+        layouts = {
+            RelativePropagationMode.COUPLED_ECI: COUPLED_RELATIVE_ECI,
+            RelativePropagationMode.COUPLED_RIC: COUPLED_RELATIVE_RIC,
+            RelativePropagationMode.NONLINEAR_RIC: RELATIVE_CARTESIAN,
+            RelativePropagationMode.DAMICO: DAMICO_RELATIVE_ELEMENTS,
+            RelativePropagationMode.CLASSICAL_ELEMENTS: CLASSICAL_RELATIVE_ELEMENTS,
+        }
+        return layouts[relative_model.propagation_mode]
     if is_powered_phase(phase):
         return CARTESIAN_MASS_THRUST
     if carries_mass:
@@ -292,6 +384,12 @@ def trajectory_rvt(raw_traj: np.ndarray, layout: StateLayout | int) -> np.ndarra
     """Return the public ``[R, V, t]`` view of an ASSET trajectory."""
     raw = np.asarray(raw_traj, dtype=float)
     if isinstance(layout, StateLayout):
+        if layout in {
+            COUPLED_RELATIVE_ECI,
+            DAMICO_RELATIVE_ELEMENTS,
+            CLASSICAL_RELATIVE_ELEMENTS,
+        }:
+            raise ValueError("This relative trajectory requires phase-aware RIC conversion")
         columns = layout.public_rvt_columns()
         time_column = layout.time_column
     else:
@@ -361,6 +459,84 @@ def augment_mass_coast_guess(
     return augmented
 
 
+def augment_powered_relative_guess(
+    coupled_guess: Sequence[np.ndarray],
+    *,
+    relative_guess: Sequence[np.ndarray],
+    phase: Phase,
+    mass0_kg: float,
+    thrust_N: float,
+    isp_s: float,
+) -> list[np.ndarray]:
+    """Add deputy mass and ECI thrust controls to coupled-relative rows.
+
+    Input rows use ``[chief r,v, deputy r,v, t]``. Output rows use
+    ``[chief r,v, deputy r,v, mass, t, control]``. The deterministic control
+    seed follows the endpoint RIC-velocity change, rotated into ECI at each
+    sample. It is only an initial optimizer guess; the solved control remains
+    fully free inside its unit norm bound.
+    """
+    rows = [np.asarray(row, dtype=float).reshape(-1) for row in coupled_guess]
+    if not rows:
+        return []
+    if any(row.size != 13 for row in rows):
+        raise ValueError("Coupled relative guess rows must contain 12 states and time")
+    relative_rows = [
+        np.asarray(row, dtype=float).reshape(-1)
+        for row in relative_guess
+    ]
+    if len(relative_rows) != len(rows) or any(row.size != 7 for row in relative_rows):
+        raise ValueError("Relative control seeding requires matching RIC state/time rows")
+
+    delta_velocity = as_vec3(relative_rows[-1][3:6] - relative_rows[0][3:6])
+    delta_velocity_magnitude = float(np.linalg.norm(delta_velocity))
+    has_direction = delta_velocity_magnitude > 1.0e-12
+    direction = (
+        delta_velocity / delta_velocity_magnitude
+        if has_direction
+        else np.asarray([1.0, 0.0, 0.0], dtype=float)
+    )
+    duration_s = max(float(rows[-1][12] - rows[0][12]), 1.0)
+    mass_flow_kgps = float(thrust_N) / (float(isp_s) * 9.80665)
+    acceleration_mps2 = float(thrust_N) / max(float(mass0_kg), 1.0)
+    impulsive_burn_time_s = delta_velocity_magnitude / max(acceleration_mps2, 1.0e-12)
+    throttle = (
+        min(1.0, max(0.0, impulsive_burn_time_s / duration_s))
+        if has_direction
+        else 1.0e-3
+    )
+    mass_start_kg = float(getattr(phase, "info", {}).get("_mass_guess_start_kg", mass0_kg))
+    augmented: list[np.ndarray] = []
+    for index, row in enumerate(rows):
+        fraction = index / max(len(rows) - 1, 1)
+        mass = max(
+            mass_start_kg - mass_flow_kgps * throttle * duration_s * fraction,
+            1.0,
+        )
+        control = throttle * (
+            ric_basis(row[0:3], row[3:6]).T @ direction
+        )
+        augmented.append(np.hstack([row[0:12], mass, row[12], control]))
+    return augmented
+
+
+def augment_relative_mass_coast_guess(
+    coupled_guess: Sequence[np.ndarray],
+    *,
+    phase: Phase,
+    mass0_kg: float,
+) -> list[np.ndarray]:
+    """Add a constant deputy mass to coupled-relative coast rows."""
+    mass_start_kg = float(getattr(phase, "info", {}).get("_mass_guess_start_kg", mass0_kg))
+    augmented: list[np.ndarray] = []
+    for raw_row in coupled_guess:
+        row = np.asarray(raw_row, dtype=float).reshape(-1)
+        if row.size != 13:
+            raise ValueError("Coupled relative guess rows must contain 12 states and time")
+        augmented.append(np.hstack([row[0:12], mass_start_kg, row[12]]))
+    return augmented
+
+
 def prepare_phase_guess(
     phase: Phase,
     guess: Sequence[np.ndarray],
@@ -373,6 +549,42 @@ def prepare_phase_guess(
         carries_mass=carries_mass,
     )
     propulsion_kind = powered_phase_kind(phase)
+    nonlinear_model = nonlinear_relative_model(phase)
+    if nonlinear_model is not None:
+        rows = [np.asarray(row, dtype=float).reshape(-1) for row in guess]
+        compiled_width = layout.state_dim + 1 + layout.control_dim
+        if rows and all(row.size == compiled_width for row in rows):
+            return rows, layout, propulsion_kind
+        coupled_rows = augment_nonlinear_relative_guess(rows, nonlinear_model)
+        if propulsion_kind is None and not carries_mass:
+            return coupled_rows, layout, None
+
+        spacecraft = phase.spacecraft
+        if isinstance(spacecraft, str) or spacecraft is None:
+            raise ValueError(f"Mass-carrying phase {phase.name!r} requires a Spacecraft object.")
+        if propulsion_kind is None:
+            return (
+                augment_relative_mass_coast_guess(
+                    coupled_rows,
+                    phase=phase,
+                    mass0_kg=float(spacecraft.initial_mass_kg),
+                ),
+                layout,
+                None,
+            )
+        thruster = first_thruster(phase)
+        return (
+            augment_powered_relative_guess(
+                coupled_rows,
+                relative_guess=rows,
+                phase=phase,
+                mass0_kg=float(spacecraft.initial_mass_kg),
+                thrust_N=float(thruster.thrust_N),
+                isp_s=float(thruster.isp_s),
+            ),
+            layout,
+            propulsion_kind,
+        )
     if propulsion_kind is None and not carries_mass:
         return [np.asarray(row, dtype=float) for row in guess], layout, None
 
@@ -397,9 +609,7 @@ def prepare_phase_guess(
 
     thruster = first_thruster(phase)
     if float(thruster.thrust_N) <= 0.0 or float(thruster.isp_s) <= 0.0:
-        raise ValueError(
-            f"Powered phase {phase.name!r} requires thrust_N > 0 and isp_s > 0."
-        )
+        raise ValueError(f"Powered phase {phase.name!r} requires thrust_N > 0 and isp_s > 0.")
     return (
         augment_powered_guess(
             guess,
@@ -411,6 +621,77 @@ def prepare_phase_guess(
         layout,
         propulsion_kind,
     )
+
+
+def augment_nonlinear_relative_guess(
+    relative_guess: Sequence[np.ndarray],
+    model: NonlinearRelative,
+) -> list[np.ndarray]:
+    """Convert public RIC seed rows into the selected native formulation.
+
+    CWH supplies a fast, smooth initial guess only.  The compiled ODE and all
+    constraints remain full nonlinear dynamics.
+    """
+    augmented: list[np.ndarray] = []
+    for raw_row in relative_guess:
+        row = np.asarray(raw_row, dtype=float).reshape(-1)
+        if row.size != 7:
+            raise ValueError(
+                "A nonlinear relative initial guess must contain "
+                "[R, I, C, Rdot, Idot, Cdot, t] rows"
+            )
+        mode = model.propagation_mode
+        if mode is RelativePropagationMode.NONLINEAR_RIC:
+            augmented.append(row.copy())
+            continue
+        chief = circular_chief_state(
+            model.chief_initial_state_eci,
+            float(row[6]),
+            model.mean_motion_radps,
+        )
+        relative = BoundaryState(row[0:3], row[3:6])
+        if mode is RelativePropagationMode.COUPLED_RIC:
+            augmented.append(
+                np.hstack(
+                    [
+                        chief.r_m,
+                        chief.v_mps,
+                        relative.r_m,
+                        relative.v_mps,
+                        float(row[6]),
+                    ]
+                )
+            )
+            continue
+        if mode is RelativePropagationMode.DAMICO:
+            elements = relative_state_to_relative_orbital_elements(
+                chief,
+                relative,
+                mu_m3ps2=model.central_body.mu_m3ps2,
+            )
+            augmented.append(np.hstack([elements.as_vector(), float(row[6])]))
+            continue
+        if mode is RelativePropagationMode.CLASSICAL_ELEMENTS:
+            elements = relative_state_to_classical_relative_orbital_elements(
+                chief,
+                relative,
+                mu_m3ps2=model.central_body.mu_m3ps2,
+            )
+            augmented.append(np.hstack([elements.as_vector(), float(row[6])]))
+            continue
+        deputy = relative_to_inertial_state(chief, relative)
+        augmented.append(
+            np.hstack(
+                [
+                    chief.r_m,
+                    chief.v_mps,
+                    deputy.r_m,
+                    deputy.v_mps,
+                    float(row[6]),
+                ]
+            )
+        )
+    return augmented
 
 
 def make_asset_phase(

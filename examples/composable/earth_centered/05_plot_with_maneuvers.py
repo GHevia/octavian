@@ -1,9 +1,9 @@
-"""Composable example 05: plotting with maneuver markers.
+"""Earth-centered composable example 05: plotting with maneuver markers.
 
 This is intentionally focused on visualization.
 
 Run:
-  python examples/composable/05_plot_with_maneuvers.py
+  python examples/composable/earth_centered/05_plot_with_maneuvers.py
 """
 
 from __future__ import annotations

@@ -73,6 +73,12 @@ Moon and Sun use the bundled reduced DE440 ephemeris in the `ECI_TOD` frame and
 require a mission initial epoch so Octavian can build ASSET interpolation
 tables over the mission time bounds.
 
+For multi-phase missions, ephemeris coverage uses the latest cumulative
+absolute Back-time upper bound. `Dynamics.third_body_table_margin_s` extends
+the table beyond that bound so optimizer trial points and diagnostics remain
+inside the interpolation interval even when phase inputs use
+`tof_is_relative=True`.
+
 Built-in `EARTH`, `MOON`, and `SUN` definitions keep gravity, radius, J2, and
 frame origin consistent. Use `Dynamics.for_body(SUN)` for composable missions
 or pass `central_body=SUN` to the quick transfer builder. Raw gravitational
@@ -115,24 +121,106 @@ and interplanetary low-thrust arcs will need additional seed families.
 
 ### Relative Motion
 
-`Dynamics.cwh(...)` selects the linear Clohessy-Wiltshire model for a deputy
-near a chief on a circular orbit. Relative states are expressed in the chief's
-LVLH/RTN frame: x radial, y along track, and z orbit normal. The model supplies
-frame and characteristic scaling metadata automatically, while the composable
-compiler uses an analytic CWH position-targeting seed instead of Lambert and
-Kepler guesses.
+Relative states use the chief's RIC/RTN/LVLH axes: R is radial, I is in-track,
+and C is cross-track. Two dynamics levels are deliberately separate:
 
-`octavian.relative` also provides analytic propagation and inertial-to-LVLH
-state transforms for analysis before or after optimization. The current CWH
-compiler supports one unforced relative phase. Inertial orbital-element
-constraints, finite thrust, and inertial/relative phase links are rejected
-until an explicit acceleration or frame-link model is configured.
+- `Dynamics.cwh(...)` is the unforced, linear Clohessy-Wiltshire model for a
+  circular chief and small separation. It is useful for quick studies and fast
+  initial guesses. Adding perturbations to it is rejected.
+- `Dynamics.relative(chief_initial_state_eci=...)` selects nonlinear or
+  relative-element propagation. Its `propagation_mode` makes the native solver
+  state explicit:
+
+  - `"coupled_eci"` (default) propagates independent chief and deputy absolute
+    Cartesian states. It supports central gravity, J2, Moon, and Sun.
+  - `"coupled_ric"` propagates the chief ECI state stacked with the deputy RIC
+    state. It retains exact nonlinear central gravity for circular or
+    eccentric chiefs.
+  - `"nonlinear_ric"` propagates the exact six-state circular-chief equations
+    before linearization. Linearizing this model produces CWH.
+  - `"damico"` propagates `[δa, δλ, δex, δey, δix, δiy]` directly.
+  - `"classical_elements"` propagates `[Δa, Δe, Δi, ΔΩ, Δω, ΔM]` directly.
+
+  The non-default RIC and element formulations are currently two-body models.
+  Select `"coupled_eci"` when perturbations are required. Regardless of native
+  state, results and plots expose an RIC trajectory, and reconstructable
+  absolute histories remain available as `solution.chief_trajectory_eci` and
+  `solution.deputy_trajectory_eci`.
+
+`octavian.relative` includes explicit single-state and vectorized history
+transforms:
+
+- `absolute_to_relative_state(...)` and `relative_to_absolute_state(...)`;
+- `absolute_to_relative_history(...)` and `relative_to_absolute_history(...)`;
+- `ric_basis(...)` and the compatibility name `lvlh_basis(...)`.
+- absolute Cartesian, RIC, D'Amico ROE, and classical relative-element
+  conversions in `octavian.relative.elements`;
+- `propagate_relative_orbital_elements(...)` for analytical two-body or
+  numerically perturbed ROE history;
+- `propagate_nonlinear_relative_ric(...)` for the exact circular-chief RIC
+  equations.
+
+The transforms include the RIC angular-rate term in velocity. When chief
+acceleration is supplied, they also include orbit-plane rotation from
+cross-track acceleration. Rotating an ECI velocity difference by the position
+direction-cosine matrix alone is not a valid relative velocity.
+
+For analysis that should propagate the chief rather than prescribe it,
+`propagate_relative_numerical(...)` advances absolute chief and deputy states
+together with central gravity, J2, lunar gravity, and solar gravity. Its result
+contains both absolute histories and the converted RIC history. It uses a
+fixed-step fourth-order Runge-Kutta integrator, so `max_step_s` is an explicit
+accuracy/cost choice rather than a hidden tolerance.
+
+Passing `perturbations=` to `propagate_relative_orbital_elements(...)` or
+`propagate_relative_elements_to_ric(...)` selects this same coupled numerical
+path. Octavian converts the initial relative elements to an absolute deputy
+state, propagates both vehicles, and reconstructs osculating D'Amico or
+classical relative elements. The requested times must be monotonic with zero
+at either endpoint, so both pre-event and post-event coast histories are
+supported.
+
+Relative phases may be composed into an ordered `previous=` chain. Continuous
+links preserve the formulation's native state and time; mass is also preserved
+through coasts between powered phases. All phases in a chain use the same
+relative formulation and chief reference. Mixing inertial and relative phases
+still requires an explicit frame-link model and is therefore rejected.
+
+`relative_hop(...)` packages a departure coast and two-impulse transfer for the
+quick API. `relative_transfer_chain(...)` repeats that pattern across ordered
+RIC targets and inserts a bounded post-arrival coast between transfers. Both
+return normal `Mission` objects, so their phases remain inspectable and
+editable. In composable missions, `tof_is_relative=True` applies the declared
+lower and upper bounds to that phase's duration rather than cumulative mission
+time.
+
+Finite-thrust relative phases use `propagation_mode="coupled_eci"`. The chief
+remains unpowered while the deputy receives the ECI vector-throttle
+acceleration and loses mass. Gravity and configured J2 or third-body forces are
+evaluated independently at both spacecraft. A `relative_coast` between powered
+phases propagates the same coupled state with constant deputy mass. Native RIC
+and relative-element formulations remain propulsion-free; CWH can still supply
+fast initial guesses without becoming the optimized dynamics.
+
+`constraints.ric_state(...)` targets one native RIC component. Use it with CWH,
+`"nonlinear_ric"`, or `"coupled_ric"` so no absolute-coordinate expression is
+introduced. `constraints.relative_orbital_elements(...)` fixes a six-element
+boundary and `constraints.relative_orbital_element(...)` targets one D'Amico or
+classical relative element. A Back target combined with `tof_bounds_s` leaves
+arrival time free; the target is applied directly to the propagated element
+state. `solution.traj` remains an RIC view for plotting, while
+`solution.native_relative_trajectory` exposes the stitched solver states when
+all phase layouts have compatible widths, and
+`solution.native_relative_phase_trajectories` always exposes one native array
+per phase. `solution.relative_propagation_mode` identifies their formulation.
 
 Relative geometry constraints operate on Cartesian position in the phase
 frame. `keep_out_sphere` accepts an arbitrary center, `approach_cone` defines a
 forward axis and half-angle, and `lighting_angle` bounds the angle to a fixed
-Sun direction. The fixed-direction lighting model is appropriate over short
-relative arcs; it is not an ephemeris-varying eclipse or power model.
+direction. `solar_phase_angle` instead samples the Sun from the bundled SPICE
+BSP at `Mission.initial_epoch`, subtracts the chief position, and rotates the
+line into RIC throughout the arc. It requires `chief_initial_state_eci` so the
+rotation is defined. Neither lighting constraint is an eclipse or power model.
 
 ## Frames, Layouts, And Scaling
 
@@ -173,6 +261,14 @@ report:
 - dynamics-model metadata for relative trajectories.
 
 Plotly helpers turn the trajectory and maneuvers into inspectable HTML files.
+`save_relative_trajectory_html(...)` labels R, I, and C explicitly, places the
+chief at the origin, and can draw a chief or keep-out radius.
+`solution.viz().save_html(...)` selects that view automatically when the result
+frame is relative. `solution.viz().save_diagnostics_html(...)` writes shared
+time-axis state and geometry panels. Relative diagnostics include RIC state,
+range, speed, and solar phase angle when ephemeris geometry is present;
+inertial diagnostics include Cartesian state, radius, speed, and osculating
+elements.
 
 ## Documentation Contract
 

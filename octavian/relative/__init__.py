@@ -1,4 +1,4 @@
-"""Linearized relative-motion models and LVLH coordinate transforms."""
+"""Linear and nonlinear relative-motion models and representation transforms."""
 
 from .cwh import (
     ClohessyWiltshire,
@@ -7,23 +7,90 @@ from .cwh import (
     cwh_state_transition,
     propagate_cwh,
 )
+from .elements import (
+    ClassicalRelativeOrbitalElements,
+    RelativeOrbitalElements,
+    absolute_to_classical_relative_orbital_elements,
+    absolute_to_relative_orbital_elements,
+    classical_relative_orbital_elements_to_absolute_state,
+    classical_relative_orbital_elements_to_relative_state,
+    classical_to_damico_relative_orbital_elements,
+    damico_to_classical_relative_orbital_elements,
+    propagate_relative_elements_to_ric,
+    propagate_relative_orbital_elements,
+    propagate_two_body_state,
+    relative_orbital_elements_to_absolute_state,
+    relative_orbital_elements_to_relative_state,
+    relative_state_to_classical_relative_orbital_elements,
+    relative_state_to_relative_orbital_elements,
+)
 from .guessing import CWHRendezvousSeed, cwh_dense_guess, select_cwh_rendezvous_seed
+from .model import NonlinearRelative, RelativePropagationMode
+from .propagation import (
+    RelativePropagationResult,
+    coupled_relative_ric_derivative,
+    nonlinear_relative_ric_derivative,
+    propagate_nonlinear_relative_ric,
+    propagate_relative_numerical,
+)
+from .solar import (
+    SolarDirectionTable,
+    circular_chief_state,
+    sample_solar_directions_ric,
+)
 from .transforms import (
+    absolute_to_relative_history,
+    absolute_to_relative_state,
+    chief_ric_angular_velocity,
     inertial_to_relative_state,
     lvlh_basis,
+    relative_to_absolute_history,
+    relative_to_absolute_state,
     relative_to_inertial_state,
+    ric_basis,
 )
 
 __all__ = [
     "ClohessyWiltshire",
     "CWHRendezvousSeed",
+    "ClassicalRelativeOrbitalElements",
+    "NonlinearRelative",
+    "RelativePropagationMode",
+    "RelativePropagationResult",
+    "RelativeOrbitalElements",
+    "SolarDirectionTable",
     "cwh_derivative",
     "cwh_dense_guess",
     "cwh_rendezvous_velocity",
     "cwh_state_transition",
+    "absolute_to_relative_history",
+    "absolute_to_classical_relative_orbital_elements",
+    "absolute_to_relative_orbital_elements",
+    "absolute_to_relative_state",
+    "chief_ric_angular_velocity",
+    "classical_relative_orbital_elements_to_absolute_state",
+    "classical_relative_orbital_elements_to_relative_state",
+    "classical_to_damico_relative_orbital_elements",
+    "coupled_relative_ric_derivative",
+    "circular_chief_state",
     "inertial_to_relative_state",
     "lvlh_basis",
+    "nonlinear_relative_ric_derivative",
     "propagate_cwh",
+    "propagate_nonlinear_relative_ric",
+    "propagate_relative_numerical",
+    "propagate_relative_elements_to_ric",
+    "propagate_relative_orbital_elements",
+    "propagate_two_body_state",
+    "relative_to_absolute_history",
+    "relative_to_absolute_state",
     "relative_to_inertial_state",
+    "relative_orbital_elements_to_absolute_state",
+    "relative_orbital_elements_to_relative_state",
+    "relative_state_to_classical_relative_orbital_elements",
+    "relative_state_to_relative_orbital_elements",
+    "ric_basis",
+    "sample_solar_directions_ric",
     "select_cwh_rendezvous_seed",
+    "damico_to_classical_relative_orbital_elements",
 ]

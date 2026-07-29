@@ -13,16 +13,21 @@ from typing import Any, Protocol
 from .bodies import CelestialBody
 from .bodies import resolve as resolve_body
 from .coordinates import EARTH_INERTIAL, CoordinateFrame, SolverScaling
+from .specs import BoundaryState
 
 
 class TranslationalModel(Protocol):
     """Configuration contract for non-default translational dynamics models."""
 
     @property
-    def frame(self) -> CoordinateFrame: ...
+    def frame(self) -> CoordinateFrame:
+        """Return the coordinate frame used by the model."""
+        ...
 
     @property
-    def scaling(self) -> SolverScaling: ...
+    def scaling(self) -> SolverScaling:
+        """Return the model's recommended solver scaling."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +71,8 @@ class Dynamics:
     records the meaning of Cartesian states throughout compilation and
     reporting. ``scaling`` optionally overrides the solver's automatic
     characteristic units while preserving SI inputs and outputs.
+    ``third_body_table_margin_s`` extends Sun/Moon and solar-geometry tables
+    beyond the mission's cumulative absolute upper time bound.
     """
 
     mu_m3ps2: float = 3.986004418e14
@@ -119,6 +126,7 @@ class Dynamics:
         central_body: CelestialBody | str = "earth",
         chief_name: str = "chief",
         reference_length_m: float = 1_000.0,
+        chief_initial_state_eci: BoundaryState | None = None,
         **kwargs: Any,
     ) -> Dynamics:
         """Create circular-chief Clohessy-Wiltshire relative dynamics."""
@@ -130,6 +138,61 @@ class Dynamics:
             body=body,
             chief_name=chief_name,
             reference_length_m=reference_length_m,
+            chief_initial_state_eci=chief_initial_state_eci,
+        )
+        dynamics = cls(central_body=body, model=model, **kwargs)
+        perturbations = dynamics.active_perturbations()
+        if any(
+            (
+                perturbations.j2,
+                perturbations.srp,
+                perturbations.drag,
+                bool(perturbations.active_third_bodies()),
+            )
+        ):
+            raise ValueError(
+                "Dynamics.cwh is an unforced linear model. Use "
+                "Dynamics.relative(...) for exact nonlinear relative motion "
+                "with perturbations."
+            )
+        return dynamics
+
+    @classmethod
+    def relative(
+        cls,
+        *,
+        chief_initial_state_eci: BoundaryState,
+        central_body: CelestialBody | str = "earth",
+        chief_name: str = "chief",
+        reference_length_m: float = 1_000.0,
+        propagation_mode: str = "coupled_eci",
+        **kwargs: Any,
+    ) -> Dynamics:
+        """Create nonlinear or relative-element dynamics.
+
+        Args:
+            chief_initial_state_eci: Absolute chief state defining the RIC frame.
+            central_body: Central body name or object.
+            chief_name: Name used for the returned chief-centered frame.
+            reference_length_m: Characteristic relative distance for scaling.
+            propagation_mode: One of ``"coupled_eci"`` (default),
+                ``"coupled_ric"``, ``"nonlinear_ric"``, ``"damico"``, or
+                ``"classical_elements"``. Select ``"coupled_eci"`` for J2,
+                third-body perturbations, or finite-thrust relative phases.
+            **kwargs: Additional :class:`Dynamics` configuration.
+
+        Returns:
+            A dynamics configuration whose public reporting frame is RIC.
+        """
+        from .relative import NonlinearRelative
+
+        body = resolve_body(central_body)
+        model = NonlinearRelative(
+            chief_initial_state_eci=chief_initial_state_eci,
+            central_body=body,
+            chief_name=chief_name,
+            reference_length_m=reference_length_m,
+            propagation_mode=propagation_mode,
         )
         return cls(central_body=body, model=model, **kwargs)
 
@@ -173,6 +236,7 @@ class RunPlan:
 
     @staticmethod
     def default() -> RunPlan:
+        """Return an empty continuation plan."""
         return RunPlan(stages=())
 
 
@@ -185,4 +249,5 @@ class RetryPolicy:
 
     @staticmethod
     def default() -> RetryPolicy:
+        """Return the default enabled retry policy."""
         return RetryPolicy(enabled=True, max_retries=2)

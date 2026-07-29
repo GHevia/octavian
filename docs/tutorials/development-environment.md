@@ -81,7 +81,7 @@ For one command, use `conda run`:
 
 ```powershell
 conda run --name octavian-dev python -m pytest tests -q
-conda run --name octavian-dev python examples/composable/08_chemical_burn_j2.py
+conda run --name octavian-dev python examples/composable/earth_centered/08_chemical_burn_j2.py
 conda run --name octavian-dev python -m mkdocs build --strict
 ```
 

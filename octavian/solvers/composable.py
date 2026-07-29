@@ -3,14 +3,16 @@
 This module compiles a Mission made of Phase objects into a single ASSET
 OptimalControlProblem.
 
-Scope (v0.1):
-  - Two-body, J2-perturbed, finite-/low-thrust, and CWH relative dynamics
+Supported mission building blocks:
+  - Two-body, J2-perturbed, finite-/low-thrust, and relative dynamics
+  - Multi-phase relative chains with representation-aware continuity
+  - Exact coupled chief/deputy finite thrust with mass-carrying coasts
   - Phase boundary constraints:
       * State (R,V) at Front/Back
       * Position (R) at Front/Back
   - Links:
-      * continuous: (R,V,t)
-      * impulsive: (R,t)
+      * continuous: native position, velocity, optional mass, and time
+      * impulsive: native position, optional mass, and time
   - Variables:
       * ImpulsiveDeltaV at Front / Back
       * Powered phase controls via ``mode="finite_thrust"`` or compatibility
@@ -50,16 +52,32 @@ from ..astro.lambert import select_best_lambert_seed
 from ..astro.types import as_vec3
 from ..astro.units import default_scaling
 from ..constraints import OrbitalElementConstraint
+from ..coordinates import StateLayout
 from ..guesses import LowThrustSpiralGuess
 from ..phase import Phase
-from ..relative import CWHRendezvousSeed, cwh_dense_guess, select_cwh_rendezvous_seed
+from ..relative import (
+    CWHRendezvousSeed,
+    RelativePropagationMode,
+    cwh_dense_guess,
+    select_cwh_rendezvous_seed,
+)
+from ..specs import BoundaryState
 from ..time import normalize_time_bounds
 from ..types import Maneuver
 from . import constraint_compiler
-from .compiler import phase_compiler, powered_guessing, relative_constraint_compiler
+from .compiler import (
+    nonlinear_relative_compiler,
+    phase_compiler,
+    powered_guessing,
+    relative_constraint_compiler,
+    relative_state_constraint_compiler,
+)
 from .options import SolverOptions
 from .preconfigured import RendezvousResult  # reuse stable result type
-from .third_bodies import build_third_body_tables
+from .relative_environment import (
+    build_solar_direction_tables,
+)
+from .third_bodies import build_third_body_tables, tables_for_phase
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..mission import Mission
@@ -73,6 +91,7 @@ _augment_guess_for_chemical_burn = phase_compiler.augment_chemical_burn_guess
 _augment_guess_for_mass_coast = phase_compiler.augment_mass_coast_guess
 _compile_phase_dimensions = phase_compiler.compile_phase_dimensions
 _cwh_model = phase_compiler.cwh_model
+_nonlinear_relative_model = phase_compiler.nonlinear_relative_model
 _first_thruster = phase_compiler.first_thruster
 _has_impulsive_var = phase_compiler.has_impulsive_variable
 _is_coast_like = phase_compiler.is_coast_like
@@ -130,6 +149,161 @@ def _propellant_objective_weight(mission: Mission) -> float | None:
     return None
 
 
+def _relative_formulation(phase: Phase) -> str | None:
+    """Return the phase's normalized relative propagation formulation."""
+    if _cwh_model(phase) is not None:
+        return "cwh"
+    model = _nonlinear_relative_model(phase)
+    return model.propagation_mode.value if model is not None else None
+
+
+def _validate_relative_phase_chain(phases: Sequence[Phase]) -> None:
+    """Validate representation and chief-reference continuity across phases."""
+    formulations = [_relative_formulation(phase) for phase in phases]
+    if any(formulation is None for formulation in formulations):
+        raise ValueError(
+            "A composable mission cannot link relative and inertial phases "
+            "without an explicit frame transform."
+        )
+    if len(set(formulations)) != 1:
+        raise ValueError(
+            "All linked relative phases must use the same propagation mode; "
+            f"received {formulations}."
+        )
+    for index, phase in enumerate(phases[1:], start=1):
+        if phase.previous is not phases[index - 1]:
+            raise ValueError(
+                "Relative phases must form one ordered chain using previous=; "
+                f"phase {phase.name!r} does not reference {phases[index - 1].name!r}."
+            )
+
+    nonlinear_models = [_nonlinear_relative_model(phase) for phase in phases]
+    if all(model is None for model in nonlinear_models):
+        mean_motions = [
+            float(model.mean_motion_radps)
+            for phase in phases
+            if (model := _cwh_model(phase)) is not None
+        ]
+        if not np.allclose(mean_motions, mean_motions[0], rtol=1.0e-12, atol=0.0):
+            raise ValueError("Linked CWH phases must use one chief mean motion")
+        return
+
+    reference = nonlinear_models[0]
+    if reference is None:
+        raise ValueError("Linked relative phases cannot mix CWH and nonlinear dynamics")
+    for model in nonlinear_models[1:]:
+        if model is None:
+            raise ValueError("Linked relative phases cannot mix CWH and nonlinear dynamics")
+        if model.central_body != reference.central_body:
+            raise ValueError("Linked relative phases must use one central body")
+        if not (
+            np.allclose(
+                model.chief_initial_state_eci.r_m,
+                reference.chief_initial_state_eci.r_m,
+            )
+            and np.allclose(
+                model.chief_initial_state_eci.v_mps,
+                reference.chief_initial_state_eci.v_mps,
+            )
+        ):
+            raise ValueError("Linked relative phases must use one chief reference state")
+
+
+def _layout_has_state_group(layout: StateLayout, group: str) -> bool:
+    """Return whether a state layout exposes a semantic group."""
+    try:
+        layout.state_indices(group)
+    except KeyError:
+        return False
+    return True
+
+
+def _relative_link_groups(
+    previous_layout: StateLayout,
+    current_layout: StateLayout,
+    *,
+    continuous: bool,
+) -> list[str]:
+    """Return ASSET state groups for one native relative phase link."""
+    previous_name = previous_layout.name
+    current_name = current_layout.name
+    if previous_name.startswith("coupled_relative_eci") and current_name.startswith(
+        "coupled_relative_eci"
+    ):
+        groups = (
+            ["ChiefR", "ChiefV", "DeputyR", "DeputyV", "t"]
+            if continuous
+            else ["ChiefR", "ChiefV", "DeputyR", "t"]
+        )
+    elif previous_name == current_name == "coupled_relative_ric":
+        groups = (
+            ["ChiefR", "ChiefV", "R", "V", "t"]
+            if continuous
+            else ["ChiefR", "ChiefV", "R", "t"]
+        )
+    elif previous_name == current_name == "relative_cartesian":
+        groups = ["R", "V", "t"] if continuous else ["R", "t"]
+    elif previous_name == current_name and current_name.endswith("relative_elements"):
+        if not continuous:
+            raise ValueError("Relative-element phases support continuous links only")
+        groups = ["ROE", "t"]
+    else:
+        raise ValueError(
+            "Linked relative phases require compatible native state layouts; "
+            f"received {previous_name!r} and {current_name!r}."
+        )
+
+    if (
+        _layout_has_state_group(previous_layout, "mass")
+        and _layout_has_state_group(current_layout, "mass")
+    ):
+        groups.insert(-1, "M")
+    return groups
+
+
+def _link_velocity_indices(layout: StateLayout) -> tuple[int, ...]:
+    """Return velocity indices used to measure an impulsive phase link."""
+    if _layout_has_state_group(layout, "deputy_velocity"):
+        return layout.state_indices("deputy_velocity")
+    return layout.state_indices("velocity")
+
+
+def _stitch_phase_trajectories(
+    trajectories: Sequence[np.ndarray],
+) -> np.ndarray | None:
+    """Join compatible phase arrays while dropping duplicate link rows."""
+    arrays = [np.asarray(trajectory, dtype=float) for trajectory in trajectories]
+    if not arrays:
+        return None
+    if len({array.shape[1] for array in arrays}) != 1:
+        return None
+    stitched = arrays[0].copy()
+    for array in arrays[1:]:
+        stitched = np.vstack([stitched, array[1:, :]])
+    return stitched
+
+
+def _unit_vector_interpolator(
+    sample_times_s: np.ndarray,
+    sample_vectors: np.ndarray,
+):
+    """Return a normalized component-wise interpolator for reporting."""
+    times = np.asarray(sample_times_s, dtype=float)
+    vectors = np.asarray(sample_vectors, dtype=float)
+
+    def at(query_times_s):
+        """Interpolate and renormalize vectors at requested times."""
+        query = np.asarray(query_times_s, dtype=float)
+        flat_query = query.reshape(-1)
+        values = np.column_stack(
+            [np.interp(flat_query, times, vectors[:, component]) for component in range(3)]
+        )
+        values /= np.linalg.norm(values, axis=1)[:, None]
+        return values.reshape((*query.shape, 3))
+
+    return at
+
+
 def _build_guess_single_phase_low_thrust(
     phase: Phase,
     *,
@@ -156,9 +330,7 @@ def _build_guess_single_phase_low_thrust(
     if config is None:
         config = LowThrustSpiralGuess()
     if not isinstance(config, LowThrustSpiralGuess):
-        raise TypeError(
-            "A low_thrust phase initial_guess must be guesses.low_thrust_spiral(...)."
-        )
+        raise TypeError("A low_thrust phase initial_guess must be guesses.low_thrust_spiral(...).")
     spacecraft = phase.spacecraft
     if isinstance(spacecraft, str) or spacecraft is None:
         raise ValueError("Low-thrust spiral seeding requires a Spacecraft object.")
@@ -184,32 +356,59 @@ def _build_guess_single_phase_cwh(
     tf_bounds: tuple[float, float],
     nsegs: int,
     samples: int,
+    solar_direction_table=None,
+    t_start_s: float = 0.0,
+    initial_state_override=None,
+    final_state_override=None,
 ) -> tuple[list[np.ndarray], dict[str, float | int | str]]:
-    """Build an analytic position-targeted guess for one CWH phase."""
-    model = _cwh_model(phase)
+    """Build an analytic position-targeted CWH seed for one relative phase.
+
+    ``tf_bounds`` contains absolute phase-end times. ``t_start_s`` allows the
+    same builder to seed later phases in a continuous relative-motion chain.
+    Optional state overrides carry the preceding phase's terminal guess into
+    the next phase without mutating the user declarations.
+    """
+    model = _cwh_model(phase) or _nonlinear_relative_model(phase)
     if model is None:
-        raise TypeError("CWH guess construction requires ClohessyWiltshire dynamics")
-    initial_state = phase.initial_state or constraint_compiler.state_boundary_value(
-        constraint_compiler.get_state_constraint(phase, "Front")
+        raise TypeError("Relative guess construction requires relative dynamics")
+    initial_state = (
+        initial_state_override
+        or phase.initial_state
+        or constraint_compiler.state_boundary_value(
+            constraint_compiler.get_state_constraint(phase, "Front")
+        )
     )
-    final_state = phase.final_state or constraint_compiler.state_boundary_value(
-        constraint_compiler.get_state_constraint(phase, "Back")
+    final_state = (
+        final_state_override
+        or phase.final_state
+        or constraint_compiler.state_boundary_value(
+            constraint_compiler.get_state_constraint(phase, "Back")
+        )
     )
     if initial_state is None or final_state is None:
         raise ValueError(
             "A CWH rendezvous phase requires initial and final State values for guess generation."
         )
+    duration_bounds = (
+        max(float(tf_bounds[0]) - float(t_start_s), 0.1),
+        float(tf_bounds[1]) - float(t_start_s),
+    )
+    if duration_bounds[1] <= duration_bounds[0]:
+        raise ValueError(
+            f"Relative phase {phase.name!r} has no positive duration inside its time bounds"
+        )
     geometry_constraints = relative_constraint_compiler.relative_geometry_constraints(phase)
 
     def geometry_is_feasible(candidate: CWHRendezvousSeed) -> bool:
+        """Return whether a CWH seed satisfies declared relative geometry."""
         if not geometry_constraints:
             return True
         candidate_guess = cwh_dense_guess(
             initial_state.r_m,
             candidate.departure_velocity_mps,
             mean_motion_radps=model.mean_motion_radps,
-            t0_s=0.0,
-            tf_s=candidate.tof_s,
+            t0_s=float(t_start_s),
+            tf_s=float(t_start_s) + candidate.tof_s,
             npts=max(int(nsegs) + 1, 61),
         )
         candidate_traj = np.asarray(candidate_guess, dtype=float)
@@ -220,6 +419,9 @@ def _build_guess_single_phase_cwh(
                 phase_name=phase.name,
                 constraint=constraint,
                 phase_traj=candidate_traj,
+                solar_direction_at=(
+                    solar_direction_table.at if solar_direction_table is not None else None
+                ),
             )
         )
 
@@ -227,7 +429,7 @@ def _build_guess_single_phase_cwh(
         initial_state,
         final_state,
         mean_motion_radps=model.mean_motion_radps,
-        tof_bounds_s=tf_bounds,
+        tof_bounds_s=duration_bounds,
         samples=samples,
         candidate_filter=geometry_is_feasible if geometry_constraints else None,
     )
@@ -235,17 +437,115 @@ def _build_guess_single_phase_cwh(
         initial_state.r_m,
         seed.departure_velocity_mps,
         mean_motion_radps=model.mean_motion_radps,
-        t0_s=0.0,
-        tf_s=seed.tof_s,
+        t0_s=float(t_start_s),
+        tf_s=float(t_start_s) + seed.tof_s,
         npts=int(nsegs) + 1,
     )
     return guess, {
-        "guess_kind": "cwh_position_targeted",
+        "guess_kind": (
+            "cwh_position_targeted"
+            if _cwh_model(phase) is not None
+            else "cwh_seed_for_nonlinear_relative"
+        ),
         "seed_tof_s": seed.tof_s,
         "seed_total_dv_mps": seed.total_dv_mps,
         "seed_samples": int(samples),
         "seed_geometry_feasible": bool(geometry_is_feasible(seed)),
     }
+
+
+def _build_guess_multi_phase_relative(
+    phases: Sequence[Phase],
+    *,
+    abs_bounds: Sequence[tuple[float, float] | None],
+    nsegs_first: int,
+    nsegs_later: int,
+    samples: int,
+    solar_direction_tables: dict[int, object],
+) -> tuple[
+    dict[int, list[np.ndarray]],
+    dict[int, dict[str, float | int | bool | str]],
+]:
+    """Build sequential public RIC guesses for a relative phase chain.
+
+    Targeted segments use the analytic CWH rendezvous seed. Segments without a
+    terminal anchor are genuine coasts initialized by direct CWH propagation
+    from the previous segment. CWH is used only for initialization; every
+    phase is still compiled with its declared exact or reduced-order dynamics.
+    """
+    guesses: dict[int, list[np.ndarray]] = {}
+    info: dict[int, dict[str, float | int | bool | str]] = {}
+    previous_terminal = None
+    previous_time_s = 0.0
+
+    for index, phase in enumerate(phases):
+        model = _cwh_model(phase) or _nonlinear_relative_model(phase)
+        if model is None:
+            raise TypeError("Every phase in a relative chain requires relative dynamics")
+        front_constraint = constraint_compiler.state_boundary_value(
+            constraint_compiler.get_state_constraint(phase, "Front")
+        )
+        initial_state = (
+            front_constraint
+            or phase.initial_state
+            or previous_terminal
+        )
+        if initial_state is None:
+            raise ValueError(
+                f"Relative phase {phase.name!r} needs an initial state or a linked predecessor"
+            )
+        final_state = phase.final_state or constraint_compiler.state_boundary_value(
+            constraint_compiler.get_state_constraint(phase, "Back")
+        )
+        bounds = abs_bounds[index] or (
+            previous_time_s + 600.0,
+            previous_time_s + 7_200.0,
+        )
+        nsegs = int(nsegs_first if index == 0 else nsegs_later)
+
+        if final_state is not None:
+            phase_guess, phase_info = _build_guess_single_phase_cwh(
+                phase,
+                tf_bounds=bounds,
+                nsegs=nsegs,
+                samples=samples,
+                solar_direction_table=solar_direction_tables.get(index),
+                t_start_s=previous_time_s,
+                initial_state_override=initial_state,
+                final_state_override=final_state,
+            )
+        else:
+            minimum_end_s = max(float(bounds[0]), previous_time_s + 0.1)
+            maximum_end_s = float(bounds[1])
+            if maximum_end_s <= minimum_end_s:
+                raise ValueError(
+                    f"Relative coast phase {phase.name!r} has invalid absolute time bounds"
+                )
+            end_time_s = 0.5 * (minimum_end_s + maximum_end_s)
+            phase_guess = cwh_dense_guess(
+                initial_state.r_m,
+                initial_state.v_mps,
+                mean_motion_radps=model.mean_motion_radps,
+                t0_s=previous_time_s,
+                tf_s=end_time_s,
+                npts=nsegs + 1,
+            )
+            phase_info = {
+                "guess_kind": "cwh_coast",
+                "seed_tof_s": end_time_s - previous_time_s,
+                "seed_samples": nsegs + 1,
+            }
+
+        guesses[index] = phase_guess
+        info[index] = phase_info
+        terminal_row = np.asarray(phase_guess[-1], dtype=float)
+        previous_terminal = BoundaryState(
+            terminal_row[0:3],
+            terminal_row[3:6],
+        )
+        previous_time_s = float(terminal_row[6])
+
+    return guesses, info
 
 
 def _build_guess_two_phase_precoast_transfer(
@@ -276,7 +576,9 @@ def _build_guess_two_phase_precoast_transfer(
             "Precoast phase requires an initial state (phase.initial_state or State constraint at Front)."
         )
 
-    x0 = p0.initial_state or constraint_compiler.state_boundary_value(constraint_compiler.get_state_constraint(p0, "Front"))  # type: ignore[union-attr]
+    x0 = p0.initial_state or constraint_compiler.state_boundary_value(
+        constraint_compiler.get_state_constraint(p0, "Front")
+    )  # type: ignore[union-attr]
     xf_state = constraint_compiler.get_state_constraint(p1, "Back")
     xf_pos = constraint_compiler.get_position_constraint(p1, "Back")
 
@@ -287,7 +589,11 @@ def _build_guess_two_phase_precoast_transfer(
 
     xf_state_val = constraint_compiler.state_boundary_value(xf_state)
     xf_pos_val = constraint_compiler.position_boundary_value(xf_pos)
-    rf = as_vec3(xf_state_val.r_m if xf_state_val is not None else (p1.final_state.r_m if p1.final_state is not None else xf_pos_val))  # type: ignore[arg-type]
+    rf = as_vec3(
+        xf_state_val.r_m
+        if xf_state_val is not None
+        else (p1.final_state.r_m if p1.final_state is not None else xf_pos_val)
+    )  # type: ignore[arg-type]
     vf_target = as_vec3(
         xf_state_val.v_mps
         if xf_state_val is not None
@@ -414,7 +720,9 @@ def _build_guess_single_phase_terminal_position(
     reach the terminal position, and lets boundary delta-v objectives account
     for the impulsive mismatch.
     """
-    x0 = phase.initial_state or constraint_compiler.state_boundary_value(constraint_compiler.get_state_constraint(phase, "Front"))  # type: ignore[union-attr]
+    x0 = phase.initial_state or constraint_compiler.state_boundary_value(
+        constraint_compiler.get_state_constraint(phase, "Front")
+    )  # type: ignore[union-attr]
     xf_state = constraint_compiler.get_state_constraint(phase, "Back")
     xf_pos = constraint_compiler.get_position_constraint(phase, "Back")
 
@@ -427,9 +735,7 @@ def _build_guess_single_phase_terminal_position(
     xf_pos_val = constraint_compiler.position_boundary_value(xf_pos)
 
     if xf_state_val is None and xf_pos_val is None and phase.final_state is None:
-        raise ValueError(
-            "Single-phase Lambert seeding requires a terminal position at Back."
-        )
+        raise ValueError("Single-phase Lambert seeding requires a terminal position at Back.")
 
     rf = as_vec3(
         xf_state_val.r_m
@@ -949,7 +1255,10 @@ def _build_guess_three_phase_powered_transfer(
         burn1.info["_mass_guess_start_kg"] = m1
 
     guesses = {0: burn0_guess, 1: coast_guess, 2: burn1_guess}
-    infos = {idx: dict(seed_info, guess_phase_index=idx, guess_phase_name=phases[idx].name) for idx in guesses}
+    infos = {
+        idx: dict(seed_info, guess_phase_index=idx, guess_phase_name=phases[idx].name)
+        for idx in guesses
+    }
     return guesses, infos
 
 
@@ -1061,21 +1370,15 @@ def solve_composable_mission(
     _validate_powered_phase_chain(phases)
     mass_state_indices = _mass_state_phase_indices(phases)
 
-    relative_phases = [phase for phase in phases if _cwh_model(phase) is not None]
-    if relative_phases and len(relative_phases) != len(phases):
-        raise ValueError(
-            "A composable mission cannot link CWH and inertial phases without an explicit frame transform."
-        )
-    if relative_phases and len(phases) != 1:
-        raise NotImplementedError(
-            "CWH compilation currently supports one optimized phase per mission."
-        )
+    relative_phases = [phase for phase in phases if phase_compiler.is_relative_phase(phase)]
+    if relative_phases:
+        _validate_relative_phase_chain(phases)
     if relative_phases and any(
         isinstance(constraint, OrbitalElementConstraint)
         for phase in relative_phases
         for constraint in phase.constraints
     ):
-        raise ValueError("Inertial orbital-element constraints are not valid in a CWH relative frame.")
+        raise ValueError("Inertial orbital-element constraints are not valid in a relative frame.")
 
     for ph in phases:
         normalized_mode = (ph.mode or "").lower().replace("-", "_")
@@ -1105,6 +1408,26 @@ def solve_composable_mission(
     # Normalize time bounds (absolute Back-time bounds for each phase).
     abs_bounds = normalize_time_bounds(phases)
     third_body_tables = build_third_body_tables(mission, phases, abs_bounds)
+    solar_direction_tables = build_solar_direction_tables(mission, phases, abs_bounds)
+    asset_solar_direction_tables = {
+        index: vf.InterpTable1D(
+            table.times_s,
+            table.directions_ric,
+            axis=0,
+            kind="cubic",
+        )
+        for index, table in solar_direction_tables.items()
+    }
+    asset_solar_position_tables = {
+        index: vf.InterpTable1D(
+            table.times_s,
+            table.sun_positions_eci_m,
+            axis=0,
+            kind="cubic",
+        )
+        for index, table in solar_direction_tables.items()
+        if table.sun_positions_eci_m is not None
+    }
 
     # Characteristic scaling remains dimensional at the public API boundary.
     first = phases[0]
@@ -1168,16 +1491,16 @@ def solve_composable_mission(
     guess_info: dict[int, dict[str, float | int | bool | str]] = {}
 
     if relative_phases:
-        p0 = phases[0]
-        tf_bounds = abs_bounds[0] or (600.0, 7_200.0)
-        ig0, info0 = _build_guess_single_phase_cwh(
-            p0,
-            tf_bounds=tf_bounds,
-            nsegs=nsegs1,
+        relative_guesses, relative_info = _build_guess_multi_phase_relative(
+            phases,
+            abs_bounds=abs_bounds,
+            nsegs_first=nsegs0,
+            nsegs_later=nsegs1,
             samples=int(getattr(mission, "lambert_grid_size", 60)),
+            solar_direction_tables=solar_direction_tables,
         )
-        guesses[0] = ig0
-        guess_info[0] = info0
+        guesses.update(relative_guesses)
+        guess_info.update(relative_info)
 
     elif len(phases) == 1 and _powered_phase_kind(phases[0]) == "low_thrust":
         p0 = phases[0]
@@ -1410,6 +1733,17 @@ def solve_composable_mission(
                         mu_m3ps2=mu,
                     )
 
+        if idx in mass_state_indices and built:
+            previous_build = built[-1]
+            if _layout_has_state_group(previous_build.layout, "mass"):
+                previous_raw = np.asarray(
+                    previous_build.asset_phase.returnTraj(),
+                    dtype=float,
+                )
+                ph.info["_mass_guess_start_kg"] = float(
+                    previous_raw[-1, previous_build.layout.state_indices("mass")[0]]
+                )
+
         asset_phase, layout, powered_kind = _make_asset_phase(
             ph,
             ig,
@@ -1478,10 +1812,44 @@ def solve_composable_mission(
     ocp.optimizer.MaxLSIters = int(opts.max_ls_iters)
     ocp.optimizer.set_QPOrderingMode(str(opts.qp_ordering_mode))
     set_ocp_threads(ocp, opts.asset_threads)
+    nonlinear_ephemeris_phase = any(
+        _nonlinear_relative_model(build.ph) is not None
+        and bool(tables_for_phase(build.ph, third_body_tables))
+        for build in built
+    )
+    adaptive_mesh_enabled = bool(opts.enable_adaptive_mesh and not nonlinear_ephemeris_phase)
 
     for b in built:
         b.asset_phase.setAutoScaling(bool(opts.enable_auto_scaling))
-        if b.state_dim == 7:
+        nonlinear_model = _nonlinear_relative_model(b.ph)
+        if nonlinear_model is not None:
+            chief = nonlinear_model.chief_initial_state_eci
+            absolute_position_unit_m = float(np.linalg.norm(chief.r_m))
+            absolute_velocity_unit_mps = float(np.linalg.norm(chief.v_mps))
+            if nonlinear_model.propagation_mode is RelativePropagationMode.COUPLED_ECI:
+                coupled_units = {
+                    "ChiefR": absolute_position_unit_m,
+                    "ChiefV": absolute_velocity_unit_mps,
+                    "DeputyR": absolute_position_unit_m,
+                    "DeputyV": absolute_velocity_unit_mps,
+                    "t": t_unit,
+                }
+                if _layout_has_state_group(b.layout, "mass"):
+                    coupled_units["M"] = solver_scaling.mass_kg
+                b.asset_phase.setUnits(**coupled_units)
+            elif nonlinear_model.propagation_mode is RelativePropagationMode.COUPLED_RIC:
+                b.asset_phase.setUnits(
+                    ChiefR=absolute_position_unit_m,
+                    ChiefV=absolute_velocity_unit_mps,
+                    R=r_unit,
+                    V=v_unit,
+                    t=t_unit,
+                )
+            elif nonlinear_model.propagation_mode is RelativePropagationMode.NONLINEAR_RIC:
+                b.asset_phase.setUnits(R=r_unit, V=v_unit, t=t_unit)
+            else:
+                b.asset_phase.setUnits(ROE=1.0, t=t_unit)
+        elif _layout_has_state_group(b.layout, "mass"):
             b.asset_phase.setUnits(
                 R=r_unit,
                 V=v_unit,
@@ -1490,27 +1858,41 @@ def solve_composable_mission(
             )
         else:
             b.asset_phase.setUnits(R=r_unit, V=v_unit, t=t_unit)
-        b.asset_phase.setAdaptiveMesh(bool(opts.enable_adaptive_mesh and b.enable_adaptive_mesh))
+        b.asset_phase.setAdaptiveMesh(bool(adaptive_mesh_enabled and b.enable_adaptive_mesh))
 
     ocp.setAutoScaling(True, True)
-    ocp.setAdaptiveMesh(bool(opts.enable_adaptive_mesh))
+    ocp.setAdaptiveMesh(adaptive_mesh_enabled)
     ocp.PrintMeshInfo = False
 
     # Apply constraints and time bounds per phase
     for b in built:
         ph = b.compile_phase or b.ph
         ap = b.asset_phase
+        nonlinear_model = _nonlinear_relative_model(ph)
+        relative_expressions = (
+            nonlinear_relative_compiler.relative_state_expressions(
+                ph,
+                third_body_tables,
+                b.layout,
+            )
+            if nonlinear_model is not None
+            and nonlinear_model.propagation_mode is RelativePropagationMode.COUPLED_ECI
+            else None
+        )
 
         # First phase front time fixed at 0 unless user provides otherwise
         if b.index == 0:
             fix_front_time(ap, 0.0)
+        if nonlinear_model is not None and ph.previous is None:
+            nonlinear_relative_compiler.fix_initial_chief(ap, nonlinear_model)
 
-        if b.state_dim == 7:
+        if _layout_has_state_group(b.layout, "mass"):
             spacecraft = ph.spacecraft
             if isinstance(spacecraft, str) or spacecraft is None:
                 raise ValueError(f"Mass-carrying phase {ph.name!r} requires a Spacecraft object.")
             has_mass_predecessor = any(
-                previous_build.ph is ph.previous and previous_build.state_dim == 7
+                previous_build.ph is ph.previous
+                and _layout_has_state_group(previous_build.layout, "mass")
                 for previous_build in built
             )
             if not has_mass_predecessor:
@@ -1532,22 +1914,64 @@ def solve_composable_mission(
 
             # Position constraint always applied (if present)
             if pos is not None:
-                ap.addBoundaryValue(
-                    loc,
-                    ["R"],
-                    np.asarray(
-                        as_vec3(constraint_compiler.position_boundary_value(pos)),
-                        dtype=float,
-                    ),
+                if b.layout.name.endswith("relative_elements"):
+                    raise ValueError(
+                        "Cartesian Position constraints are not native to a "
+                        "relative-element phase. Use "
+                        "constraints.relative_orbital_element(...) instead."
+                    )
+                position_value = np.asarray(
+                    as_vec3(constraint_compiler.position_boundary_value(pos)),
+                    dtype=float,
                 )
+                if relative_expressions is not None:
+                    nonlinear_relative_compiler.apply_position_boundary(
+                        ap,
+                        loc,
+                        position_value,
+                        relative_expressions,
+                    )
+                else:
+                    ap.addBoundaryValue(loc, ["R"], position_value)
 
             if st is not None:
+                if b.layout.name.endswith("relative_elements"):
+                    raise ValueError(
+                        "Cartesian State constraints are not native to a "
+                        "relative-element phase. Use "
+                        "constraints.relative_orbital_elements(...) or "
+                        "constraints.relative_orbital_element(...)."
+                    )
                 st_val = constraint_compiler.state_boundary_value(st)
                 groups = constraint_compiler.state_groups(st)
 
-                # If an impulsive Δv is declared at this boundary, we drop V from the constraint
-                if _has_impulsive_var(ph, loc) and "V" in groups:
+                # At mission endpoints, an impulsive declaration turns the
+                # requested velocity into a delta-v target. At a linked Front,
+                # however, the impulse is the velocity jump across the link;
+                # retaining a declared V constraint lets a post-arrival coast
+                # begin on the exact requested orbit.
+                linked_front_impulse = (
+                    loc == "Front"
+                    and ph.previous is not None
+                    and ph.link is not None
+                    and not ph.link.is_continuous()
+                )
+                if (
+                    _has_impulsive_var(ph, loc)
+                    and "V" in groups
+                    and not linked_front_impulse
+                ):
                     groups = tuple(g for g in groups if g != "V")
+
+                if relative_expressions is not None:
+                    nonlinear_relative_compiler.apply_state_boundary(
+                        ap,
+                        loc,
+                        st_val,
+                        groups,
+                        relative_expressions,
+                    )
+                    continue
 
                 # build value vector for groups
                 vals = []
@@ -1578,29 +2002,76 @@ def solve_composable_mission(
 
         # Path constraints (e.g., min radius)
         for constraint in getattr(ph, "constraints", []) or []:
-            if getattr(constraint, "kind", "") == "min_radius":
+            if relative_state_constraint_compiler.is_native_relative_constraint(constraint):
+                relative_state_constraint_compiler.apply_native_relative_constraint(
+                    ap,
+                    constraint,
+                    b.layout,
+                )
+            elif getattr(constraint, "kind", "") == "min_radius":
+                if b.layout.name.endswith("relative_elements"):
+                    raise ValueError(
+                        "Minimum Cartesian range is not a native "
+                        "relative-element constraint; select a RIC formulation."
+                    )
                 minimum_radius_m = float(constraint.value)
                 location = (
                     "Path"
                     if getattr(constraint, "where", "Path") == "Path"
                     else getattr(constraint, "where", "Path")
                 )
-                ap.addLowerNormBound(location, "R", minimum_radius_m)
+                if relative_expressions is not None:
+                    nonlinear_relative_compiler.apply_minimum_range(
+                        ap,
+                        location,
+                        minimum_radius_m,
+                        relative_expressions,
+                    )
+                else:
+                    ap.addLowerNormBound(location, "R", minimum_radius_m)
             elif isinstance(constraint, OrbitalElementConstraint):
                 constraint_compiler.apply_orbital_element_constraint(ap, constraint, mu)
             elif relative_constraint_compiler.is_relative_geometry_constraint(constraint):
-                relative_constraint_compiler.apply_relative_geometry_constraint(
-                    ap,
-                    constraint,
-                    b.layout.state_indices("position"),
-                )
+                if relative_expressions is not None:
+                    nonlinear_relative_compiler.apply_geometry_constraint(
+                        ap,
+                        constraint,
+                        relative_expressions,
+                        solar_position_table=asset_solar_position_tables.get(b.index),
+                    )
+                else:
+                    if b.layout.name.endswith("relative_elements"):
+                        raise ValueError(
+                            "Cartesian relative-geometry constraints require a "
+                            "native RIC or coupled-ECI propagation mode; they "
+                            "are not defined directly on relative elements."
+                        )
+                    relative_constraint_compiler.apply_relative_geometry_constraint(
+                        ap,
+                        constraint,
+                        b.layout.state_indices("position"),
+                        time_index=b.layout.time_column,
+                        solar_direction_table=asset_solar_direction_tables.get(b.index),
+                    )
 
         # Time bounds: normalize tof_bounds_s to absolute Back-time bounds.
         bounds = b.t_bounds
         if bounds is not None:
             tmin, tmax = map(float, bounds)
             add_back_time_bound(ap, b.state_dim, tmin, tmax)
-            ap.addLowerDeltaTimeBound(0.1)
+            declared_phase = b.ph
+            if (
+                declared_phase.tof_is_relative
+                and declared_phase.tof_bounds_s is not None
+            ):
+                duration_min_s, duration_max_s = map(
+                    float,
+                    declared_phase.tof_bounds_s,
+                )
+                ap.addLowerDeltaTimeBound(max(duration_min_s, 0.1))
+                ap.addUpperDeltaTimeBound(duration_max_s)
+            else:
+                ap.addLowerDeltaTimeBound(0.1)
 
     # Apply links and link objectives
     for b in built:
@@ -1622,10 +2093,22 @@ def solve_composable_mission(
 
         ap = b.asset_phase
         link_kind = (ph.link.kind if ph.link is not None else "continuous").lower()
+        is_relative_link = phase_compiler.is_relative_phase(ph)
 
-        if link_kind == "continuous":
+        if is_relative_link and prev_build is not None:
+            link_groups = _relative_link_groups(
+                prev_build.layout,
+                b.layout,
+                continuous=link_kind == "continuous",
+            )
+            ocp.addForwardLinkEqualCon(prev_ap, ap, link_groups)
+        elif link_kind == "continuous":
             link_groups = ["R", "V", "t"]
-            if prev_build is not None and prev_build.state_dim == 7 and b.state_dim == 7:
+            if (
+                prev_build is not None
+                and _layout_has_state_group(prev_build.layout, "mass")
+                and _layout_has_state_group(b.layout, "mass")
+            ):
                 link_groups = ["R", "V", "M", "t"]
             ocp.addForwardLinkEqualCon(prev_ap, ap, link_groups)
         else:
@@ -1643,12 +2126,12 @@ def solve_composable_mission(
                 float(w_dv) * dvmag,
                 prev_ap,
                 "Back",
-                list(prev_build.layout.state_indices("velocity")),
+                list(_link_velocity_indices(prev_build.layout)),
                 [],
                 [],
                 ap,
                 "Front",
-                list(b.layout.state_indices("velocity")),
+                list(_link_velocity_indices(b.layout)),
                 [],
                 [],
                 [],
@@ -1679,16 +2162,43 @@ def solve_composable_mission(
                 )
             st_val = constraint_compiler.state_boundary_value(st)
             v_target = as_vec3(st_val.v_mps if st_val is not None else first_ph.initial_state.v_mps)  # type: ignore[union-attr]
-            a0 = vf.Arguments(3)
-            dv0 = vf.sqrt((a0 - v_target).dot(a0 - v_target))
-            first_ap.addStateObjective(
-                "Front",
-                float(w_dv) * dv0,
-                list(built[0].layout.state_indices("velocity")),
-                [],
-                [],
-                AutoScale=1.0 / float(v_unit),
-            )
+            nonlinear_model = _nonlinear_relative_model(first_ph)
+            if (
+                nonlinear_model is not None
+                and nonlinear_model.propagation_mode
+                is RelativePropagationMode.COUPLED_ECI
+            ):
+                expressions = nonlinear_relative_compiler.relative_state_expressions(
+                    first_ph,
+                    third_body_tables,
+                    built[0].layout,
+                )
+                nonlinear_relative_compiler.add_velocity_objective(
+                    first_ap,
+                    "Front",
+                    v_target,
+                    float(w_dv),
+                    float(v_unit),
+                    expressions,
+                )
+            else:
+                try:
+                    velocity_indices = built[0].layout.state_indices("velocity")
+                except KeyError as exc:
+                    raise ValueError(
+                        "Impulsive delta-v objectives require a Cartesian RIC "
+                        "or coupled-ECI formulation, not relative elements."
+                    ) from exc
+                a0 = vf.Arguments(3)
+                dv0 = vf.sqrt((a0 - v_target).dot(a0 - v_target))
+                first_ap.addStateObjective(
+                    "Front",
+                    float(w_dv) * dv0,
+                    list(velocity_indices),
+                    [],
+                    [],
+                    AutoScale=1.0 / float(v_unit),
+                )
 
         # Terminal: if last phase has impulsive Δv at Back, penalize relative to desired terminal velocity
         last_ph = built[-1].ph
@@ -1696,16 +2206,43 @@ def solve_composable_mission(
         if _has_impulsive_var(last_ph, "Back"):
             v_target = _explicit_boundary_velocity_target(last_ph, "Back")
             if v_target is not None:
-                b0 = vf.Arguments(3)
-                dvf = vf.sqrt((v_target - b0).dot(v_target - b0))
-                last_ap.addStateObjective(
-                    "Back",
-                    float(w_dv) * dvf,
-                    list(built[-1].layout.state_indices("velocity")),
-                    [],
-                    [],
-                    AutoScale=1.0 / float(v_unit),
-                )
+                nonlinear_model = _nonlinear_relative_model(last_ph)
+                if (
+                    nonlinear_model is not None
+                    and nonlinear_model.propagation_mode
+                    is RelativePropagationMode.COUPLED_ECI
+                ):
+                    expressions = nonlinear_relative_compiler.relative_state_expressions(
+                        last_ph,
+                        third_body_tables,
+                        built[-1].layout,
+                    )
+                    nonlinear_relative_compiler.add_velocity_objective(
+                        last_ap,
+                        "Back",
+                        v_target,
+                        float(w_dv),
+                        float(v_unit),
+                        expressions,
+                    )
+                else:
+                    try:
+                        velocity_indices = built[-1].layout.state_indices("velocity")
+                    except KeyError as exc:
+                        raise ValueError(
+                            "Impulsive delta-v objectives require a Cartesian "
+                            "RIC or coupled-ECI formulation, not relative elements."
+                        ) from exc
+                    b0 = vf.Arguments(3)
+                    dvf = vf.sqrt((v_target - b0).dot(v_target - b0))
+                    last_ap.addStateObjective(
+                        "Back",
+                        float(w_dv) * dvf,
+                        list(velocity_indices),
+                        [],
+                        [],
+                        AutoScale=1.0 / float(v_unit),
+                    )
 
     # Time objective: minimize final time at last phase Back
     if minimize_time and float(w_time) != 0.0:
@@ -1730,12 +2267,73 @@ def solve_composable_mission(
     # Extract trajectory (stitch)
     raw_trajs = [np.asarray(b.asset_phase.returnTraj(), dtype=float) for b in built]
     trajs = [
-        _trajectory_rvt(raw_traj, build.layout)
+        (
+            nonlinear_relative_compiler.relative_trajectory_rvt(
+                raw_traj,
+                build.ph,
+                third_body_tables,
+            )
+            if _nonlinear_relative_model(build.ph) is not None
+            else _trajectory_rvt(raw_traj, build.layout)
+        )
         for raw_traj, build in zip(raw_trajs, built, strict=True)
     ]
-    traj = trajs[0]
-    for t in trajs[1:]:
-        traj = np.vstack([traj, t[1:, :]])
+    solar_reporting_table = next(iter(solar_direction_tables.values()), None)
+    solved_solar_directions = {
+        build.index: nonlinear_relative_compiler.solar_directions_ric(
+            raw_traj,
+            solar_reporting_table,
+        )
+        for raw_traj, build in zip(raw_trajs, built, strict=True)
+        if (
+            (model := _nonlinear_relative_model(build.ph)) is not None
+            and model.propagation_mode is RelativePropagationMode.COUPLED_ECI
+        )
+        and solar_reporting_table is not None
+    }
+    absolute_histories = [
+        nonlinear_relative_compiler.absolute_trajectories(raw_traj, build.ph)
+        if _nonlinear_relative_model(build.ph) is not None
+        else (None, None)
+        for raw_traj, build in zip(raw_trajs, built, strict=True)
+    ]
+    traj = _stitch_phase_trajectories(trajs)
+    if traj is None:
+        raise RuntimeError("Public phase trajectories have incompatible columns")
+    native_phase_trajectories = [
+        raw[:, : build.layout.time_column + 1]
+        for raw, build in zip(raw_trajs, built, strict=True)
+    ]
+    native_relative_trajectory = (
+        _stitch_phase_trajectories(native_phase_trajectories)
+        if relative_phases
+        else None
+    )
+    chief_trajectory_eci = _stitch_phase_trajectories(
+        [
+            chief
+            for chief, _ in absolute_histories
+            if chief is not None
+        ]
+    )
+    deputy_trajectory_eci = _stitch_phase_trajectories(
+        [
+            deputy
+            for _, deputy in absolute_histories
+            if deputy is not None
+        ]
+    )
+    solar_direction_history = (
+        _stitch_phase_trajectories(
+            [
+                np.column_stack([solved_solar_directions[build.index], phase_traj[:, 6]])
+                for build, phase_traj in zip(built, trajs, strict=True)
+                if build.index in solved_solar_directions
+            ]
+        )
+        if solved_solar_directions
+        else None
+    )
 
     # Maneuver bookkeeping: link dv and explicit terminal dv if requested
     maneuvers: list[Maneuver] = []
@@ -1743,7 +2341,9 @@ def solve_composable_mission(
     if built and _has_impulsive_var(built[0].ph, "Front"):
         st0 = constraint_compiler.get_state_constraint(built[0].ph, "Front")
         st0_val = constraint_compiler.state_boundary_value(st0)
-        v_target0 = as_vec3(st0_val.v_mps if st0_val is not None else built[0].ph.initial_state.v_mps)  # type: ignore[union-attr]
+        v_target0 = as_vec3(
+            st0_val.v_mps if st0_val is not None else built[0].ph.initial_state.v_mps
+        )  # type: ignore[union-attr]
         v_start = trajs[0][0, 3:6]
         dv0 = v_start - v_target0
         maneuvers.append(
@@ -1802,11 +2402,31 @@ def solve_composable_mission(
         for constraint in relative_constraint_compiler.relative_geometry_constraints(
             constraint_phase
         ):
+            solar_direction_at = None
+            if build.index in solved_solar_directions:
+                solar_direction_at = _unit_vector_interpolator(
+                    phase_traj[:, 6],
+                    solved_solar_directions[build.index],
+                )
+            elif build.index in solar_direction_tables:
+                solar_direction_at = solar_direction_tables[build.index].at
             constraint_report.extend(
                 relative_constraint_compiler.relative_constraint_report_rows(
                     phase_name=constraint_phase.name,
                     constraint=constraint,
                     phase_traj=phase_traj,
+                    solar_direction_at=solar_direction_at,
+                )
+            )
+        for constraint in relative_state_constraint_compiler.native_relative_constraints(
+            constraint_phase
+        ):
+            constraint_report.extend(
+                relative_state_constraint_compiler.relative_state_constraint_report_rows(
+                    phase_name=constraint_phase.name,
+                    constraint=constraint,
+                    native_trajectory=raw_trajs[build.index],
+                    layout=build.layout,
                 )
             )
 
@@ -1815,7 +2435,7 @@ def solve_composable_mission(
     phase_segments: list[dict[str, float | str]] = []
     for build, phase_traj in zip(built, trajs, strict=True):
         is_powered = build.is_powered
-        is_relative = _cwh_model(build.ph) is not None
+        is_relative = phase_compiler.is_relative_phase(build.ph)
         phase_segments.append(
             {
                 "name": build.ph.name,
@@ -1842,8 +2462,10 @@ def solve_composable_mission(
         spacecraft = build.ph.spacecraft
         if not isinstance(spacecraft, str) and spacecraft is not None and mass_final_kg > 0.0:
             thruster = _first_thruster(build.ph)
-            equivalent_dv_mps = float(thruster.isp_s) * 9.80665 * float(
-                np.log(max(mass_initial_kg, mass_final_kg) / mass_final_kg)
+            equivalent_dv_mps = (
+                float(thruster.isp_s)
+                * 9.80665
+                * float(np.log(max(mass_initial_kg, mass_final_kg) / mass_final_kg))
             )
         summary = {
             "phase": build.ph.name,
@@ -1877,7 +2499,49 @@ def solve_composable_mission(
                 if first.dynamics.central_body is not None  # type: ignore[union-attr]
                 else first.dynamics.frame.origin  # type: ignore[union-attr]
             ),
-            "dynamics_model": "cwh" if relative_phases else "central_gravity",
+            "mu_m3ps2": mu,
+            "dynamics_model": (
+                "nonlinear_relative"
+                if any(_nonlinear_relative_model(phase) is not None for phase in phases)
+                else "cwh"
+                if relative_phases
+                else "central_gravity"
+            ),
+            "relative_reference_model": None,
+            "relative_propagation_mode": (
+                _nonlinear_relative_model(phases[0]).propagation_mode.value
+                if relative_phases and _nonlinear_relative_model(phases[0]) is not None
+                else "cwh"
+                if relative_phases
+                else None
+            ),
+            "native_relative_trajectory": (
+                native_relative_trajectory.tolist()
+                if native_relative_trajectory is not None
+                else None
+            ),
+            "native_relative_phase_trajectories": (
+                [trajectory.tolist() for trajectory in native_phase_trajectories]
+                if relative_phases
+                else None
+            ),
+            "solar_directions_ric": (
+                solar_direction_history[:, 0:3].tolist()
+                if solar_direction_history is not None
+                else solar_reporting_table.at(traj[:, 6]).tolist()
+                if relative_phases and solar_reporting_table is not None
+                else None
+            ),
+            "chief_trajectory_eci": (
+                chief_trajectory_eci.tolist()
+                if chief_trajectory_eci is not None
+                else None
+            ),
+            "deputy_trajectory_eci": (
+                deputy_trajectory_eci.tolist()
+                if deputy_trajectory_eci is not None
+                else None
+            ),
             "state_layouts": [build.layout.name for build in built],
             "constraint_report": constraint_report,
             "powered_phases": powered_phases,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
@@ -69,7 +70,7 @@ def third_body_table_duration_s(
     phases: Sequence[Phase],
     abs_bounds: Sequence[tuple[float, float] | None],
 ) -> float:
-    """Return the mission-relative ephemeris table duration.
+    """Return the mission-relative ephemeris table duration with margin.
 
     ``abs_bounds`` contains each phase's absolute Back-time bounds after
     ``normalize_time_bounds``. The table must cover the latest possible
@@ -85,11 +86,18 @@ def third_body_table_duration_s(
             "can size the ephemeris interpolation table."
         )
     max_upper_s = max(upper_bounds)
+    if not math.isfinite(max_upper_s) or max_upper_s <= 0.0:
+        raise ValueError(
+            "Moon/Sun ephemeris tables require a finite positive absolute "
+            "mission-time upper bound."
+        )
     margin_s = max(
         float(getattr(phase.dynamics, "third_body_table_margin_s", 0.0) or 0.0)  # type: ignore[union-attr]
         for phase in phases
         if phase.dynamics is not None
     )
+    if not math.isfinite(margin_s) or margin_s < 0.0:
+        raise ValueError("third_body_table_margin_s must be finite and non-negative")
     return max_upper_s + margin_s
 
 
@@ -161,6 +169,8 @@ def build_third_body_tables(
             name=body,
             mu_m3ps2=SUPPORTED_THIRD_BODY_MU_M3PS2[body],
             position_table=table,
+            times_s=times_s,
+            positions_eci_m=positions_m[body],
         )
     return tables
 

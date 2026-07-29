@@ -28,8 +28,10 @@ Octavian currently supports:
 - finite chemical burns with mass depletion and thrust-direction controls,
 - Earth two-body, J2, Sun, and Moon gravity perturbations in the composable
   backend,
-- single-phase CWH relative-motion optimization with analytic seeding and
-  inertial/LVLH transforms,
+- composable CWH, exact Cartesian, coupled chief/deputy, and native
+  relative-element optimization with representation-aware phase links,
+- exact coupled relative finite thrust, deputy mass depletion, and
+  mass-carrying coast phases,
 - ASSET-backed optimization with a targeted retry path for non-monotonic mesh
   time failures,
 - `Solution` and `RendezvousResult` reporting,
@@ -91,15 +93,16 @@ of the phase definition.
 
 ### Astrodynamics And Data
 
-- `octavian/dynamics.py`: ASSET vector-function ODEs for two-body, J2,
+- `octavian/dynamics.py`: ASSET vector-function ODEs for inertial two-body, J2,
   third-body, mass-coast, and propulsion-neutral finite-thrust dynamics.
 - `octavian/astro/kepler.py`: Kepler propagation, orbital element conversion,
   and dense initial guesses.
 - `octavian/astro/lambert.py`: Lambert seed generation and selection.
 - `octavian/astro/types.py`: vector normalization helpers.
 - `octavian/astro/units.py`: default unit scaling for ASSET phases.
-- `octavian/relative/`: CWH configuration, analytic propagation and seeding,
-  ASSET EOM, and inertial/LVLH state transforms.
+- `octavian/relative/`: CWH, exact RIC, coupled chief/deputy, coupled relative
+  finite-thrust, and native relative-element models; analytic/numerical
+  propagation; seeding; and absolute/RIC/ROE transforms.
 - `octavian/time.py`: time-bound normalization.
 - `octavian/data/ephemeris.py`: bundled reduced Sun/Moon ephemeris access,
   epoch conversion, and SPICE sampling.
@@ -127,6 +130,13 @@ of the phase definition.
 - `octavian/solvers/compiler/relative_constraint_compiler.py`: Cartesian
   keep-out, approach-cone, and lighting inequality compilation plus result
   reports.
+- `octavian/solvers/compiler/relative_state_constraint_compiler.py`: direct
+  scalar/vector constraints and reports for native RIC and relative-element
+  layouts. It deliberately rejects requests that would require an implicit
+  absolute-coordinate conversion.
+- `octavian/solvers/compiler/nonlinear_relative_compiler.py`: the boundary
+  between each nonlinear native layout and public RIC constraints, objectives,
+  solar geometry, absolute-history reconstruction, and result extraction.
 - `octavian/coordinates/`: immutable frame, state-layout, and characteristic
   scaling declarations shared by configuration, compilation, and reporting.
 - `octavian/bodies/`: immutable central-body constants and case-insensitive
@@ -143,7 +153,8 @@ of the phase definition.
   namespace.
 - `octavian/types.py`: shared small result types such as `Maneuver`.
 - `octavian/study.py`: study-level utilities.
-- `octavian/viz/plotly.py`: Plotly trajectory visualization.
+- `octavian/viz/diagnostics.py`: plotting-backend-independent time-series data.
+- `octavian/viz/plotly.py`: Plotly trajectory and diagnostic visualization.
 - `octavian/viz/data/`: bundled visualization assets.
 
 ## Solve Flow

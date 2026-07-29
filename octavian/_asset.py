@@ -79,6 +79,8 @@ NON_MONOTONIC_TIME_MESSAGE = "Non monotonic time coordinates in LGLInterpTable."
 _NON_MONOTONIC_TIME_ALIASES = (
     "non monotonic time coordinates in lglinterptable",
     "non monotonic time coordinates",
+    "duplicate time coordinates in lglinterptable",
+    "duplicate time coordinates",
 )
 
 

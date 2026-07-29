@@ -1,4 +1,4 @@
-"""Composable example 07: terminal orbital-element constraints.
+"""Earth-centered composable example 07: terminal orbital-element constraints.
 
 This example targets only semi-major axis, eccentricity, and inclination at the
 end of the transfer. The terminal Cartesian state is provided only as a guess
@@ -8,7 +8,7 @@ two independently optimized objective values is informative but not a global
 optimality proof.
 
 Run:
-  python examples/composable/07_terminal_orbital_elements.py
+  python examples/composable/earth_centered/07_terminal_orbital_elements.py
 """
 
 from __future__ import annotations

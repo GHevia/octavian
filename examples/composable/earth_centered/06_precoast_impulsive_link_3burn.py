@@ -1,4 +1,4 @@
-"""Composable example 06: precoast + two transfers with 3 burns.
+"""Earth-centered composable example 06: precoast plus a three-burn transfer.
 
 Impulsive links mean (R,t) are continuous but V may jump.
 This example has three impulses and a minimum-altitude path constraint:
@@ -7,7 +7,7 @@ This example has three impulses and a minimum-altitude path constraint:
   - transfer2 Back (terminal impulse)
 
 Run:
-  python examples/composable/06_precoast_impulsive_link_3burn.py
+  python examples/composable/earth_centered/06_precoast_impulsive_link_3burn.py
 """
 
 from __future__ import annotations

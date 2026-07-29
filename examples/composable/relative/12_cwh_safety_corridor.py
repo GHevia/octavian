@@ -1,4 +1,4 @@
-"""Composable example 12: relative rendezvous with safety and lighting geometry."""
+"""Relative composable example 12: rendezvous safety and lighting geometry."""
 
 from __future__ import annotations
 
@@ -59,3 +59,11 @@ mission = Mission(
 
 solution = mission.solve()
 print(solution.summary())
+solution.viz().save_html(
+    "traj_composable_cwh_safety_corridor.html",
+    title="CWH rendezvous safety corridor",
+)
+solution.viz().save_diagnostics_html(
+    "diagnostics_composable_cwh_safety_corridor.html",
+    title="CWH safety-corridor state over time",
+)

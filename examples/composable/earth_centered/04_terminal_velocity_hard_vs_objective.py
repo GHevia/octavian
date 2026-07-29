@@ -1,4 +1,4 @@
-"""Composable example 04: terminal velocity as a hard constraint vs an objective.
+"""Earth-centered composable example 04: hard versus objective terminal velocity.
 
 This example uses a geometry that is feasible by pure Keplerian coast:
 start and end are the same circular orbit, separated by a true-anomaly rotation.
@@ -9,7 +9,7 @@ We solve two missions:
      (compiler relaxes V and adds an objective term)
 
 Run:
-  python examples/composable/04_terminal_velocity_hard_vs_objective.py
+  python examples/composable/earth_centered/04_terminal_velocity_hard_vs_objective.py
 """
 
 from __future__ import annotations

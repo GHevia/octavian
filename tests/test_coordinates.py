@@ -11,6 +11,8 @@ from octavian.coordinates import (
     CARTESIAN,
     CARTESIAN_MASS,
     CARTESIAN_MASS_THRUST,
+    COUPLED_RELATIVE_ECI_MASS,
+    COUPLED_RELATIVE_ECI_MASS_THRUST,
     EARTH_INERTIAL,
     SolverScaling,
     inertial,
@@ -31,6 +33,10 @@ def test_standard_state_layouts_expose_named_groups_and_time_columns() -> None:
     assert CARTESIAN_MASS_THRUST.control_indices("thrust") == (0, 1, 2)
     assert CARTESIAN_MASS_THRUST.state_dim == 7
     assert CARTESIAN_MASS_THRUST.control_dim == 3
+    assert COUPLED_RELATIVE_ECI_MASS.state_indices("mass") == (12,)
+    assert COUPLED_RELATIVE_ECI_MASS.time_column == 13
+    assert COUPLED_RELATIVE_ECI_MASS_THRUST.control_indices("thrust") == (0, 1, 2)
+    assert COUPLED_RELATIVE_ECI_MASS_THRUST.control_dim == 3
 
 
 def test_state_layout_rejects_duplicate_names_and_invalid_groups() -> None:

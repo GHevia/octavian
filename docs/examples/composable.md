@@ -10,6 +10,13 @@ solver order and the solve/report statements stay visible at the bottom. Tests
 exercise these scripts as scenarios, while numerical regression fixtures live
 under `tests/` so test import mechanics do not shape the user examples.
 
+The files are grouped into two folders:
+
+| Folder | Focus |
+| --- | --- |
+| `examples/composable/earth_centered/` | Earth-centered inertial transfers, perturbations, and powered flight. |
+| `examples/composable/relative/` | Chief-centered RIC missions, relative elements, and relative finite burns. |
+
 ## Shared Composable API Terms
 
 | Setting | What it controls |
@@ -17,10 +24,10 @@ under `tests/` so test import mechanics do not shape the user examples.
 | `Mission(phases=[...])` | The complete optimization problem. |
 | `Phase(...)` | One segment of the trajectory. |
 | `mode="coast"` | Ballistic two-body or perturbed coast dynamics. |
-| `mode="finite_thrust"` | Propulsion-neutral finite-thrust dynamics with mass and vector-throttle controls. |
+| `mode="finite_thrust"` | Finite-thrust dynamics with mass and vector-throttle controls; in relative missions only the deputy is powered. |
 | `mode="chemical_burn"` | Compatibility spelling for a chemical finite-thrust phase. |
 | `mode="low_thrust"` | Finite-thrust dynamics with an integrated low-thrust seed workflow. |
-| `mode="relative_coast"` | CWH coast dynamics in a chief-centered LVLH frame. |
+| `mode="relative_coast"` | Coast dynamics in the selected chief-centered relative formulation. |
 | `previous=...` | Connects a phase to the phase before it. |
 | `link=links.continuous()` | Enforces continuous position, velocity, and time at the boundary. |
 | `link=links.impulsive()` | Enforces continuous position and time while allowing velocity to jump. |
@@ -32,12 +39,12 @@ under `tests/` so test import mechanics do not shape the user examples.
 
 ## 01: Single-Phase Terminal Delta-v Objective
 
-Path: `examples/composable/01_single_phase_terminal_dv_objective.py`
+Path: `examples/composable/earth_centered/01_single_phase_terminal_dv_objective.py`
 
 Run:
 
 ```bash
-python examples/composable/01_single_phase_terminal_dv_objective.py
+python examples/composable/earth_centered/01_single_phase_terminal_dv_objective.py
 ```
 
 Capability showcased:
@@ -64,12 +71,12 @@ Screenshot placeholder: `docs/assets/screenshots/composable-01-terminal-dv.png`.
 
 ## 02: Precoast With Continuous Link
 
-Path: `examples/composable/02_precoast_continuous_link.py`
+Path: `examples/composable/earth_centered/02_precoast_continuous_link.py`
 
 Run:
 
 ```bash
-python examples/composable/02_precoast_continuous_link.py
+python examples/composable/earth_centered/02_precoast_continuous_link.py
 ```
 
 Capability showcased:
@@ -94,12 +101,12 @@ Screenshot placeholder: `docs/assets/screenshots/composable-02-continuous-link.p
 
 ## 03: Precoast With Impulsive Link
 
-Path: `examples/composable/03_precoast_impulsive_link.py`
+Path: `examples/composable/earth_centered/03_precoast_impulsive_link.py`
 
 Run:
 
 ```bash
-python examples/composable/03_precoast_impulsive_link.py
+python examples/composable/earth_centered/03_precoast_impulsive_link.py
 ```
 
 Capability showcased:
@@ -123,12 +130,12 @@ Screenshot placeholder: `docs/assets/screenshots/composable-03-impulsive-link.pn
 
 ## 04: Hard Terminal Velocity Versus Objective
 
-Path: `examples/composable/04_terminal_velocity_hard_vs_objective.py`
+Path: `examples/composable/earth_centered/04_terminal_velocity_hard_vs_objective.py`
 
 Run:
 
 ```bash
-python examples/composable/04_terminal_velocity_hard_vs_objective.py
+python examples/composable/earth_centered/04_terminal_velocity_hard_vs_objective.py
 ```
 
 Capability showcased:
@@ -159,12 +166,12 @@ Screenshot placeholders:
 
 ## 05: Plotting Maneuver Markers
 
-Path: `examples/composable/05_plot_with_maneuvers.py`
+Path: `examples/composable/earth_centered/05_plot_with_maneuvers.py`
 
 Run:
 
 ```bash
-python examples/composable/05_plot_with_maneuvers.py
+python examples/composable/earth_centered/05_plot_with_maneuvers.py
 ```
 
 Capability showcased:
@@ -193,12 +200,12 @@ Screenshot placeholders:
 
 ## 06: Precoast Plus Two Transfers With Three Burns
 
-Path: `examples/composable/06_precoast_impulsive_link_3burn.py`
+Path: `examples/composable/earth_centered/06_precoast_impulsive_link_3burn.py`
 
 Run:
 
 ```bash
-python examples/composable/06_precoast_impulsive_link_3burn.py
+python examples/composable/earth_centered/06_precoast_impulsive_link_3burn.py
 ```
 
 Capability showcased:
@@ -223,12 +230,12 @@ Screenshot placeholder: `docs/assets/screenshots/composable-06-three-burn.png`.
 
 ## 07: Terminal Orbital-Element Constraints
 
-Path: `examples/composable/07_terminal_orbital_elements.py`
+Path: `examples/composable/earth_centered/07_terminal_orbital_elements.py`
 
 Run:
 
 ```bash
-python examples/composable/07_terminal_orbital_elements.py
+python examples/composable/earth_centered/07_terminal_orbital_elements.py
 ```
 
 Capability showcased:
@@ -253,12 +260,12 @@ Screenshot placeholder: `docs/assets/screenshots/composable-07-orbital-elements.
 
 ## 08: Chemical Burn With J2
 
-Path: `examples/composable/08_chemical_burn_j2.py`
+Path: `examples/composable/earth_centered/08_chemical_burn_j2.py`
 
 Run:
 
 ```bash
-python examples/composable/08_chemical_burn_j2.py
+python examples/composable/earth_centered/08_chemical_burn_j2.py
 ```
 
 Capability showcased:
@@ -284,12 +291,12 @@ Screenshot placeholder: `docs/assets/screenshots/composable-08-chemical-j2.png`.
 
 ## 09: Impulsive Reference Versus Chemical Burn
 
-Path: `examples/composable/09_impulse_vs_chemical_burn.py`
+Path: `examples/composable/earth_centered/09_impulse_vs_chemical_burn.py`
 
 Run:
 
 ```bash
-python examples/composable/09_impulse_vs_chemical_burn.py
+python examples/composable/earth_centered/09_impulse_vs_chemical_burn.py
 ```
 
 Capability showcased:
@@ -321,12 +328,12 @@ Screenshot placeholders:
 
 ## 10: J2, Moon, And Sun Perturbations
 
-Path: `examples/composable/10_sun_moon_perturbations.py`
+Path: `examples/composable/earth_centered/10_sun_moon_perturbations.py`
 
 Run:
 
 ```bash
-python examples/composable/10_sun_moon_perturbations.py
+python examples/composable/earth_centered/10_sun_moon_perturbations.py
 ```
 
 Capability showcased:
@@ -350,12 +357,12 @@ Screenshot placeholder: `docs/assets/screenshots/composable-10-sun-moon-perturba
 
 ## 11: CWH Relative Rendezvous
 
-Path: `examples/composable/11_cwh_relative_rendezvous.py`
+Path: `examples/composable/relative/11_cwh_relative_rendezvous.py`
 
 Run:
 
 ```bash
-conda run -n octavian-dev python examples/composable/11_cwh_relative_rendezvous.py
+conda run -n octavian-dev python examples/composable/relative/11_cwh_relative_rendezvous.py
 ```
 
 Capability showcased:
@@ -374,18 +381,18 @@ Important choices:
 | relative `constraints.state(...)` | Fixes deputy state values in meters and meters per second. |
 | front/back `impulsive_delta_v` | Frees boundary velocities and reports both maneuvers. |
 
-The example prints the solution, frame, and selected dynamics model without
-creating a plot. Existing inertial trajectory plots are not labeled for LVLH
-geometry yet.
+The example also writes `traj_composable_cwh_relative_rendezvous.html` with
+explicit radial, in-track, and cross-track axes, a chief marker at the origin,
+and the optimized impulse markers.
 
 ## 12: CWH Safety Corridor
 
-Path: `examples/composable/12_cwh_safety_corridor.py`
+Path: `examples/composable/relative/12_cwh_safety_corridor.py`
 
 Run:
 
 ```bash
-conda run -n octavian-dev python examples/composable/12_cwh_safety_corridor.py
+conda run -n octavian-dev python examples/composable/relative/12_cwh_safety_corridor.py
 ```
 
 Capability showcased:
@@ -400,34 +407,154 @@ constraint therefore moves the optimized transfer to the cone boundary,
 demonstrating that the geometry changes the solution rather than only checking
 it afterward.
 
-## 13: Low-Thrust Orbit Raise
+## 13: Relative Representations
 
-Path: `examples/composable/13_low_thrust_orbit_raise.py`
+Path: `examples/composable/relative/13_relative_representations.py`
 
-Run:
+This optimizer-free example builds a chief ECI state and deputy RIC state,
+converts RIC to absolute ECI and back, and moves between D'Amico and classical
+relative orbital elements. It is the representation layer used by both CWH and
+nonlinear missions.
 
-```bash
-conda run -n octavian-dev python examples/composable/13_low_thrust_orbit_raise.py
-```
+## 14: Nonlinear Relative Rendezvous
 
-Capability showcased:
+Path: `examples/composable/relative/14_nonlinear_relative_rendezvous.py`
 
-- A single `mode="low_thrust"` phase using the common mass/throttle ODE.
-- A typed, dynamics-integrated prograde spiral initial guess.
-- Free terminal orbital phase through semi-major-axis and near-circular
-  eccentricity constraints.
-- Explicit final-mass optimization and powered-phase reporting.
+`Dynamics.relative(..., propagation_mode="coupled_eci")` propagates chief and deputy as two exact
+central-gravity states. CWH supplies only the initial guess. Public boundary
+states, keep-out geometry, maneuvers, the trajectory, and diagnostics remain
+in RIC.
 
-Important choices:
+Expected outputs:
+
+- `traj_composable_nonlinear_relative_rendezvous.html`
+- `diagnostics_composable_nonlinear_relative_rendezvous.html`
+
+## 15: Perturbed Relative Solar Geometry
+
+Path: `examples/composable/relative/15_perturbed_relative_solar.py`
+
+This extends example 14 with differential J2 and solar gravity. The
+solar-phase constraint uses the SPICE BSP at `Mission.initial_epoch`; it is
+evaluated from the propagated chief/deputy state and the actual chief-to-Sun
+line. The diagnostics file includes solar phase angle over time.
 
 | Code | Purpose |
 | --- | --- |
-| `guesses.low_thrust_spiral(throttle=0.85)` | Integrates a prograde seed and initializes the control history. |
-| `final_state=terminal_seed_anchor` | Supplies target radius and scaling without fixing terminal longitude. |
-| `objectives.minimize_propellant()` | Maximizes final spacecraft mass. |
-| `tof_bounds_s=(14 h, 24 h)` | Brackets the seed's 17.59-hour burn estimate. |
+| `Dynamics.relative(chief_initial_state_eci=...)` | Selects full coupled nonlinear propagation. |
+| `Perturbations(j2=True, sun=True)` | Applies the same force model independently to chief and deputy. |
+| `constraints.solar_phase_angle(...)` | Bounds the changing relative-position/Sun angle. |
 
-The reference solve raises a 560 kg spacecraft from a 7,000 km to an 8,000 km
-near-circular orbit in about 17.72 hours using about 15.05 kg of propellant.
+## 16: Exact RIC Formulations
 
-Expected output: `traj_composable_low_thrust_orbit_raise.html`.
+Path: `examples/composable/relative/16_exact_ric_formulations.py`
+
+This optimizer-free comparison propagates the exact six-state circular-chief
+RIC equations and an independent coupled chief/deputy two-body model. It also
+shows the explicit `"nonlinear_ric"` and `"coupled_ric"` dynamics declarations.
+The first is the nonlinear equation from which CWH is linearized; the second
+stacks a propagated chief ECI state with the deputy's RIC state and also
+supports eccentric chiefs.
+
+## 17: Native D'Amico Free-Time Target
+
+Path: `examples/composable/relative/17_damico_free_time_target.py`
+
+This phase propagates D'Amico relative orbital elements directly. A six-element
+Front constraint fixes the initial orbit, while a scalar `delta_lambda` Back
+constraint selects the arrival time within `tof_bounds_s`. The Cartesian RIC
+states are only seed anchors—the target never becomes an absolute-state
+constraint. After the solve, analytic two-body propagation adds six-minute
+coasts before and after the optimized interval. Those coasts are not optimizer
+phases; they are stitched to the RIC history for the trajectory and diagnostic
+plots and colored separately through `phase_segments`.
+
+Expected outputs:
+
+- `traj_composable_damico_free_time.html`
+- `diagnostics_composable_damico_free_time.html`
+
+## 18: Low-Thrust Orbit Raise
+
+Path: `examples/composable/earth_centered/18_low_thrust_orbit_raise.py`
+
+The low-thrust example remains part of the broader composable suite after the
+relative-motion build-up. It demonstrates a dynamics-integrated spiral seed,
+free terminal orbital phase, propellant optimization, and inertial diagnostics
+for Cartesian state, radius, speed, and osculating elements.
+
+## 18B: Safety-Ellipse ROE Transfer
+
+Path: `examples/composable/relative/18_safety_ellipse_transfer.py`
+
+This example defines both boundary orbits with D'Amico relative orbital
+elements and converts them to RIC seed/target states at nominal chief epochs.
+A free initial coast is followed by a separately free two-impulse transfer.
+Both phases use `tof_is_relative=True`, exact `coupled_eci` propagation,
+differential J2 and solar gravity, and a SPICE solar-phase constraint.
+
+The ephemeris tables cover the cumulative absolute upper mission time plus
+`third_body_table_margin_s`; relative phase bounds are not mistaken for
+absolute Back times.
+
+Analysis-only pre- and post-coasts are propagated from the solved absolute
+chief/deputy boundary histories. The terminal coast applies the optimized
+arrival impulse first, so neither coast is anchored to the nominal conversion
+state used before the solve.
+
+Expected outputs:
+
+- `traj_safety_ellipse_transfer.html`
+- `diagnostics_safety_ellipse_transfer.html`
+
+## 19: Relative Finite Burn–Coast–Burn
+
+Path: `examples/composable/relative/19_relative_finite_burn_coast.py`
+
+This example composes two exact deputy finite burns around a five-minute
+relative coast. `Dynamics.relative(..., propagation_mode="coupled_eci")`
+propagates both absolute spacecraft states, applies thrust and mass depletion
+only to the deputy, and reports the complete solution in RIC. The coast carries
+deputy mass continuously between the powered phases.
+
+Expected outputs:
+
+- `traj_composable_relative_finite_burn_coast.html`
+- `diagnostics_composable_relative_finite_burn_coast.html`
+
+## 20: Relative Three-Burn Transfer
+
+Path: `examples/composable/relative/20_relative_three_burn_transfer.py`
+
+This example exposes the phase topology used for a three-burn design: an
+initial natural coast, a departure impulse, a free intermediate impulse at a
+RIC position waypoint, and a terminal arrival impulse. Every phase duration is
+bounded independently with `tof_is_relative=True`.
+
+CWH keeps the broad design-space example fast and readable. Replace its shared
+`Dynamics.cwh(...)` declaration with `Dynamics.relative(...)` to refine the
+same phases using exact nonlinear coupled propagation and optional
+perturbations.
+
+Expected outputs:
+
+- `traj_composable_relative_three_burn.html`
+- `diagnostics_composable_relative_three_burn.html`
+
+## 21: Perturbed Relative-Element Propagation
+
+Path: `examples/composable/relative/21_perturbed_relative_element_propagation.py`
+
+This optimizer-free example starts from D'Amico relative orbital elements and
+compares analytical two-body drift with numerical J2 and solar propagation.
+For the perturbed case, Octavian constructs the absolute deputy state,
+propagates chief and deputy under the same force-model declarations, then
+reconstructs osculating ROEs and RIC histories.
+
+The same API accepts backward time histories when zero is the final sample,
+which is useful for drawing pre-transfer coasts from an element boundary.
+
+Expected outputs:
+
+- `traj_perturbed_relative_elements.html`
+- `diagnostics_perturbed_relative_elements.html`

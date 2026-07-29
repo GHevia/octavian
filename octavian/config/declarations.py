@@ -22,9 +22,7 @@ from .schema import (
 )
 
 
-def build_constraint(
-    value: Any, path: str, states: Mapping[str, BoundaryState]
-) -> Any:
+def build_constraint(value: Any, path: str, states: Mapping[str, BoundaryState]) -> Any:
     """Build one supported path or boundary constraint."""
     config = mapping(value, path)
     constraint_type = normalized_type(required(config, "type", path))
@@ -43,6 +41,51 @@ def build_constraint(
     if constraint_type == "position":
         reject_unknown(config, {"type", "r_m", "where"}, path)
         return constraints.position(required(config, "r_m", path), where=where)
+    if constraint_type == "ric_state":
+        reject_unknown(
+            config,
+            {"type", "component", "target", "where", "tolerance"},
+            path,
+        )
+        tolerance = config.get("tolerance")
+        return constraints.ric_state(
+            str(required(config, "component", path)),
+            float(required(config, "target", path)),
+            where=str(config.get("where", "Back")),
+            tolerance=None if tolerance is None else float(tolerance),
+        )
+    if constraint_type == "relative_orbital_element":
+        reject_unknown(
+            config,
+            {
+                "type",
+                "element",
+                "target",
+                "representation",
+                "where",
+                "tolerance",
+            },
+            path,
+        )
+        tolerance = config.get("tolerance")
+        return constraints.relative_orbital_element(
+            str(required(config, "element", path)),
+            float(required(config, "target", path)),
+            representation=str(config.get("representation", "damico")),
+            where=str(config.get("where", "Back")),
+            tolerance=None if tolerance is None else float(tolerance),
+        )
+    if constraint_type == "relative_orbital_elements":
+        reject_unknown(
+            config,
+            {"type", "elements", "representation", "where"},
+            path,
+        )
+        return constraints.relative_orbital_elements(
+            required(config, "elements", path),
+            representation=str(config.get("representation", "damico")),
+            where=str(config.get("where", "Front")),
+        )
     if constraint_type == "min_radius":
         reject_unknown(config, {"type", "r_min_m", "where"}, path)
         return constraints.min_radius(float(required(config, "r_min_m", path)), where=where)
@@ -109,6 +152,24 @@ def build_constraint(
             origin_m=config.get("origin_m", [0.0, 0.0, 0.0]),
             where=where,
         )
+    if constraint_type == "solar_phase_angle":
+        reject_unknown(
+            config,
+            {
+                "type",
+                "min_angle_deg",
+                "max_angle_deg",
+                "origin_m",
+                "where",
+            },
+            path,
+        )
+        return constraints.solar_phase_angle(
+            min_angle_deg=float(config.get("min_angle_deg", 0.0)),
+            max_angle_deg=float(config.get("max_angle_deg", 180.0)),
+            origin_m=config.get("origin_m", [0.0, 0.0, 0.0]),
+            where=where,
+        )
     raise MissionConfigError(f"{path}.type has unsupported value {constraint_type!r}.")
 
 
@@ -138,9 +199,7 @@ def build_event(value: Any, path: str) -> Any:
 
 def build_link(value: Any, path: str) -> Any:
     """Build a continuous or impulsive phase link."""
-    config: Mapping[str, Any] = (
-        {"type": value} if isinstance(value, str) else mapping(value, path)
-    )
+    config: Mapping[str, Any] = {"type": value} if isinstance(value, str) else mapping(value, path)
     link_type = normalized_type(required(config, "type", path))
     if link_type == "continuous":
         reject_unknown(config, {"type", "name"}, path)

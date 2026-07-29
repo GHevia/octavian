@@ -40,6 +40,9 @@ def test_non_monotonic_time_error_detection_uses_asset_message() -> None:
     assert is_non_monotonic_time_error("Non monotonic time coordinates in LGLInterpTable.")
     assert is_non_monotonic_time_error("non-monotonic time coordinates in phase")
     assert is_non_monotonic_time_error("Non monotonic time coordinates in phase")
+    assert is_non_monotonic_time_error(
+        "Duplicate time coordinates in LGLInterpTable."
+    )
     assert not is_non_monotonic_time_error("line search failed")
 
 

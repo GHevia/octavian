@@ -1,9 +1,10 @@
 # Mission Patterns
 
 This tutorial shows how to use the current Octavian options as building blocks.
-Start with the quick API when the mission is a standard two-impulse transfer.
-Move to the composable API when you need explicit phases, links, custom
-constraints, finite burns, or perturbations.
+Start with the quick API when the mission is a standard inertial transfer,
+relative hop, or chain of relative transfers. Move to the composable API when
+you need explicit phases, links, custom constraints, finite burns, or an
+arbitrary burn topology.
 
 ## Choose the API Layer
 
@@ -22,8 +23,13 @@ Use `Mission` and `Phase` directly when you need:
 - terminal orbital-element constraints,
 - finite chemical-burn phases,
 - J2 perturbations,
-- custom objectives or per-phase mesh settings.
-- chief-centered CWH relative motion.
+- custom objectives or per-phase mesh settings,
+- chief-centered relative motion, including exact finite burns and coasts.
+
+Use `relative_hop` or `relative_transfer_chain` when the relative mission is:
+
+- a bounded coast followed by a two-impulse hop, or
+- multiple two-impulse transfers separated by bounded natural coasts.
 
 ## Pattern 1: Standard Two-Impulse Transfer
 
@@ -284,6 +290,96 @@ Relative positions and velocities use the chief LVLH/RTN frame. Use
 known chief state. CWH assumes a circular chief and small deputy separation;
 use a nonlinear model when those assumptions are not appropriate.
 
+For exact central gravity with perturbations, keep the same public RIC states
+and use the coupled-ECI formulation:
+
+```python
+dynamics = Dynamics.relative(
+    chief_initial_state_eci=chief_initial_state_eci,
+    central_body=EARTH,
+    propagation_mode="coupled_eci",
+    perturbations=Perturbations(j2=True, sun=True),
+)
+```
+
+The compiler uses CWH only to seed the solve. It propagates the chief and deputy
+as two absolute states and converts them to RIC for constraints and results.
+
+Compose multiple relative phases with `previous=` exactly as for inertial
+missions. The compiler links the formulation's native state, so a coupled ECI
+chain preserves both spacecraft states without round-tripping through a
+boundary conversion.
+
+When Sun or Moon tables are active, each relative duration contributes to the
+cumulative absolute mission-time horizon. The shared table extends through
+that absolute upper bound plus `third_body_table_margin_s`; increase the margin
+for unusually aggressive time searches or custom solver behavior.
+
+For the common coast–transfer–coast pattern, use the quick builder:
+
+```python
+mission = relative_hop(
+    initial_ric,
+    target_ric,
+    chief_initial_state_eci=chief_eci,
+    departure_coast_time_bounds_s=(120.0, 600.0),
+    transfer_time_bounds_s=(900.0, 1_800.0),
+    perturbations=Perturbations(j2=True),
+)
+```
+
+String complete transfers together by supplying ordered post-arrival states:
+
+```python
+mission = relative_transfer_chain(
+    initial_ric,
+    [inspection_point_ric, final_ric],
+    chief_initial_state_eci=chief_eci,
+    transfer_time_bounds_s=[(600.0, 1_200.0), (600.0, 1_200.0)],
+    coast_time_bounds_s=(300.0, 600.0),
+)
+```
+
+This example has four impulses. To optimize a three-burn topology, build three
+linked composable phases and leave the intermediate burn's velocity free while
+constraining only its RIC position waypoint, as shown in composable example 20.
+
+For exact two-body dynamics with native RIC decision variables, select
+`propagation_mode="nonlinear_ric"` for a circular chief or `"coupled_ric"` for
+a propagated circular/eccentric chief. Then target one component directly:
+
+```python
+constraints.ric_state("I", -100.0, where="Back")
+```
+
+For a native D'Amico phase, use
+`propagation_mode="damico"`, fix the Front vector with
+`constraints.relative_orbital_elements(...)`, and target any individual
+element with `constraints.relative_orbital_element(...)`. Time remains free
+when `tof_bounds_s` is a nonzero interval.
+
+Save state, range, and solar-phase histories beside either trajectory plot:
+
+```python
+solution.viz().save_diagnostics_html("relative_diagnostics.html")
+```
+
+For analysis-only ROE propagation with the same force-model vocabulary:
+
+```python
+history = propagate_relative_orbital_elements(
+    initial_roe,
+    np.linspace(0.0, 6.0 * 3_600.0, 145),
+    chief_initial_state_eci=chief_eci,
+    mu_m3ps2=EARTH.mu_m3ps2,
+    perturbations=Perturbations(j2=True, sun=True),
+    initial_epoch="2026-01-01T00:00:00Z",
+)
+```
+
+Use times ending at zero, such as `[-600.0, -300.0, 0.0]`, to generate a
+pre-event coast. Use times starting at zero for a post-event coast.
+
 ## Pattern 13: Add Relative Safety And Lighting Geometry
 
 ```python
@@ -308,7 +404,49 @@ a fixed direction over the phase; transform or update that direction when a
 longer arc needs time-varying Sun geometry. Constraint extrema and satisfaction
 flags are included in `solution.result.info["constraint_report"]`.
 
-## Pattern 14: Seed A Low-Thrust Spiral
+## Pattern 14: Compose Relative Finite Burns And Coasts
+
+```python
+dynamics = Dynamics.relative(
+    chief_initial_state_eci=chief_initial_state_eci,
+    propagation_mode="coupled_eci",
+)
+
+departure = Phase(
+    mode="finite_thrust",
+    spacecraft=deputy,
+    dynamics=dynamics,
+    initial_state=initial_ric,
+    tof_bounds_s=(50.0, 70.0),
+)
+coast = Phase(
+    mode="relative_coast",
+    spacecraft=deputy,
+    dynamics=dynamics,
+    previous=departure,
+    tof_bounds_s=(250.0, 350.0),
+    tof_is_relative=True,
+)
+arrival = Phase(
+    mode="finite_thrust",
+    spacecraft=deputy,
+    dynamics=dynamics,
+    previous=coast,
+    final_state=target_ric,
+    tof_bounds_s=(50.0, 70.0),
+    tof_is_relative=True,
+)
+```
+
+Only the deputy is powered. The chief and deputy both receive their declared
+gravity and perturbation accelerations, while the coast keeps deputy mass
+constant and continuous between burns. Add
+`objectives.minimize_propellant()` to minimize the powered-chain consumption.
+Finite thrust currently requires the exact `"coupled_eci"` formulation;
+`"nonlinear_ric"`, `"coupled_ric"`, and relative-element modes remain
+propulsion-free.
+
+## Pattern 15: Seed A Low-Thrust Spiral
 
 ```python
 from octavian import guesses

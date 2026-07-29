@@ -72,4 +72,22 @@ def lvlh(chief: str = "chief", *, name: str | None = None) -> CoordinateFrame:
     )
 
 
+def ric(chief: str = "chief", *, name: str | None = None) -> CoordinateFrame:
+    """Create a chief-centered radial/in-track/cross-track frame.
+
+    RIC, RTN, and the LVLH convention used by Octavian describe the same
+    right-handed axes: radial ``R`` points away from the central body,
+    in-track ``I`` follows the chief's motion, and cross-track ``C`` follows
+    the chief's angular momentum.  This named constructor lets mission scripts
+    use the terminology most common in relative-motion analysis.
+    """
+    normalized_chief = str(chief).strip().lower().replace(" ", "_")
+    return CoordinateFrame(
+        name=name or f"{normalized_chief}_ric",
+        origin=normalized_chief,
+        orientation="RIC/RTN/LVLH",
+        kind="relative",
+    )
+
+
 EARTH_INERTIAL = inertial("earth", orientation="ECI", name="earth_inertial")

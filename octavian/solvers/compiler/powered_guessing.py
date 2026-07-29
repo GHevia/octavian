@@ -120,6 +120,7 @@ def build_low_thrust_spiral_seed(
     integration_steps = 0
 
     def control_for(current_state: np.ndarray) -> np.ndarray:
+        """Return the signed tangential throttle vector for one state."""
         velocity = current_state[3:6]
         speed = float(np.linalg.norm(velocity))
         if speed <= 0.0:
@@ -127,6 +128,7 @@ def build_low_thrust_spiral_seed(
         return direction_sign * throttle * velocity / speed
 
     def derivative(current_state: np.ndarray) -> np.ndarray:
+        """Evaluate two-body, thrust, and mass-flow derivatives."""
         position = current_state[0:3]
         mass = max(float(current_state[6]), dry_mass)
         radius = float(np.linalg.norm(position))

@@ -15,11 +15,13 @@ This MVP includes:
 - Terminal state, terminal delta-v, path, and orbital-element constraints.
 - Finite chemical-burn phases with mass depletion and three thrust-direction controls.
 - J2 perturbation support in the composable ASSET backend.
-- Central-body selection, CWH relative motion, and relative safety geometry.
+- Central-body selection, CWH relative motion, RIC transforms and plots,
+  differential relative perturbations, and SPICE solar-phase geometry.
 - Finite-thrust and low-thrust phases with mass depletion and spiral seeding.
 - Optional schema-versioned JSON and YAML mission configuration.
 - Lambert-Izzo seed sweeps across time of flight, longway, and multi-rev cases.
-- Plotly HTML visualization with maneuver markers.
+- Frame-aware Plotly trajectory and time-series diagnostics with maneuver
+  markers, RIC state/range/solar phase, and inertial state/elements.
 
 `octavian` declares ASSET (`asset_asrl`) as a runtime dependency because the
 solver-backed workflows rely on it.
@@ -88,7 +90,7 @@ python -c "import asset_asrl; print(asset_asrl.__file__)"
 ```bash
 python examples/quick/01_two_impulse_free_time.py
 python examples/quick/02_two_impulse_precoast_impulsive_link.py
-python examples/composable/08_chemical_burn_j2.py
+python examples/composable/earth_centered/08_chemical_burn_j2.py
 python -m octavian.config examples/config/01_two_impulse_transfer.json
 ```
 

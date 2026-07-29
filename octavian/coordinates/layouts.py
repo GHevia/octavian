@@ -113,6 +113,130 @@ RELATIVE_CARTESIAN = StateLayout(
     state_groups=_CARTESIAN_GROUPS,
 )
 
+COUPLED_RELATIVE_ECI = StateLayout(
+    name="coupled_relative_eci",
+    state_names=(
+        "chief_rx",
+        "chief_ry",
+        "chief_rz",
+        "chief_vx",
+        "chief_vy",
+        "chief_vz",
+        "deputy_rx",
+        "deputy_ry",
+        "deputy_rz",
+        "deputy_vx",
+        "deputy_vy",
+        "deputy_vz",
+    ),
+    state_groups=(
+        ("chief_position", (0, 1, 2)),
+        ("chief_velocity", (3, 4, 5)),
+        ("deputy_position", (6, 7, 8)),
+        ("deputy_velocity", (9, 10, 11)),
+    ),
+)
+
+COUPLED_RELATIVE_ECI_MASS = StateLayout(
+    name="coupled_relative_eci_mass",
+    state_names=(
+        "chief_rx",
+        "chief_ry",
+        "chief_rz",
+        "chief_vx",
+        "chief_vy",
+        "chief_vz",
+        "deputy_rx",
+        "deputy_ry",
+        "deputy_rz",
+        "deputy_vx",
+        "deputy_vy",
+        "deputy_vz",
+        "mass",
+    ),
+    state_groups=(
+        ("chief_position", (0, 1, 2)),
+        ("chief_velocity", (3, 4, 5)),
+        ("deputy_position", (6, 7, 8)),
+        ("deputy_velocity", (9, 10, 11)),
+        ("mass", (12,)),
+    ),
+)
+
+COUPLED_RELATIVE_ECI_MASS_THRUST = StateLayout(
+    name="coupled_relative_eci_mass_thrust",
+    state_names=COUPLED_RELATIVE_ECI_MASS.state_names,
+    control_names=("thrust_x", "thrust_y", "thrust_z"),
+    state_groups=COUPLED_RELATIVE_ECI_MASS.state_groups,
+    control_groups=(("thrust", (0, 1, 2)),),
+)
+
+COUPLED_RELATIVE_RIC = StateLayout(
+    name="coupled_relative_ric",
+    state_names=(
+        "chief_rx",
+        "chief_ry",
+        "chief_rz",
+        "chief_vx",
+        "chief_vy",
+        "chief_vz",
+        "relative_r",
+        "relative_i",
+        "relative_c",
+        "relative_rdot",
+        "relative_idot",
+        "relative_cdot",
+    ),
+    state_groups=(
+        ("chief_position", (0, 1, 2)),
+        ("chief_velocity", (3, 4, 5)),
+        ("position", (6, 7, 8)),
+        ("velocity", (9, 10, 11)),
+    ),
+)
+
+DAMICO_RELATIVE_ELEMENTS = StateLayout(
+    name="damico_relative_elements",
+    state_names=(
+        "delta_a",
+        "delta_lambda",
+        "delta_ex",
+        "delta_ey",
+        "delta_ix",
+        "delta_iy",
+    ),
+    state_groups=(
+        ("relative_elements", (0, 1, 2, 3, 4, 5)),
+        ("delta_a", (0,)),
+        ("delta_lambda", (1,)),
+        ("delta_ex", (2,)),
+        ("delta_ey", (3,)),
+        ("delta_ix", (4,)),
+        ("delta_iy", (5,)),
+    ),
+)
+
+CLASSICAL_RELATIVE_ELEMENTS = StateLayout(
+    name="classical_relative_elements",
+    state_names=(
+        "delta_a_m",
+        "delta_e",
+        "delta_i",
+        "delta_raan",
+        "delta_argp",
+        "delta_mean_anomaly",
+    ),
+    state_groups=(
+        ("relative_elements", (0, 1, 2, 3, 4, 5)),
+        ("delta_a_m", (0,)),
+        ("delta_e", (1,)),
+        ("delta_i", (2,)),
+        ("delta_raan", (3,)),
+        ("delta_argp", (4,)),
+        ("delta_mean_anomaly", (5,)),
+    ),
+)
+
 CARTESIAN_MASS = StateLayout(
     name="cartesian_mass",
     state_names=(*_CARTESIAN_STATES, "mass"),

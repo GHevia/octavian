@@ -1,8 +1,8 @@
 # Quick API Examples
 
-The quick examples use `octavian.two_burn_rendezvous` for common impulsive
-transfer and rendezvous workflows. They are the best starting point when you
-want a compact mission script and do not need to manage every phase yourself.
+The quick examples use high-level builders for common inertial and relative
+impulsive workflows. They are the best starting point when you want a compact
+mission script and do not need to manage every phase yourself.
 
 The files are deliberately flat scripts rather than importable application
 modules. Read them from constants to states to mission to solution, then copy
@@ -21,6 +21,10 @@ one and edit it as a Python configuration file.
 | `nrevs_to_try` | Lambert revolution counts to consider. Use `(0,)` for the simplest transfer family. |
 | `solver_options` | ASSET solver controls such as `print_level`; pass `SolverOptions(asset_threads=(1, 1))` for deterministic single-threaded ASSET solves in regression tests. |
 | `name` | Label used in solution summaries and plot titles. |
+
+Relative quick builders use RIC boundary states. They accept a chief ECI state,
+one or more relative targets, exact or CWH dynamics, optional perturbations,
+and duration bounds for every coast and transfer.
 
 ## 01: Hohmann Transfer Between Circular Orbits
 
@@ -183,8 +187,64 @@ The endpoints are synthetic circular heliocentric states. This example does not
 yet use planetary ephemerides or patch planet-centered departure and arrival
 arcs.
 
+## 06: Relative Hop
+
+Path: `examples/quick/06_relative_hop.py`
+
+Run:
+
+```bash
+python examples/quick/06_relative_hop.py
+```
+
+Capability showcased:
+
+- A coast before the relative transfer.
+- Impulsive departure and arrival burns.
+- Exact coupled chief/deputy propagation in the quick API.
+- Differential J2 enabled with `Perturbations(j2=True)`.
+- RIC trajectory and time-history diagnostic plots.
+
+`relative_hop(...)` returns an ordinary `Mission`. You can inspect or edit its
+two phases before solving when a quick design needs one additional constraint
+or variable.
+
+Expected outputs:
+
+- `traj_quick_relative_hop.html`.
+- `diagnostics_quick_relative_hop.html`.
+
+## 07: Chained Relative Transfers
+
+Path: `examples/quick/07_relative_transfer_chain.py`
+
+Run:
+
+```bash
+python examples/quick/07_relative_transfer_chain.py
+```
+
+Capability showcased:
+
+- Two relative transfers in one optimization problem.
+- An exact post-arrival RIC state at the first target.
+- A bounded natural coast before departure for the next target.
+- Four impulses: depart, arrive, depart, arrive.
+- Per-transfer and per-coast duration bounds.
+
+Add more targets to the `target_states_ric` list to extend the chain. A single
+time-bound pair is repeated, while a list of pairs configures each segment
+individually.
+
+Expected outputs:
+
+- `traj_quick_relative_transfer_chain.html`.
+- `diagnostics_quick_relative_transfer_chain.html`.
+
 ## When to Leave the Quick API
 
 Use the composable API when the mission needs explicit phase boundaries,
-continuous links, finite burns, perturbations, path constraints, terminal
-orbital-element targeting, or custom per-phase behavior.
+continuous links, finite burns, path constraints, native relative-element
+targeting, an arbitrary burn topology, or custom per-phase behavior. The
+relative quick builders already support J2, Sun, and Moon perturbations through
+exact coupled propagation.
