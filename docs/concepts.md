@@ -165,10 +165,19 @@ contains both absolute histories and the converted RIC history. It uses a
 fixed-step fourth-order Runge-Kutta integrator, so `max_step_s` is an explicit
 accuracy/cost choice rather than a hidden tolerance.
 
-The relative compiler currently supports one optimized relative phase. Inertial
-orbital-element constraints, finite thrust, and inertial/relative phase links
-remain rejected until an explicit acceleration or frame-link model is
-configured.
+Relative phases may be composed into an ordered `previous=` chain. Continuous
+links preserve the formulation's native state and time; mass is also preserved
+through coasts between powered phases. All phases in a chain use the same
+relative formulation and chief reference. Mixing inertial and relative phases
+still requires an explicit frame-link model and is therefore rejected.
+
+Finite-thrust relative phases use `propagation_mode="coupled_eci"`. The chief
+remains unpowered while the deputy receives the ECI vector-throttle
+acceleration and loses mass. Gravity and configured J2 or third-body forces are
+evaluated independently at both spacecraft. A `relative_coast` between powered
+phases propagates the same coupled state with constant deputy mass. Native RIC
+and relative-element formulations remain propulsion-free; CWH can still supply
+fast initial guesses without becoming the optimized dynamics.
 
 `constraints.ric_state(...)` targets one native RIC component. Use it with CWH,
 `"nonlinear_ric"`, or `"coupled_ric"` so no absolute-coordinate expression is
@@ -177,8 +186,10 @@ boundary and `constraints.relative_orbital_element(...)` targets one D'Amico or
 classical relative element. A Back target combined with `tof_bounds_s` leaves
 arrival time free; the target is applied directly to the propagated element
 state. `solution.traj` remains an RIC view for plotting, while
-`solution.native_relative_trajectory` exposes the actual solver states and
-`solution.relative_propagation_mode` identifies their formulation.
+`solution.native_relative_trajectory` exposes the stitched solver states when
+all phase layouts have compatible widths, and
+`solution.native_relative_phase_trajectories` always exposes one native array
+per phase. `solution.relative_propagation_mode` identifies their formulation.
 
 Relative geometry constraints operate on Cartesian position in the phase
 frame. `keep_out_sphere` accepts an arbitrary center, `approach_cone` defines a

@@ -32,7 +32,9 @@ constraints:
 - examples 11–12 — CWH relative motion, RIC plotting, and operational geometry;
 - examples 13–17 — relative representations, exact dynamics formulations,
   perturbations, SPICE solar geometry, and native D'Amico targeting;
-- example 18 — low-thrust orbit raising with a dedicated initial guess.
+- example 18 — low-thrust orbit raising with a dedicated initial guess;
+- example 19 — an exact relative finite burn–coast–burn chain with continuous
+  deputy mass.
 
 All mission inputs use SI units unless a parameter name explicitly says
 otherwise. Generated Plotly HTML files are written to the current directory.

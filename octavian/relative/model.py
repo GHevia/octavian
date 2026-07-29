@@ -15,12 +15,12 @@ from ..specs import BoundaryState
 class RelativePropagationMode(str, Enum):
     """State representation and equations used by a relative phase.
 
-    ``COUPLED_ECI`` propagates chief and deputy absolute states and is the only
-    formulation that currently supports perturbations. ``COUPLED_RIC`` carries
-    the chief ECI state together with an exact deputy RIC state. ``NONLINEAR_RIC``
-    is the exact, pre-linearization circular-chief model from which CWH is
-    obtained. The two element modes propagate native two-body relative orbital
-    elements.
+    ``COUPLED_ECI`` propagates chief and deputy absolute states and supports
+    perturbations, finite thrust on the deputy, and mass-carrying coasts.
+    ``COUPLED_RIC`` carries the chief ECI state together with an exact deputy
+    RIC state. ``NONLINEAR_RIC`` is the exact, pre-linearization circular-chief
+    model from which CWH is obtained. The two element modes propagate native
+    two-body relative orbital elements.
     """
 
     COUPLED_ECI = "coupled_eci"

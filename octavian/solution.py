@@ -134,6 +134,22 @@ class Solution:
         return np.asarray(value, dtype=float)
 
     @property
+    def native_relative_phase_trajectories(self) -> tuple[np.ndarray, ...]:
+        """Return one control-free native state/time array per relative phase.
+
+        A stitched native trajectory is unavailable when phase layouts change,
+        for example when an initial coast does not carry mass but a later
+        finite-burn chain does. This accessor always preserves each phase's
+        declared native representation.
+        """
+        if self.result is None:
+            return ()
+        value = self.result.info.get("native_relative_phase_trajectories")
+        if value is None:
+            return ()
+        return tuple(np.asarray(trajectory, dtype=float) for trajectory in value)
+
+    @property
     def relative_propagation_mode(self) -> str | None:
         """Return the selected relative formulation, or ``None`` if inertial."""
         if self.result is None:

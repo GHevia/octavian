@@ -21,7 +21,18 @@ def build_solar_direction_tables(
     phases: Sequence[Phase],
     abs_bounds: Sequence[tuple[float, float] | None],
 ) -> dict[int, SolarDirectionTable]:
-    """Build SPICE-derived RIC Sun-direction samples by phase index."""
+    """Build SPICE-derived RIC Sun-direction samples by phase index.
+
+    Every table spans the full bounded mission time. That lets multi-phase
+    relative solutions reuse the same SPICE samples for complete diagnostic
+    histories, even when only one phase declares a solar-angle constraint.
+    """
+    finite_end_times = [
+        float(bounds[1])
+        for bounds in abs_bounds
+        if bounds is not None and float(bounds[1]) > 0.0
+    ]
+    mission_duration_s = max(finite_end_times, default=0.0)
     tables: dict[int, SolarDirectionTable] = {}
     for index, (phase, bounds) in enumerate(zip(phases, abs_bounds, strict=True)):
         solar_constraints = [
@@ -58,7 +69,7 @@ def build_solar_direction_tables(
             chief_initial_state_eci=chief_initial_state,
             mean_motion_radps=model.mean_motion_radps,
             initial_epoch=epoch,
-            duration_s=float(bounds[1]),
+            duration_s=mission_duration_s,
             step_s=float(dynamics.third_body_table_step_s),
             bsp_path=info.get("third_body_bsp_path", DEFAULT_EPHEMERIS_BSP),
         )

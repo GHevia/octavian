@@ -3,7 +3,17 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from octavian import Dynamics, Mission, Phase, Spacecraft, Thruster, guesses, objectives
+from octavian import (
+    EARTH,
+    Dynamics,
+    Mission,
+    Phase,
+    Spacecraft,
+    Thruster,
+    guesses,
+    objectives,
+    state,
+)
 from octavian.dynamics import ChemicalBurnECI, FiniteThrustECI
 from octavian.runner import _is_composable_mission
 from octavian.solvers.compiler.phase_compiler import (
@@ -130,6 +140,36 @@ def test_compiled_low_thrust_guess_rows_are_preserved() -> None:
     assert layout.name == "cartesian_mass_thrust"
     assert kind == "low_thrust"
     np.testing.assert_allclose(prepared, rows)
+
+
+def test_relative_finite_thrust_guess_adds_deputy_mass_and_eci_controls() -> None:
+    radius_m = EARTH.mean_radius_m + 400_000.0
+    chief = state(
+        [radius_m, 0.0, 0.0],
+        [0.0, np.sqrt(EARTH.mu_m3ps2 / radius_m), 0.0],
+    )
+    phase = Phase(
+        name="relative_burn",
+        mode="finite_thrust",
+        spacecraft=_spacecraft(),
+        dynamics=Dynamics.relative(chief_initial_state_eci=chief),
+    )
+    public_guess = [
+        np.asarray([0.0, -1_000.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+        np.asarray([0.0, -900.0, 0.0, 0.0, 0.1, 0.0, 60.0]),
+    ]
+
+    prepared, layout, kind = prepare_phase_guess(phase, public_guess)
+    trajectory = np.asarray(prepared)
+
+    assert layout.name == "coupled_relative_eci_mass_thrust"
+    assert kind == "finite_thrust"
+    assert trajectory.shape == (2, 17)
+    assert trajectory[0, layout.state_indices("mass")[0]] == pytest.approx(
+        phase.spacecraft.initial_mass_kg  # type: ignore[union-attr]
+    )
+    np.testing.assert_allclose(trajectory[:, layout.time_column], [0.0, 60.0])
+    assert np.max(np.linalg.norm(trajectory[:, 14:17], axis=1)) <= 1.0
 
 
 def test_low_thrust_spiral_estimates_and_integrates_powered_rows() -> None:

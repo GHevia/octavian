@@ -28,8 +28,10 @@ Octavian currently supports:
 - finite chemical burns with mass depletion and thrust-direction controls,
 - Earth two-body, J2, Sun, and Moon gravity perturbations in the composable
   backend,
-- single-phase CWH relative-motion optimization with analytic seeding and
-  inertial/LVLH transforms,
+- composable CWH, exact Cartesian, coupled chief/deputy, and native
+  relative-element optimization with representation-aware phase links,
+- exact coupled relative finite thrust, deputy mass depletion, and
+  mass-carrying coast phases,
 - ASSET-backed optimization with a targeted retry path for non-monotonic mesh
   time failures,
 - `Solution` and `RendezvousResult` reporting,
@@ -91,16 +93,16 @@ of the phase definition.
 
 ### Astrodynamics And Data
 
-- `octavian/dynamics.py`: ASSET vector-function ODEs for two-body, J2,
+- `octavian/dynamics.py`: ASSET vector-function ODEs for inertial two-body, J2,
   third-body, mass-coast, and propulsion-neutral finite-thrust dynamics.
 - `octavian/astro/kepler.py`: Kepler propagation, orbital element conversion,
   and dense initial guesses.
 - `octavian/astro/lambert.py`: Lambert seed generation and selection.
 - `octavian/astro/types.py`: vector normalization helpers.
 - `octavian/astro/units.py`: default unit scaling for ASSET phases.
-- `octavian/relative/`: CWH, exact RIC, coupled chief/deputy, and native
-  relative-element models; analytic/numerical propagation; seeding; and
-  absolute/RIC/ROE transforms.
+- `octavian/relative/`: CWH, exact RIC, coupled chief/deputy, coupled relative
+  finite-thrust, and native relative-element models; analytic/numerical
+  propagation; seeding; and absolute/RIC/ROE transforms.
 - `octavian/time.py`: time-bound normalization.
 - `octavian/data/ephemeris.py`: bundled reduced Sun/Moon ephemeris access,
   epoch conversion, and SPICE sampling.

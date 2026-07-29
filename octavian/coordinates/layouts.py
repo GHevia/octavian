@@ -137,6 +137,40 @@ COUPLED_RELATIVE_ECI = StateLayout(
     ),
 )
 
+COUPLED_RELATIVE_ECI_MASS = StateLayout(
+    name="coupled_relative_eci_mass",
+    state_names=(
+        "chief_rx",
+        "chief_ry",
+        "chief_rz",
+        "chief_vx",
+        "chief_vy",
+        "chief_vz",
+        "deputy_rx",
+        "deputy_ry",
+        "deputy_rz",
+        "deputy_vx",
+        "deputy_vy",
+        "deputy_vz",
+        "mass",
+    ),
+    state_groups=(
+        ("chief_position", (0, 1, 2)),
+        ("chief_velocity", (3, 4, 5)),
+        ("deputy_position", (6, 7, 8)),
+        ("deputy_velocity", (9, 10, 11)),
+        ("mass", (12,)),
+    ),
+)
+
+COUPLED_RELATIVE_ECI_MASS_THRUST = StateLayout(
+    name="coupled_relative_eci_mass_thrust",
+    state_names=COUPLED_RELATIVE_ECI_MASS.state_names,
+    control_names=("thrust_x", "thrust_y", "thrust_z"),
+    state_groups=COUPLED_RELATIVE_ECI_MASS.state_groups,
+    control_groups=(("thrust", (0, 1, 2)),),
+)
+
 COUPLED_RELATIVE_RIC = StateLayout(
     name="coupled_relative_ric",
     state_names=(

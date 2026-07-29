@@ -17,10 +17,10 @@ under `tests/` so test import mechanics do not shape the user examples.
 | `Mission(phases=[...])` | The complete optimization problem. |
 | `Phase(...)` | One segment of the trajectory. |
 | `mode="coast"` | Ballistic two-body or perturbed coast dynamics. |
-| `mode="finite_thrust"` | Propulsion-neutral finite-thrust dynamics with mass and vector-throttle controls. |
+| `mode="finite_thrust"` | Finite-thrust dynamics with mass and vector-throttle controls; in relative missions only the deputy is powered. |
 | `mode="chemical_burn"` | Compatibility spelling for a chemical finite-thrust phase. |
 | `mode="low_thrust"` | Finite-thrust dynamics with an integrated low-thrust seed workflow. |
-| `mode="relative_coast"` | CWH coast dynamics in a chief-centered LVLH frame. |
+| `mode="relative_coast"` | Coast dynamics in the selected chief-centered relative formulation. |
 | `previous=...` | Connects a phase to the phase before it. |
 | `link=links.continuous()` | Enforces continuous position, velocity, and time at the boundary. |
 | `link=links.impulsive()` | Enforces continuous position and time while allowing velocity to jump. |
@@ -467,3 +467,18 @@ The low-thrust example remains part of the broader composable suite after the
 relative-motion build-up. It demonstrates a dynamics-integrated spiral seed,
 free terminal orbital phase, propellant optimization, and inertial diagnostics
 for Cartesian state, radius, speed, and osculating elements.
+
+## 19: Relative Finite Burn–Coast–Burn
+
+Path: `examples/composable/19_relative_finite_burn_coast.py`
+
+This example composes two exact deputy finite burns around a five-minute
+relative coast. `Dynamics.relative(..., propagation_mode="coupled_eci")`
+propagates both absolute spacecraft states, applies thrust and mass depletion
+only to the deputy, and reports the complete solution in RIC. The coast carries
+deputy mass continuously between the powered phases.
+
+Expected outputs:
+
+- `traj_composable_relative_finite_burn_coast.html`
+- `diagnostics_composable_relative_finite_burn_coast.html`

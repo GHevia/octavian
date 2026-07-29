@@ -75,6 +75,7 @@ def _fake_solution() -> Solution:
         ("examples/composable/14_nonlinear_relative_rendezvous.py", 1),
         ("examples/composable/15_perturbed_relative_solar.py", 1),
         ("examples/composable/18_low_thrust_orbit_raise.py", 1),
+        ("examples/composable/19_relative_finite_burn_coast.py", 1),
     ],
 )
 def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int) -> None:
@@ -190,6 +191,24 @@ def test_composable_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, s
         assert plotted == [
             "traj_composable_low_thrust_orbit_raise.html",
             "diagnostics_composable_low_thrust_orbit_raise.html",
+        ]
+    elif script_rel.endswith("19_relative_finite_burn_coast.py"):
+        mission = missions[0]
+        assert [phase.mode for phase in mission.phases] == [
+            "finite_thrust",
+            "relative_coast",
+            "finite_thrust",
+        ]
+        assert all(
+            phase.dynamics.model.propagation_mode.value == "coupled_eci"
+            for phase in mission.phases
+        )
+        assert mission.phases[1].previous is mission.phases[0]
+        assert mission.phases[2].previous is mission.phases[1]
+        assert mission.objectives[0].kind == "propellant"
+        assert plotted == [
+            "traj_composable_relative_finite_burn_coast.html",
+            "diagnostics_composable_relative_finite_burn_coast.html",
         ]
     elif script_rel.endswith("15_perturbed_relative_solar.py"):
         mission = missions[0]

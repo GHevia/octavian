@@ -80,6 +80,45 @@ def test_relative_environment_requires_chief_state_for_solar_constraint() -> Non
         build_solar_direction_tables(mission, [phase], [(0.0, 1_000.0)])
 
 
+def test_relative_environment_samples_full_multiphase_duration(monkeypatch) -> None:
+    chief = _chief_state()
+    dynamics = Dynamics.cwh(
+        chief_orbit_radius_m=float(np.linalg.norm(chief.r_m)),
+        chief_initial_state_eci=chief,
+    )
+    constrained = Phase(
+        dynamics=dynamics,
+        constraints=[constraints.solar_phase_angle(min_angle_deg=20.0)],
+    )
+    later_coast = Phase(dynamics=dynamics, previous=constrained)
+    mission = Mission(
+        phases=[constrained, later_coast],
+        initial_epoch="2026-01-01T00:00:00Z",
+    )
+    sampled_durations = []
+
+    def fake_sample_solar_directions_ric(**kwargs):
+        sampled_durations.append(float(kwargs["duration_s"]))
+        return SolarDirectionTable(
+            times_s=np.asarray([0.0, float(kwargs["duration_s"])]),
+            directions_ric=np.asarray([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+        )
+
+    monkeypatch.setattr(
+        "octavian.solvers.relative_environment.sample_solar_directions_ric",
+        fake_sample_solar_directions_ric,
+    )
+
+    tables = build_solar_direction_tables(
+        mission,
+        [constrained, later_coast],
+        [(0.0, 500.0), (500.0, 1_500.0)],
+    )
+
+    assert set(tables) == {0}
+    assert sampled_durations == [1_500.0]
+
+
 def test_cwh_rejects_perturbations_instead_of_building_a_reference() -> None:
     chief = _chief_state()
     with pytest.raises(ValueError, match=r"Dynamics\.relative"):

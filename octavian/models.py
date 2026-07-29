@@ -175,8 +175,8 @@ class Dynamics:
             reference_length_m: Characteristic relative distance for scaling.
             propagation_mode: One of ``"coupled_eci"`` (default),
                 ``"coupled_ric"``, ``"nonlinear_ric"``, ``"damico"``, or
-                ``"classical_elements"``. Only ``"coupled_eci"`` currently
-                accepts J2 and third-body perturbations.
+                ``"classical_elements"``. Select ``"coupled_eci"`` for J2,
+                third-body perturbations, or finite-thrust relative phases.
             **kwargs: Additional :class:`Dynamics` configuration.
 
         Returns:

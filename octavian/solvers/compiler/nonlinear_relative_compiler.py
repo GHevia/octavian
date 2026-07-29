@@ -23,6 +23,7 @@ from ...constraints import (
     LightingAngle,
     SolarPhaseAngle,
 )
+from ...coordinates import StateLayout
 from ...dynamics import (
     ThirdBodyTable,
     _gravity_acceleration,
@@ -45,8 +46,6 @@ from ...specs import BoundaryState
 from ..third_bodies import phase_perturbations, tables_for_phase
 from .relative_constraint_compiler import RelativeGeometryConstraint
 
-COUPLED_ARGUMENT_INDICES = tuple(range(13))
-
 
 @dataclass(frozen=True, slots=True)
 class RelativeStateExpressions:
@@ -62,6 +61,7 @@ class RelativeStateExpressions:
     in_track_axis: Any
     cross_track_axis: Any
     time: Any
+    argument_indices: tuple[int, ...]
 
 
 def model_for_phase(phase: Phase) -> NonlinearRelative | None:
@@ -74,8 +74,14 @@ def model_for_phase(phase: Phase) -> NonlinearRelative | None:
 def relative_state_expressions(
     phase: Phase,
     third_body_tables: dict[str, ThirdBodyTable],
+    layout: StateLayout | None = None,
 ) -> RelativeStateExpressions:
-    """Build the instantaneous RIC state from 12 absolute states and time."""
+    """Build the instantaneous RIC state from 12 absolute states and time.
+
+    A mass-carrying relative phase inserts deputy mass before ASSET's time
+    column. ``layout`` maps that non-contiguous source into the same compact
+    13-argument symbolic expression used by unpowered coupled phases.
+    """
     dynamics = phase.dynamics
     model = model_for_phase(phase)
     if (
@@ -85,6 +91,9 @@ def relative_state_expressions(
     ):
         raise TypeError("Exact RIC expressions require Dynamics.relative(...)")
     arguments = vf.Arguments(13)
+    argument_indices = tuple(range(12)) + (
+        12 if layout is None else layout.time_column,
+    )
     chief_position = arguments.head(3)
     chief_velocity = arguments.segment(3, 3)
     deputy_position = arguments.segment(6, 3)
@@ -137,6 +146,7 @@ def relative_state_expressions(
         in_track_axis=in_track,
         cross_track_axis=cross_track,
         time=time,
+        argument_indices=argument_indices,
     )
 
 
@@ -163,7 +173,7 @@ def apply_position_boundary(
 ) -> None:
     """Apply a public RIC position constraint to a coupled phase."""
     residual = expressions.position - as_vec3(target_position_m)
-    asset_phase.addEqualCon(where, residual, COUPLED_ARGUMENT_INDICES)
+    asset_phase.addEqualCon(where, residual, expressions.argument_indices)
 
 
 def apply_state_boundary(
@@ -183,7 +193,7 @@ def apply_state_boundary(
             continue
         else:
             raise ValueError(f"Unsupported State.groups element: {group!r}")
-        asset_phase.addEqualCon(where, residual, COUPLED_ARGUMENT_INDICES)
+        asset_phase.addEqualCon(where, residual, expressions.argument_indices)
 
 
 def apply_minimum_range(
@@ -197,7 +207,7 @@ def apply_minimum_range(
     asset_phase.addInequalCon(
         where,
         vf.stack([violation]),
-        COUPLED_ARGUMENT_INDICES,
+        expressions.argument_indices,
     )
 
 
@@ -215,7 +225,11 @@ def apply_geometry_constraint(
     if isinstance(constraint, KeepOutSphere):
         offset = position - np.asarray(constraint.center_m, dtype=float)
         violation = constraint.radius_m**2 - offset.dot(offset)
-        asset_phase.addInequalCon(where, vf.stack([violation]), COUPLED_ARGUMENT_INDICES)
+        asset_phase.addInequalCon(
+            where,
+            vf.stack([violation]),
+            expressions.argument_indices,
+        )
         return
 
     if isinstance(constraint, ApproachCone):
@@ -223,8 +237,16 @@ def apply_geometry_constraint(
         axial_distance = offset.dot(np.asarray(constraint.axis, dtype=float))
         cosine_sq = float(np.cos(np.deg2rad(constraint.half_angle_deg)) ** 2)
         cone_violation = cosine_sq * offset.dot(offset) - axial_distance**2
-        asset_phase.addInequalCon(where, vf.stack([cone_violation]), COUPLED_ARGUMENT_INDICES)
-        asset_phase.addInequalCon(where, vf.stack([-axial_distance]), COUPLED_ARGUMENT_INDICES)
+        asset_phase.addInequalCon(
+            where,
+            vf.stack([cone_violation]),
+            expressions.argument_indices,
+        )
+        asset_phase.addInequalCon(
+            where,
+            vf.stack([-axial_distance]),
+            expressions.argument_indices,
+        )
         return
 
     if isinstance(constraint, LightingAngle):
@@ -237,6 +259,7 @@ def apply_geometry_constraint(
             direction,
             constraint.min_angle_deg,
             constraint.max_angle_deg,
+            expressions.argument_indices,
         )
         return
 
@@ -259,6 +282,7 @@ def apply_geometry_constraint(
             sun_line_ric,
             constraint.min_angle_deg,
             constraint.max_angle_deg,
+            expressions.argument_indices,
         )
         return
 
@@ -279,11 +303,19 @@ def add_velocity_objective(
     asset_phase.addStateObjective(
         where,
         float(weight) * magnitude,
-        list(COUPLED_ARGUMENT_INDICES),
+        list(expressions.argument_indices),
         [],
         [],
         AutoScale=1.0 / float(velocity_unit_mps),
     )
+
+
+def _coupled_time_column(raw_trajectory: np.ndarray) -> int:
+    """Return the time column for coupled ECI rows with or without mass."""
+    raw = np.asarray(raw_trajectory, dtype=float)
+    if raw.ndim != 2 or raw.shape[1] < 13:
+        raise ValueError("Coupled relative trajectory must contain at least 13 columns")
+    return 12 if raw.shape[1] == 13 else 13
 
 
 def coupled_trajectory_rvt(
@@ -293,8 +325,7 @@ def coupled_trajectory_rvt(
 ) -> np.ndarray:
     """Convert ``[chief ECI, deputy ECI, t]`` rows to public RIC rows."""
     raw = np.asarray(raw_trajectory, dtype=float)
-    if raw.ndim != 2 or raw.shape[1] < 13:
-        raise ValueError("Coupled relative trajectory must contain 13 columns")
+    time_column = _coupled_time_column(raw)
     dynamics = phase.dynamics
     if dynamics is None or model_for_phase(phase) is None:
         raise TypeError("Coupled extraction requires Dynamics.relative(...)")
@@ -306,7 +337,7 @@ def coupled_trajectory_rvt(
         deputy = BoundaryState(row[6:9], row[9:12])
         chief_acceleration = gravity_acceleration_components(
             chief.r_m,
-            time_s=float(row[12]),
+            time_s=float(row[time_column]),
             mu_m3ps2=float(dynamics.mu_m3ps2),
             include_j2=bool(perturbations.j2),
             central_body_radius_m=float(dynamics.central_body_radius_m),
@@ -318,7 +349,9 @@ def coupled_trajectory_rvt(
             deputy,
             chief_acceleration_mps2=chief_acceleration,
         )
-        converted[index] = np.hstack([relative.r_m, relative.v_mps, float(row[12])])
+        converted[index] = np.hstack(
+            [relative.r_m, relative.v_mps, float(row[time_column])]
+        )
     return converted
 
 
@@ -381,9 +414,10 @@ def absolute_trajectories(
         return None, None
     mode = model.propagation_mode
     if mode is RelativePropagationMode.COUPLED_ECI:
+        time_column = _coupled_time_column(raw)
         return (
-            np.column_stack([raw[:, 0:6], raw[:, 12]]),
-            np.column_stack([raw[:, 6:12], raw[:, 12]]),
+            np.column_stack([raw[:, 0:6], raw[:, time_column]]),
+            np.column_stack([raw[:, 6:12], raw[:, time_column]]),
         )
 
     chief_history = np.empty((raw.shape[0], 7), dtype=float)
@@ -428,7 +462,8 @@ def solar_directions_ric(
 ) -> np.ndarray:
     """Return chief-to-Sun unit directions in instantaneous RIC."""
     raw = np.asarray(raw_trajectory, dtype=float)
-    sun_positions = solar_table.sun_position_at(raw[:, 12])
+    time_column = _coupled_time_column(raw)
+    sun_positions = solar_table.sun_position_at(raw[:, time_column])
     directions = np.empty((raw.shape[0], 3), dtype=float)
     for index, (row, sun_position) in enumerate(zip(raw, sun_positions, strict=True)):
         line_eci = sun_position - row[0:3]
@@ -444,6 +479,7 @@ def _apply_angle_bounds(
     direction: Any,
     minimum_angle_deg: float,
     maximum_angle_deg: float,
+    argument_indices: tuple[int, ...],
 ) -> None:
     vector_norm = vector.norm()
     direction_norm = direction.norm() if hasattr(direction, "norm") else 1.0
@@ -454,10 +490,10 @@ def _apply_angle_bounds(
     asset_phase.addInequalCon(
         where,
         vf.stack([maximum_cosine * scale - projection]),
-        COUPLED_ARGUMENT_INDICES,
+        argument_indices,
     )
     asset_phase.addInequalCon(
         where,
         vf.stack([projection - minimum_cosine * scale]),
-        COUPLED_ARGUMENT_INDICES,
+        argument_indices,
     )

@@ -104,6 +104,140 @@ class CoupledRelativeODE(oc.ODEBase if oc is not None else object):
         super().__init__(ode, 12, 0, Vgroups=groups)
 
 
+class CoupledRelativeMassCoastODE(oc.ODEBase if oc is not None else object):
+    """Propagate coupled chief/deputy ECI states and constant deputy mass.
+
+    This is the coast member of a relative finite-thrust phase chain. Its
+    state is ``[chief r,v, deputy r,v, deputy mass]``. Carrying mass through
+    the coast lets ordinary continuous phase links preserve propellant state
+    between powered segments without changing either trajectory's gravity.
+    """
+
+    def __init__(
+        self,
+        *,
+        mu_m3ps2: float,
+        j2: bool = False,
+        central_body_radius_m: float = 6_378_136.3,
+        j2_coefficient: float = 1.08262668e-3,
+        third_body_tables: Sequence[ThirdBodyTable] = (),
+    ) -> None:
+        """Build a mass-carrying coupled relative coast ODE."""
+        require_asset("mass-carrying coupled relative dynamics")
+        arguments = oc.ODEArguments(13, 0)
+        state = arguments.XVec()
+        chief_position = state.head(3)
+        chief_velocity = state.segment(3, 3)
+        deputy_position = state.segment(6, 3)
+        deputy_velocity = state.segment(9, 3)
+        mass = state[12]
+        time = arguments.TVar()
+        force_options = {
+            "mu_m3ps2": float(mu_m3ps2),
+            "include_j2": bool(j2),
+            "central_body_radius_m": float(central_body_radius_m),
+            "j2_coefficient": float(j2_coefficient),
+            "time_var": time,
+            "third_body_tables": tuple(third_body_tables),
+        }
+        ode = vf.stack(
+            [
+                chief_velocity,
+                _gravity_acceleration(chief_position, **force_options),
+                deputy_velocity,
+                _gravity_acceleration(deputy_position, **force_options),
+                0.0 * mass,
+            ]
+        )
+        groups = {
+            ("ChiefR", "ChiefPosition"): chief_position,
+            ("ChiefV", "ChiefVelocity"): chief_velocity,
+            ("DeputyR", "DeputyPosition"): deputy_position,
+            ("DeputyV", "DeputyVelocity"): deputy_velocity,
+            ("M", "Mass"): [12],
+            ("t", "time"): time,
+        }
+        super().__init__(ode, 13, 0, Vgroups=groups)
+
+
+class FiniteThrustRelativeODE(oc.ODEBase if oc is not None else object):
+    """Propagate an unpowered chief and a finite-thrust deputy in ECI.
+
+    The state is ``[chief r,v, deputy r,v, deputy mass]`` and the three
+    controls form a dimensionless ECI thrust-direction/throttle vector. The
+    compiler constrains its norm to at most one. Gravity and configured
+    perturbations are applied independently to chief and deputy; thrust and
+    mass depletion apply only to the deputy.
+    """
+
+    def __init__(
+        self,
+        *,
+        mu_m3ps2: float,
+        thrust_N: float,
+        isp_s: float,
+        j2: bool = False,
+        central_body_radius_m: float = 6_378_136.3,
+        j2_coefficient: float = 1.08262668e-3,
+        third_body_tables: Sequence[ThirdBodyTable] = (),
+        g0_mps2: float = 9.80665,
+    ) -> None:
+        """Build exact coupled relative finite-thrust dynamics."""
+        require_asset("finite-thrust coupled relative dynamics")
+        thrust = float(thrust_N)
+        specific_impulse = float(isp_s)
+        standard_gravity = float(g0_mps2)
+        if thrust <= 0.0:
+            raise ValueError("FiniteThrustRelativeODE requires thrust_N > 0")
+        if specific_impulse <= 0.0:
+            raise ValueError("FiniteThrustRelativeODE requires isp_s > 0")
+        if standard_gravity <= 0.0:
+            raise ValueError("FiniteThrustRelativeODE requires g0_mps2 > 0")
+
+        arguments = oc.ODEArguments(13, 3)
+        state = arguments.XVec()
+        control = arguments.UVec()
+        chief_position = state.head(3)
+        chief_velocity = state.segment(3, 3)
+        deputy_position = state.segment(6, 3)
+        deputy_velocity = state.segment(9, 3)
+        mass = state[12]
+        time = arguments.TVar()
+        force_options = {
+            "mu_m3ps2": float(mu_m3ps2),
+            "include_j2": bool(j2),
+            "central_body_radius_m": float(central_body_radius_m),
+            "j2_coefficient": float(j2_coefficient),
+            "time_var": time,
+            "third_body_tables": tuple(third_body_tables),
+        }
+        chief_acceleration = _gravity_acceleration(chief_position, **force_options)
+        deputy_acceleration = _gravity_acceleration(deputy_position, **force_options)
+        thrust_acceleration = (thrust / mass) * control
+        mass_flow = (
+            -(thrust / (specific_impulse * standard_gravity)) * control.norm()
+        )
+        ode = vf.stack(
+            [
+                chief_velocity,
+                chief_acceleration,
+                deputy_velocity,
+                deputy_acceleration + thrust_acceleration,
+                mass_flow,
+            ]
+        )
+        groups = {
+            ("ChiefR", "ChiefPosition"): chief_position,
+            ("ChiefV", "ChiefVelocity"): chief_velocity,
+            ("DeputyR", "DeputyPosition"): deputy_position,
+            ("DeputyV", "DeputyVelocity"): deputy_velocity,
+            ("M", "Mass"): [12],
+            ("U", "Control", "Throttle"): control,
+            ("t", "time"): time,
+        }
+        super().__init__(ode, 13, 3, Vgroups=groups)
+
+
 class CoupledRelativeRICODE(oc.ODEBase if oc is not None else object):
     """Propagate a chief ECI state stacked with the deputy's exact RIC state.
 

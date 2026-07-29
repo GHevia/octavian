@@ -22,8 +22,8 @@ Use `Mission` and `Phase` directly when you need:
 - terminal orbital-element constraints,
 - finite chemical-burn phases,
 - J2 perturbations,
-- custom objectives or per-phase mesh settings.
-- chief-centered CWH relative motion.
+- custom objectives or per-phase mesh settings,
+- chief-centered relative motion, including exact finite burns and coasts.
 
 ## Pattern 1: Standard Two-Impulse Transfer
 
@@ -299,6 +299,11 @@ dynamics = Dynamics.relative(
 The compiler uses CWH only to seed the solve. It propagates the chief and deputy
 as two absolute states and converts them to RIC for constraints and results.
 
+Compose multiple relative phases with `previous=` exactly as for inertial
+missions. The compiler links the formulation's native state, so a coupled ECI
+chain preserves both spacecraft states without round-tripping through a
+boundary conversion.
+
 For exact two-body dynamics with native RIC decision variables, select
 `propagation_mode="nonlinear_ric"` for a circular chief or `"coupled_ric"` for
 a propagated circular/eccentric chief. Then target one component directly:
@@ -343,7 +348,49 @@ a fixed direction over the phase; transform or update that direction when a
 longer arc needs time-varying Sun geometry. Constraint extrema and satisfaction
 flags are included in `solution.result.info["constraint_report"]`.
 
-## Pattern 14: Seed A Low-Thrust Spiral
+## Pattern 14: Compose Relative Finite Burns And Coasts
+
+```python
+dynamics = Dynamics.relative(
+    chief_initial_state_eci=chief_initial_state_eci,
+    propagation_mode="coupled_eci",
+)
+
+departure = Phase(
+    mode="finite_thrust",
+    spacecraft=deputy,
+    dynamics=dynamics,
+    initial_state=initial_ric,
+    tof_bounds_s=(50.0, 70.0),
+)
+coast = Phase(
+    mode="relative_coast",
+    spacecraft=deputy,
+    dynamics=dynamics,
+    previous=departure,
+    tof_bounds_s=(250.0, 350.0),
+    tof_is_relative=True,
+)
+arrival = Phase(
+    mode="finite_thrust",
+    spacecraft=deputy,
+    dynamics=dynamics,
+    previous=coast,
+    final_state=target_ric,
+    tof_bounds_s=(50.0, 70.0),
+    tof_is_relative=True,
+)
+```
+
+Only the deputy is powered. The chief and deputy both receive their declared
+gravity and perturbation accelerations, while the coast keeps deputy mass
+constant and continuous between burns. Add
+`objectives.minimize_propellant()` to minimize the powered-chain consumption.
+Finite thrust currently requires the exact `"coupled_eci"` formulation;
+`"nonlinear_ric"`, `"coupled_ric"`, and relative-element modes remain
+propulsion-free.
+
+## Pattern 15: Seed A Low-Thrust Spiral
 
 ```python
 from octavian import guesses
