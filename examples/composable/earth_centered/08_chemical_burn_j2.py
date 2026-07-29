@@ -1,7 +1,7 @@
-"""Composable example 08: burn-coast-burn chemical transfer with J2 perturbation.
+"""Earth-centered composable example 08: chemical burn-coast-burn with J2.
 
 Run:
-  python examples/composable/08_chemical_burn_j2.py
+  python examples/composable/earth_centered/08_chemical_burn_j2.py
 """
 
 from __future__ import annotations

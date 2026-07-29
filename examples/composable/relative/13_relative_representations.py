@@ -1,4 +1,4 @@
-"""Composable example 13: move between absolute, RIC, and relative elements.
+"""Relative composable example 13: absolute, RIC, and element conversions.
 
 This example has no optimizer. It demonstrates the representation layer used
 at the boundary of both CWH and full nonlinear relative missions.

@@ -1,4 +1,4 @@
-"""Composable example 15: perturbed RIC rendezvous with a SPICE Sun constraint.
+"""Relative composable example 15: perturbed rendezvous with a SPICE Sun constraint.
 
 Chief and deputy absolute states are propagated under central gravity, J2, and
 solar gravity. The public constraints and results remain in RIC. The

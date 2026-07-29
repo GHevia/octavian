@@ -1,10 +1,11 @@
-"""Composable example 02: precoast + transfer with a continuous link.
+"""Earth-centered composable example 03: precoast with an impulsive link.
 
-Continuous link means (R,V,t) are continuous across the phase boundary.
-So there is no link delta-v maneuver.
+Impulsive link means (R,t) are continuous but V may jump.
+Declaring ImpulsiveDeltaV(where="Front") on the transfer phase
+adds a link delta-v objective and produces a link maneuver marker.
 
 Run:
-  python examples/composable/02_precoast_continuous_link.py
+  python examples/composable/earth_centered/03_precoast_impulsive_link.py
 """
 
 from __future__ import annotations
@@ -59,7 +60,6 @@ precoast = Phase(
     dynamics=dynamics,
     tof_bounds_s=(0.0, 6000.0),
     constraints=[constraints.state(x0, where="Front")],
-    variables=[variables.ImpulsiveDeltaV(where="Front")],
 )
 
 transfer = Phase(
@@ -68,14 +68,17 @@ transfer = Phase(
     spacecraft=spacecraft,
     dynamics=dynamics,
     previous=precoast,
-    link=links.continuous(),
+    link=links.impulsive(),
     tof_bounds_s=(400.0, 60_000.0),
     constraints=[constraints.state(xf, where="Back")],
-    variables=[variables.ImpulsiveDeltaV(where="Back")],
+    variables=[
+        variables.ImpulsiveDeltaV(where="Front"),
+        variables.ImpulsiveDeltaV(where="Back"),
+    ],
 )
 
 mission = Mission(
-    name="Composable: precoast + transfer (continuous link)",
+    name="Composable: precoast + transfer (impulsive link)",
     phases=[precoast, transfer],
     objectives=[objectives.minimize_total_delta_v()],
 )
@@ -83,6 +86,6 @@ mission = Mission(
 sol = mission.solve()
 print(sol.summary())
 
-out_html = "traj_composable_precoast_continuous_link.html"
+out_html = "traj_composable_precoast_impulsive_link.html"
 save_trajectory_html(sol.result.traj, out_html, maneuvers=sol.result.maneuvers, title=mission.name)
 print(f"Wrote: {out_html}")

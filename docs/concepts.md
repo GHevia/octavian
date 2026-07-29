@@ -73,6 +73,12 @@ Moon and Sun use the bundled reduced DE440 ephemeris in the `ECI_TOD` frame and
 require a mission initial epoch so Octavian can build ASSET interpolation
 tables over the mission time bounds.
 
+For multi-phase missions, ephemeris coverage uses the latest cumulative
+absolute Back-time upper bound. `Dynamics.third_body_table_margin_s` extends
+the table beyond that bound so optimizer trial points and diagnostics remain
+inside the interpolation interval even when phase inputs use
+`tof_is_relative=True`.
+
 Built-in `EARTH`, `MOON`, and `SUN` definitions keep gravity, radius, J2, and
 frame origin consistent. Use `Dynamics.for_body(SUN)` for composable missions
 or pass `central_body=SUN` to the quick transfer builder. Raw gravitational

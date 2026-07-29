@@ -8,6 +8,7 @@ from octavian.data.ephemeris import epoch_to_et, sample_sun_moon_positions_eci_t
 from octavian.models import Dynamics, Perturbations
 from octavian.runner import _is_composable_mission
 from octavian.solvers import composable, third_bodies
+from octavian.time import normalize_time_bounds
 
 MU = 3.986004418e14
 
@@ -116,6 +117,38 @@ def test_sun_moon_table_duration_uses_time_upper_bound_and_margin() -> None:
     duration = third_bodies.third_body_table_duration_s([phase], [(0.0, 100.0)])
 
     assert duration == pytest.approx(150.0)
+
+
+def test_sun_table_duration_uses_cumulative_relative_upper_bound() -> None:
+    dynamics = Dynamics(
+        mu_m3ps2=MU,
+        perturbations=Perturbations(sun=True),
+        third_body_table_margin_s=250.0,
+    )
+    initial_coast = _burn_phase()
+    initial_coast.mode = "coast"
+    initial_coast.dynamics = dynamics
+    initial_coast.tof_bounds_s = (100.0, 6_000.0)
+    initial_coast.tof_is_relative = True
+    transfer = _burn_phase()
+    transfer.mode = "coast"
+    transfer.dynamics = dynamics
+    transfer.previous = initial_coast
+    transfer.tof_bounds_s = (1_000.0, 17_000.0)
+    transfer.tof_is_relative = True
+    phases = [initial_coast, transfer]
+
+    absolute_bounds = normalize_time_bounds(phases)
+    duration = third_bodies.third_body_table_duration_s(
+        phases,
+        absolute_bounds,
+    )
+
+    assert absolute_bounds == [
+        (100.0, 6_000.0),
+        (1_100.0, 23_000.0),
+    ]
+    assert duration == pytest.approx(23_250.0)
 
 
 def test_reduced_ephemeris_samples_sun_moon_positions_in_meters() -> None:

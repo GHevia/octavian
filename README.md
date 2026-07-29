@@ -90,7 +90,7 @@ python -c "import asset_asrl; print(asset_asrl.__file__)"
 ```bash
 python examples/quick/01_two_impulse_free_time.py
 python examples/quick/02_two_impulse_precoast_impulsive_link.py
-python examples/composable/08_chemical_burn_j2.py
+python examples/composable/earth_centered/08_chemical_burn_j2.py
 python -m octavian.config examples/config/01_two_impulse_transfer.json
 ```
 

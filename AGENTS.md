@@ -96,7 +96,7 @@ ASSET-backed solver commands should run inside the project-owned conda environme
 
 ```bash
 conda run -n octavian-dev python -m pytest tests/test_example_regressions.py -q
-conda run -n octavian-dev python examples/composable/08_chemical_burn_j2.py
+conda run -n octavian-dev python examples/composable/earth_centered/08_chemical_burn_j2.py
 ```
 
 Notes:

@@ -1,7 +1,7 @@
-"""Composable example 10: coast transfer with J2, Moon, and Sun perturbations.
+"""Earth-centered composable example 10: coast with J2, Moon, and Sun.
 
 Run:
-  python examples/composable/10_sun_moon_perturbations.py
+  python examples/composable/earth_centered/10_sun_moon_perturbations.py
 """
 
 from __future__ import annotations

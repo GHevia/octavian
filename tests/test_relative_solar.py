@@ -85,6 +85,7 @@ def test_relative_environment_samples_full_multiphase_duration(monkeypatch) -> N
     dynamics = Dynamics.cwh(
         chief_orbit_radius_m=float(np.linalg.norm(chief.r_m)),
         chief_initial_state_eci=chief,
+        third_body_table_margin_s=250.0,
     )
     constrained = Phase(
         dynamics=dynamics,
@@ -116,7 +117,58 @@ def test_relative_environment_samples_full_multiphase_duration(monkeypatch) -> N
     )
 
     assert set(tables) == {0}
-    assert sampled_durations == [1_500.0]
+    assert sampled_durations == [1_750.0]
+
+
+def test_relative_environment_uses_cumulative_relative_upper_bound(
+    monkeypatch,
+) -> None:
+    chief = _chief_state()
+    dynamics = Dynamics.relative(
+        chief_initial_state_eci=chief,
+        third_body_table_margin_s=250.0,
+    )
+    initial_coast = Phase(
+        name="initial_coast",
+        dynamics=dynamics,
+        tof_bounds_s=(100.0, 6_000.0),
+        tof_is_relative=True,
+    )
+    transfer = Phase(
+        name="transfer",
+        dynamics=dynamics,
+        previous=initial_coast,
+        tof_bounds_s=(1_000.0, 17_000.0),
+        tof_is_relative=True,
+        constraints=[constraints.solar_phase_angle(min_angle_deg=20.0)],
+    )
+    mission = Mission(
+        phases=[initial_coast, transfer],
+        initial_epoch="2026-01-01T00:00:00Z",
+    )
+    sampled_durations = []
+
+    def fake_sample_solar_directions_ric(**kwargs):
+        duration_s = float(kwargs["duration_s"])
+        sampled_durations.append(duration_s)
+        return SolarDirectionTable(
+            times_s=np.asarray([0.0, duration_s]),
+            directions_ric=np.asarray([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+        )
+
+    monkeypatch.setattr(
+        "octavian.solvers.relative_environment.sample_solar_directions_ric",
+        fake_sample_solar_directions_ric,
+    )
+
+    tables = build_solar_direction_tables(
+        mission,
+        [initial_coast, transfer],
+        [(100.0, 6_000.0), (1_100.0, 23_000.0)],
+    )
+
+    assert set(tables) == {1}
+    assert sampled_durations == [23_250.0]
 
 
 def test_cwh_rejects_perturbations_instead_of_building_a_reference() -> None:

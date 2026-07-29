@@ -1,4 +1,4 @@
-"""Composable example 12: relative rendezvous with safety and lighting geometry."""
+"""Relative composable example 12: rendezvous safety and lighting geometry."""
 
 from __future__ import annotations
 

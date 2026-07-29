@@ -310,6 +310,11 @@ missions. The compiler links the formulation's native state, so a coupled ECI
 chain preserves both spacecraft states without round-tripping through a
 boundary conversion.
 
+When Sun or Moon tables are active, each relative duration contributes to the
+cumulative absolute mission-time horizon. The shared table extends through
+that absolute upper bound plus `third_body_table_margin_s`; increase the margin
+for unusually aggressive time searches or custom solver behavior.
+
 For the common coast–transfer–coast pattern, use the quick builder:
 
 ```python

@@ -71,6 +71,8 @@ class Dynamics:
     records the meaning of Cartesian states throughout compilation and
     reporting. ``scaling`` optionally overrides the solver's automatic
     characteristic units while preserving SI inputs and outputs.
+    ``third_body_table_margin_s`` extends Sun/Moon and solar-geometry tables
+    beyond the mission's cumulative absolute upper time bound.
     """
 
     mu_m3ps2: float = 3.986004418e14

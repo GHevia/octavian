@@ -1,4 +1,4 @@
-"""Composable example 01: Hohmann transfer with terminal delta-v objective.
+"""Earth-centered composable example 01: Hohmann transfer with terminal delta-v objective.
 
 Key semantics:
   - constraints.state(xf, where="Back") would normally hard-fix (R,V)
@@ -8,7 +8,7 @@ Key semantics:
       * add objective term ||V_back - xf.v||
 
 Run:
-  python examples/composable/01_single_phase_terminal_dv_objective.py
+  python examples/composable/earth_centered/01_single_phase_terminal_dv_objective.py
 """
 
 from __future__ import annotations

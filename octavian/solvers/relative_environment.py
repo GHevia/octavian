@@ -13,7 +13,7 @@ from ..relative import (
     SolarDirectionTable,
     sample_solar_directions_ric,
 )
-from .third_bodies import mission_initial_epoch
+from .third_bodies import mission_initial_epoch, third_body_table_duration_s
 
 
 def build_solar_direction_tables(
@@ -23,16 +23,13 @@ def build_solar_direction_tables(
 ) -> dict[int, SolarDirectionTable]:
     """Build SPICE-derived RIC Sun-direction samples by phase index.
 
-    Every table spans the full bounded mission time. That lets multi-phase
-    relative solutions reuse the same SPICE samples for complete diagnostic
-    histories, even when only one phase declares a solar-angle constraint.
+    Every table spans the latest cumulative absolute mission-time bound plus
+    the largest configured ``third_body_table_margin_s``. That lets
+    multi-phase relative solutions reuse the same SPICE samples for optimizer
+    trial points and complete diagnostic histories, even when only one phase
+    declares a solar-angle constraint.
     """
-    finite_end_times = [
-        float(bounds[1])
-        for bounds in abs_bounds
-        if bounds is not None and float(bounds[1]) > 0.0
-    ]
-    mission_duration_s = max(finite_end_times, default=0.0)
+    mission_duration_s = third_body_table_duration_s(phases, abs_bounds)
     tables: dict[int, SolarDirectionTable] = {}
     for index, (phase, bounds) in enumerate(zip(phases, abs_bounds, strict=True)):
         solar_constraints = [

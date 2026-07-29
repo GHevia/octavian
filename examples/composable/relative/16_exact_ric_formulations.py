@@ -1,4 +1,4 @@
-"""Composable example 16: exact RIC formulations and CWH linearization.
+"""Relative composable example 16: exact RIC formulations and CWH linearization.
 
 This analysis-only example compares the exact six-state circular-chief RIC
 equations with independent chief/deputy two-body propagation. It also shows
