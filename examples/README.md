@@ -44,6 +44,9 @@ constraints:
 After either API path, run `outputs/01_ephemeris_files.py` to see the common
 ephemeris export interface.
 
+After either API path, run `outputs/01_ephemeris_files.py` to see the common
+ephemeris export interface.
+
 All mission inputs use SI units unless a parameter name explicitly says
 otherwise. Generated Plotly HTML files are written to the current directory.
 
