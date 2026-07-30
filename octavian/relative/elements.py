@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from inspect import signature
+from inspect import Parameter, signature
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -483,19 +483,37 @@ def propagate_relative_element_history(
             representation=normalized,
         )
 
-    optional_kwargs: dict[str, object] = {}
-    if chief_spacecraft is not None:
-        optional_kwargs["chief_spacecraft"] = chief_spacecraft
-    if deputy_spacecraft is not None:
-        optional_kwargs["deputy_spacecraft"] = deputy_spacecraft
-    unsupported = optional_kwargs.keys() - signature(
+    spacecraft_values = {
+        "chief_spacecraft": chief_spacecraft,
+        "deputy_spacecraft": deputy_spacecraft,
+    }
+    supported_parameters = signature(
         _propagate_relative_elements_numerical
-    ).parameters.keys()
+    ).parameters
+    accepts_any_keyword = any(
+        parameter.kind is Parameter.VAR_KEYWORD
+        for parameter in supported_parameters.values()
+    )
+    accepted_spacecraft = {
+        name
+        for name in spacecraft_values
+        if name in supported_parameters or accepts_any_keyword
+    }
+    unsupported = {
+        name
+        for name, value in spacecraft_values.items()
+        if value is not None and name not in accepted_spacecraft
+    }
     if unsupported:
         raise NotImplementedError(
             "This Octavian build does not provide cannonball spacecraft "
             "properties for relative-element propagation"
         )
+    optional_kwargs = {
+        name: value
+        for name, value in spacecraft_values.items()
+        if name in accepted_spacecraft
+    }
 
     numerical = _propagate_relative_elements_numerical(
         initial_elements,
