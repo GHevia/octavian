@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..coordinates import CoordinateFrame, SolverScaling
+from ..forces import ExponentialAtmosphere
 from ..models import Dynamics, Perturbations
 from ..phase import state
 from .errors import MissionConfigError
@@ -176,10 +177,24 @@ def _build_cartesian_dynamics(config: Any, path: str, model: str) -> Dynamics:
 def build_perturbations(value: Any, path: str) -> Perturbations:
     """Build a perturbation declaration."""
     config = mapping(value, path)
-    allowed = {"j2", "moon", "sun", "srp", "drag", "third_bodies"}
+    allowed = {
+        "j2",
+        "moon",
+        "sun",
+        "srp",
+        "drag",
+        "third_bodies",
+        "atmosphere",
+        "solar_pressure_at_1au_Npm2",
+    }
     reject_unknown(config, allowed, path)
     third_bodies = tuple(
         str(item) for item in sequence(config.get("third_bodies", []), f"{path}.third_bodies")
+    )
+    atmosphere = (
+        _build_atmosphere(config["atmosphere"], f"{path}.atmosphere")
+        if "atmosphere" in config
+        else None
     )
     return Perturbations(
         j2=boolean(config.get("j2", False), f"{path}.j2"),
@@ -188,6 +203,26 @@ def build_perturbations(value: Any, path: str) -> Perturbations:
         srp=boolean(config.get("srp", False), f"{path}.srp"),
         drag=boolean(config.get("drag", False), f"{path}.drag"),
         third_bodies=third_bodies,
+        atmosphere=atmosphere,
+        solar_pressure_at_1au_Npm2=float(config.get("solar_pressure_at_1au_Npm2", 4.56e-6)),
+    )
+
+
+def _build_atmosphere(value: Any, path: str) -> ExponentialAtmosphere:
+    """Build a constant-scale-height atmosphere configuration."""
+    config = mapping(value, path)
+    fields = {
+        "reference_density_kgpm3",
+        "reference_altitude_m",
+        "scale_height_m",
+        "rotation_rate_radps",
+    }
+    reject_unknown(config, fields, path)
+    return ExponentialAtmosphere(
+        reference_density_kgpm3=float(required(config, "reference_density_kgpm3", path)),
+        reference_altitude_m=float(required(config, "reference_altitude_m", path)),
+        scale_height_m=float(required(config, "scale_height_m", path)),
+        rotation_rate_radps=float(required(config, "rotation_rate_radps", path)),
     )
 
 

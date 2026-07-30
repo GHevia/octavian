@@ -21,46 +21,70 @@ SUPPORTED_THIRD_BODY_MU_M3PS2 = {
 }
 
 
+def _central_body_name(dynamics) -> str:
+    """Return the physical central body behind inertial or relative metadata."""
+    central_body = getattr(dynamics, "central_body", None)
+    name = getattr(central_body, "name", central_body)
+    if name is None:
+        model_body = getattr(getattr(dynamics, "model", None), "central_body", None)
+        name = getattr(model_body, "name", model_body)
+    if name is None:
+        name = getattr(getattr(dynamics, "frame", None), "origin", "")
+    return str(name).strip().lower()
+
+
 def phase_perturbations(phase: Phase):
     """Return supported perturbation flags for a phase.
 
     This is the composable solver's last validation point before ASSET objects
-    are constructed. J2, Moon, and Sun are implemented; SRP, drag, and unknown
-    third-body names fail here with an explicit error rather than deeper in the
-    vector-function build.
+    are constructed. Unknown third-body names fail here with an explicit error
+    rather than deeper in the vector-function build.
     """
     dynamics = getattr(phase, "dynamics", None)
     if dynamics is None:
         raise ValueError(f"Phase {phase.name!r} is missing dynamics.")
     perturbations = dynamics.active_perturbations()
-    unsupported = []
-    if perturbations.srp:
-        unsupported.append("srp")
-    if perturbations.drag:
-        unsupported.append("drag")
     third_bodies = perturbations.active_third_bodies()
     unsupported_bodies = [
         body for body in third_bodies if body not in SUPPORTED_THIRD_BODY_MU_M3PS2
     ]
-    unsupported.extend(f"third_bodies.{body}" for body in unsupported_bodies)
-    if unsupported:
+    if unsupported_bodies:
         raise NotImplementedError(
-            "Composable solver currently implements J2, Moon, and Sun perturbations only; "
-            f"unsupported perturbation flags: {', '.join(unsupported)}."
+            "Composable solver supports Moon and Sun third-body gravity; "
+            "unsupported third bodies: "
+            f"{', '.join(unsupported_bodies)}."
+        )
+    if perturbations.srp and _central_body_name(dynamics) != "earth":
+        raise ValueError(
+            "The bundled Sun BSP is Earth-centered, so SRP currently "
+            "requires Earth-centered inertial dynamics."
         )
     return perturbations
 
 
 def phase_third_body_names(phase: Phase) -> tuple[str, ...]:
-    """Return normalized third-body names requested by one phase."""
+    """Return normalized third-body gravity names requested by one phase."""
     return phase_perturbations(phase).active_third_bodies()
 
 
+def phase_ephemeris_body_names(phase: Phase) -> tuple[str, ...]:
+    """Return bodies whose ephemerides are needed by one phase.
+
+    SRP needs the Sun position without necessarily enabling solar third-body
+    gravity, so ephemeris dependencies and gravitational perturbations are
+    intentionally separate.
+    """
+    names = list(phase_third_body_names(phase))
+    if phase_perturbations(phase).srp and "sun" not in names:
+        names.append("sun")
+    return tuple(names)
+
+
 def mission_third_body_names(phases: Sequence[Phase]) -> tuple[str, ...]:
-    """Return ordered unique third-body names requested anywhere in a mission."""
+    """Return ordered unique ephemeris body names needed by a mission."""
     names: list[str] = []
     for phase in phases:
-        for body in phase_third_body_names(phase):
+        for body in phase_ephemeris_body_names(phase):
             if body not in names:
                 names.append(body)
     return tuple(names)
@@ -181,3 +205,11 @@ def tables_for_phase(
 ) -> tuple[ThirdBodyTable, ...]:
     """Return the subset of shared third-body tables requested by ``phase``."""
     return tuple(third_body_tables[name] for name in phase_third_body_names(phase))
+
+
+def sun_table_for_phase(
+    phase: Phase,
+    ephemeris_tables: dict[str, ThirdBodyTable],
+) -> ThirdBodyTable | None:
+    """Return the Sun table used by SRP, without enabling solar gravity."""
+    return ephemeris_tables.get("sun") if phase_perturbations(phase).srp else None

@@ -212,12 +212,11 @@ def test_mass_coast_guess_carries_constant_mass_state() -> None:
     assert rows[-1][7] == pytest.approx(120.0)
 
 
-def test_unsupported_perturbation_flags_fail_before_asset_build() -> None:
+def test_drag_flag_is_accepted_before_spacecraft_force_validation() -> None:
     phase = _burn_phase()
     phase.dynamics = Dynamics(mu_m3ps2=MU, perturbations=Perturbations(drag=True))
 
-    with pytest.raises(NotImplementedError, match="J2, Moon, and Sun perturbations only"):
-        third_bodies.phase_perturbations(phase)
+    assert third_bodies.phase_perturbations(phase).drag is True
 
 
 def test_zero_weight_objective_remains_zero() -> None:

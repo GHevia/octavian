@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from .forces import Cannonball
+
 
 @dataclass(slots=True)
 class Thruster:
@@ -23,15 +25,22 @@ class Thruster:
 
 @dataclass(slots=True)
 class Spacecraft:
-    """Spacecraft container.
+    """Spacecraft mass, propulsion, and simple force-model properties.
 
-    Future: geometry, inertia, power, thermal, etc.
+    Args:
+        name: Human-readable spacecraft name.
+        dry_mass_kg: Dry mass in kilograms.
+        thrusters: Available propulsion models.
+        info: Free-form user metadata.
+        cannonball: Constant projected areas and coefficients used when drag
+            or solar radiation pressure is enabled.
     """
 
     name: str = "SC"
     dry_mass_kg: float = 0.0
     thrusters: list[Thruster] = field(default_factory=list)
     info: dict[str, Any] = field(default_factory=dict)
+    cannonball: Cannonball = field(default_factory=Cannonball)
 
     @property
     def initial_mass_kg(self) -> float:

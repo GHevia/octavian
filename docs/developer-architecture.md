@@ -78,6 +78,9 @@ of the phase definition.
 - `octavian/models.py`: `Dynamics`, `Perturbations`, solve config, run plans,
   stages, and retry policy.
 - `octavian/spacecraft.py`: spacecraft and thruster data models.
+- `octavian/forces.py`: validated cannonball properties, exponential
+  atmospheres, and pure numerical drag/SRP accelerations shared by analysis and
+  solver dynamics.
 - `octavian/guesses.py`: typed user declarations for phase initial guesses.
 - `octavian/constraints.py`: constraint class hierarchy and factory helpers.
 - `octavian/variables.py`: user-facing optimization variables such as
@@ -96,7 +99,8 @@ of the phase definition.
 ### Astrodynamics And Data
 
 - `octavian/dynamics.py`: ASSET vector-function ODEs for inertial two-body, J2,
-  third-body, mass-coast, and propulsion-neutral finite-thrust dynamics.
+  third-body, cannonball drag/SRP, mass-coast, and propulsion-neutral
+  finite-thrust dynamics.
 - `octavian/astro/kepler.py`: Kepler propagation, orbital element conversion,
   and dense initial guesses.
 - `octavian/astro/lambert.py`: Lambert seed generation and selection.
@@ -105,6 +109,9 @@ of the phase definition.
 - `octavian/relative/`: CWH, exact RIC, coupled chief/deputy, coupled relative
   finite-thrust, and native relative-element models; analytic/numerical
   propagation; seeding; and absolute/RIC/ROE transforms.
+- `octavian/cislunar/`: CR3BP physical-system metadata, canonical and
+  synodic/inertial transforms, deterministic propagation, Hermite collocation
+  seeds, invariants, and the dimensional ASSET ODE.
 - `octavian/time.py`: time-bound normalization.
 - `octavian/data/ephemeris.py`: bundled reduced Sun/Moon ephemeris access,
   epoch conversion, and SPICE sampling.
@@ -146,8 +153,9 @@ of the phase definition.
 - `octavian/solvers/constraint_compiler.py`: composable-backend constraint
   lookup, orbital-element ASSET expressions, terminal post-burn shell handling,
   and orbital-element result reports.
-- `octavian/solvers/third_bodies.py`: third-body table construction and phase
-  perturbation helpers used by the composable backend.
+- `octavian/solvers/third_bodies.py`: shared ephemeris table construction and
+  phase perturbation helpers used by third-body gravity and SRP. Ephemeris
+  dependencies are kept separate from gravitational body selection.
 
 ### Reporting And Visualization
 

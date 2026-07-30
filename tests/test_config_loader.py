@@ -77,6 +77,38 @@ def test_mapping_builds_the_public_mission_objects() -> None:
     assert mission.solver_options.asset_threads == (1, 1)
 
 
+def test_config_builds_cannonball_and_exponential_atmosphere() -> None:
+    config = _basic_config()
+    config["spacecraft"]["vehicle"]["cannonball"] = {
+        "drag_area_m2": 3.0,
+        "drag_coefficient": 2.1,
+        "srp_area_m2": 4.0,
+        "reflectivity_coefficient": 1.4,
+    }
+    config["dynamics"]["earth"]["perturbations"] = {
+        "drag": True,
+        "srp": True,
+        "solar_pressure_at_1au_Npm2": 4.5e-6,
+        "atmosphere": {
+            "reference_density_kgpm3": 1.0e-12,
+            "reference_altitude_m": 400_000.0,
+            "scale_height_m": 50_000.0,
+            "rotation_rate_radps": 7.2921159e-5,
+        },
+    }
+
+    mission = load_mission_mapping(config)
+    spacecraft = mission.spacecraft["vehicle"]
+    perturbations = mission.phases[0].dynamics.active_perturbations()
+
+    assert spacecraft.cannonball.drag_area_m2 == pytest.approx(3.0)
+    assert spacecraft.cannonball.srp_area_m2 == pytest.approx(4.0)
+    assert perturbations.drag is True
+    assert perturbations.srp is True
+    assert perturbations.atmosphere is not None
+    assert perturbations.atmosphere.scale_height_m == pytest.approx(50_000.0)
+
+
 def test_json_example_loads_without_special_case_code() -> None:
     mission = load_mission(ROOT / "examples/config/01_two_impulse_transfer.json")
 

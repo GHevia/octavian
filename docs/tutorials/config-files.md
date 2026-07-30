@@ -94,7 +94,7 @@ The top level contains five explicit keys:
 | --- | --- |
 | `schema_version` | Required integer version; currently `1`. |
 | `states` | Named Cartesian states in meters and meters per second. |
-| `spacecraft` | Named vehicles and their thrusters. |
+| `spacecraft` | Named vehicles, thrusters, and cannonball properties. |
 | `dynamics` | Named two-body or CWH environments. |
 | `mission` | Ordered phases, objectives, solver options, and mission-level settings. |
 
@@ -123,13 +123,14 @@ phase; list order alone does not add a hidden connection.
 
 Schema version 1 covers the current public mission building blocks:
 
-- two-body dynamics with `central_body`, optional perturbations, frame, and scaling;
+- two-body dynamics with `central_body`, optional J2/Moon/Sun/drag/SRP
+  perturbations, frame, and scaling;
 - unforced linear CWH dynamics with `model: cwh`, chief orbit radius, optional
   inline `chief_initial_state_eci`, and relative scaling;
 - nonlinear and relative-element dynamics with `model: relative`, a required
   inline `chief_initial_state_eci`, and `propagation_mode` set to
   `coupled_eci`, `coupled_ric`, `nonlinear_ric`, `damico`, or
-  `classical_elements`; J2/Moon/Sun perturbations require `coupled_eci`;
+  `classical_elements`; perturbations require `coupled_eci`;
 - coast, rendezvous, relative-coast, finite-thrust, chemical-burn, and low-thrust phase modes;
 - continuous and impulsive links;
 - boundary state, position, minimum-radius, absolute orbital-element, native

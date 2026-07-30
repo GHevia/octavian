@@ -13,10 +13,12 @@ _NATIVE_RUNTIME_HANDLES = enable_native_runtime()
 # Public, config-like objects
 from . import (
     bodies,
+    cislunar,
     config,
     constraints,
     coordinates,
     events,
+    forces,
     guesses,
     links,
     objectives,
@@ -25,12 +27,20 @@ from . import (
     variables,
 )
 from .bodies import EARTH, MOON, SUN, CelestialBody
+from .cislunar import CR3BPSystem
 from .config import MissionConfigError, load_mission, load_mission_mapping, mission_from_dict
 from .conops import rendezvous_precoast_then_transfer, rendezvous_two_impulse
 from .control import ThrustControl
 from .coordinates import CoordinateFrame, SolverScaling, StateLayout
 from .events import BoundaryEvent
 from .exports import Ephemeris
+from .forces import (
+    EARTH_EXPONENTIAL_ATMOSPHERE,
+    Cannonball,
+    ExponentialAtmosphere,
+    cannonball_drag_acceleration,
+    cannonball_srp_acceleration,
+)
 from .guesses import LowThrustSpiralGuess
 from .links import Link
 from .mission import Mission
@@ -69,6 +79,11 @@ __all__ = [
     "Thruster",
     "ThrustControl",
     "Spacecraft",
+    "Cannonball",
+    "ExponentialAtmosphere",
+    "EARTH_EXPONENTIAL_ATMOSPHERE",
+    "cannonball_drag_acceleration",
+    "cannonball_srp_acceleration",
     "Dynamics",
     "Perturbations",
     "SolveConfig",
@@ -81,6 +96,7 @@ __all__ = [
     "SolverScaling",
     "StateLayout",
     "CelestialBody",
+    "CR3BPSystem",
     "ClohessyWiltshire",
     "NonlinearRelative",
     "RelativePropagationMode",
@@ -122,10 +138,12 @@ __all__ = [
     "Objective",
     "links",
     "events",
+    "forces",
     "guesses",
     "objectives",
     "propagate",
     "constraints",
+    "cislunar",
     "bodies",
     "config",
     "coordinates",

@@ -385,6 +385,38 @@ ric_for_plotting = history.ric
 Use times ending at zero, such as `[-600.0, -300.0, 0.0]`, to generate a
 pre-event coast. Use times starting at zero for a post-event coast.
 
+For differential drag or SRP, give both participants their own cannonball
+properties and use the exact coupled propagator:
+
+```python
+chief_vehicle = Spacecraft(
+    name="Chief",
+    dry_mass_kg=300.0,
+    cannonball=Cannonball(drag_area_m2=2.0, srp_area_m2=3.0),
+)
+deputy_vehicle = Spacecraft(
+    name="Deputy",
+    dry_mass_kg=150.0,
+    cannonball=Cannonball(drag_area_m2=4.0, srp_area_m2=5.0),
+)
+forces = Perturbations(j2=True, drag=True, srp=True)
+
+history = propagate_relative_orbital_elements(
+    initial_roe,
+    times_s,
+    chief_initial_state_eci=chief_eci,
+    mu_m3ps2=EARTH.mu_m3ps2,
+    perturbations=forces,
+    initial_epoch="2026-01-01T00:00:00Z",
+    chief_spacecraft=chief_vehicle,
+    deputy_spacecraft=deputy_vehicle,
+)
+```
+
+The default atmosphere is Earth-only. SRP uses the bundled Earth-centered Sun
+BSP and does not enable solar third-body gravity unless `sun=True` is also set.
+See the Cannonball Drag And SRP tutorial for formulas and fidelity limits.
+
 ## Pattern 13: Add Relative Safety And Lighting Geometry
 
 ```python

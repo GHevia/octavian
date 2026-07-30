@@ -8,6 +8,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from ..astro.kepler import cartesian_to_classic
+from ..cislunar import CR3BPSystem, jacobi_constant
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +152,58 @@ def inertial_diagnostic_panels(
                 ),
             ),
             y_axis_title="Element value",
+        ),
+    )
+
+
+def cr3bp_diagnostic_panels(
+    traj: ArrayLike,
+    *,
+    system: CR3BPSystem,
+) -> tuple[DiagnosticPanel, ...]:
+    """Build synodic state, distance, speed, and Jacobi time series."""
+    trajectory = _trajectory(traj)
+    positions = trajectory[:, 0:3]
+    velocities = trajectory[:, 3:6]
+    primary_ranges = np.linalg.norm(
+        positions - system.primary_position_m,
+        axis=1,
+    )
+    secondary_ranges = np.linalg.norm(
+        positions - system.secondary_position_m,
+        axis=1,
+    )
+    jacobi_values = np.asarray(
+        [
+            jacobi_constant(row[0:6], system=system)
+            for row in trajectory
+        ],
+        dtype=float,
+    )
+    return (
+        DiagnosticPanel(
+            title="Synodic position",
+            series=_component_series(positions, ("x", "y", "z"), "m"),
+            y_axis_title="Position (m)",
+        ),
+        DiagnosticPanel(
+            title="Synodic velocity",
+            series=_component_series(velocities, ("xdot", "ydot", "zdot"), "m/s"),
+            y_axis_title="Velocity (m/s)",
+        ),
+        DiagnosticPanel(
+            title="Primary geometry",
+            series=(
+                DiagnosticSeries("Primary range", primary_ranges, "m"),
+                DiagnosticSeries("Secondary range", secondary_ranges, "m"),
+                DiagnosticSeries("Synodic speed", np.linalg.norm(velocities, axis=1), "m/s"),
+            ),
+            y_axis_title="Range / speed",
+        ),
+        DiagnosticPanel(
+            title="CR3BP invariant",
+            series=(DiagnosticSeries("Jacobi constant", jacobi_values, "m²/s²"),),
+            y_axis_title="Jacobi constant (m²/s²)",
         ),
     )
 

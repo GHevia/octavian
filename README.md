@@ -14,7 +14,8 @@ This MVP includes:
 - Composable coast phases with continuous or impulsive links.
 - Terminal state, terminal delta-v, path, and orbital-element constraints.
 - Finite chemical-burn phases with mass depletion and three thrust-direction controls.
-- J2 perturbation support in the composable ASSET backend.
+- J2, Sun/Moon gravity, exponential cannonball drag, and cannonball SRP in
+  inertial and exact relative dynamics.
 - Central-body selection, CWH relative motion, RIC transforms and plots,
   differential relative perturbations, and SPICE solar-phase geometry.
 - Finite-thrust and low-thrust phases with mass depletion and spiral seeding.
@@ -28,6 +29,9 @@ This MVP includes:
   explicit epoch, frame, center, and object metadata.
 - A consolidated `octavian.propagate` namespace for two-body, CWH, exact RIC,
   coupled relative, relative-element, and CR3BP analysis histories.
+- Dimensional Earth–Moon/general CR3BP propagation and composable coast
+  phases, canonical/synodic conversions, Lagrange points, Jacobi diagnostics,
+  and synodic plotting.
 
 `octavian` declares ASSET (`asset_asrl`) as a runtime dependency because the
 solver-backed workflows rely on it.
@@ -99,6 +103,8 @@ python examples/quick/02_two_impulse_precoast_impulsive_link.py
 python examples/composable/earth_centered/08_chemical_burn_j2.py
 python examples/composable/earth_centered/19_thrust_frames_and_attitude.py
 python examples/analysis/01_propagation_namespace.py
+python examples/composable/relative/23_cannonball_drag_srp.py
+python examples/composable/cislunar/22_earth_moon_cr3bp.py
 python examples/outputs/01_ephemeris_files.py
 python -m octavian.config examples/config/01_two_impulse_transfer.json
 ```

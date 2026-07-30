@@ -3,7 +3,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from octavian import EARTH, Dynamics, Perturbations, state
+from octavian import (
+    EARTH,
+    Cannonball,
+    Dynamics,
+    Perturbations,
+    Spacecraft,
+    state,
+)
 from octavian.astro import classical_to_cartesian
 from octavian.coordinates import (
     CLASSICAL_RELATIVE_ELEMENTS,
@@ -373,18 +380,14 @@ def test_relative_element_propagation_advances_only_relative_longitude() -> None
         mu_m3ps2=EARTH.mu_m3ps2,
     )
     deputy_a_m = radius_m * (1.0 + initial.delta_a)
-    expected_rate = np.sqrt(EARTH.mu_m3ps2 / deputy_a_m**3) - np.sqrt(
-        EARTH.mu_m3ps2 / radius_m**3
-    )
+    expected_rate = np.sqrt(EARTH.mu_m3ps2 / deputy_a_m**3) - np.sqrt(EARTH.mu_m3ps2 / radius_m**3)
     expected_constants = np.repeat(
         initial.as_vector()[None, [0, 2, 3, 4, 5]],
         history.shape[0],
         axis=0,
     )
     np.testing.assert_allclose(history[:, [0, 2, 3, 4, 5]], expected_constants)
-    assert history[-1, 1] == pytest.approx(
-        initial.delta_lambda_rad + expected_rate * 1_800.0
-    )
+    assert history[-1, 1] == pytest.approx(initial.delta_lambda_rad + expected_rate * 1_800.0)
 
 
 def test_classical_relative_element_propagation_advances_mean_anomaly() -> None:
@@ -408,13 +411,11 @@ def test_classical_relative_element_propagation_advances_mean_anomaly() -> None:
         mu_m3ps2=EARTH.mu_m3ps2,
         representation="classical_elements",
     )
-    expected_rate = np.sqrt(
-        EARTH.mu_m3ps2 / (radius_m + initial.delta_a_m) ** 3
-    ) - np.sqrt(EARTH.mu_m3ps2 / radius_m**3)
-
-    assert history[-1, 5] == pytest.approx(
-        initial.delta_mean_anomaly_rad + expected_rate * 900.0
+    expected_rate = np.sqrt(EARTH.mu_m3ps2 / (radius_m + initial.delta_a_m) ** 3) - np.sqrt(
+        EARTH.mu_m3ps2 / radius_m**3
     )
+
+    assert history[-1, 5] == pytest.approx(initial.delta_mean_anomaly_rad + expected_rate * 900.0)
     np.testing.assert_allclose(
         history[:, [0, 1, 2, 3, 4]],
         np.repeat(
@@ -471,6 +472,66 @@ def test_j2_changes_coupled_relative_propagation() -> None:
     )
 
 
+def test_differential_drag_propagates_chief_and_deputy_cannonballs() -> None:
+    radius_m = EARTH.mean_radius_m + 400_000.0
+    speed_mps = np.sqrt(EARTH.mu_m3ps2 / radius_m)
+    chief_state = state([radius_m, 0.0, 0.0], [0.0, speed_mps, 0.0])
+    colocated_deputy = state([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+    chief_spacecraft = Spacecraft(
+        name="chief",
+        dry_mass_kg=200.0,
+        cannonball=Cannonball(drag_area_m2=2.0),
+    )
+    deputy_spacecraft = Spacecraft(
+        name="deputy",
+        dry_mass_kg=200.0,
+        cannonball=Cannonball(drag_area_m2=4.0),
+    )
+
+    result = propagate_relative_numerical(
+        chief_state,
+        colocated_deputy,
+        [0.0, 120.0],
+        perturbations=Perturbations(drag=True),
+        chief_spacecraft=chief_spacecraft,
+        deputy_spacecraft=deputy_spacecraft,
+        max_step_s=1.0,
+    )
+
+    assert np.linalg.norm(result.relative_states_ric[-1]) > 1.0e-4
+
+
+def test_srp_uses_the_bsp_without_enabling_solar_gravity() -> None:
+    radius_m = EARTH.mean_radius_m + 700_000.0
+    speed_mps = np.sqrt(EARTH.mu_m3ps2 / radius_m)
+    chief_state = state([radius_m, 0.0, 0.0], [0.0, speed_mps, 0.0])
+    colocated_deputy = state([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+    chief_spacecraft = Spacecraft(
+        name="chief",
+        dry_mass_kg=100.0,
+        cannonball=Cannonball(srp_area_m2=1.0),
+    )
+    deputy_spacecraft = Spacecraft(
+        name="deputy",
+        dry_mass_kg=100.0,
+        cannonball=Cannonball(srp_area_m2=3.0),
+    )
+
+    result = propagate_relative_numerical(
+        chief_state,
+        colocated_deputy,
+        [0.0, 120.0],
+        perturbations=Perturbations(srp=True),
+        initial_epoch="2026-01-01T00:00:00Z",
+        chief_spacecraft=chief_spacecraft,
+        deputy_spacecraft=deputy_spacecraft,
+        max_step_s=2.0,
+        ephemeris_step_s=30.0,
+    )
+
+    assert np.linalg.norm(result.relative_states_ric[-1]) > 1.0e-5
+
+
 def test_relative_element_propagation_accepts_j2_force_model() -> None:
     chief_position, chief_velocity = classical_to_cartesian(
         a_m=7_000_000.0,
@@ -518,6 +579,53 @@ def test_relative_element_propagation_accepts_j2_force_model() -> None:
     assert np.linalg.norm(perturbed[-1, 0:6] - unperturbed[-1, 0:6]) > 1.0e-5
     np.testing.assert_allclose(ric_history[:, 6], times)
     assert np.all(np.isfinite(ric_history))
+
+
+def test_relative_element_propagation_accepts_differential_drag() -> None:
+    radius_m = EARTH.mean_radius_m + 400_000.0
+    chief_position, chief_velocity = classical_to_cartesian(
+        a_m=radius_m,
+        e=0.001,
+        inc_deg=40.0,
+        raan_deg=20.0,
+        argp_deg=10.0,
+        true_anomaly_deg=30.0,
+        mu_m3ps2=EARTH.mu_m3ps2,
+    )
+    chief = state(chief_position, chief_velocity)
+    initial = RelativeOrbitalElements(
+        delta_a=1.0e-4,
+        delta_lambda_rad=-0.002,
+        delta_ex=1.0e-4,
+        delta_ey=0.0,
+        delta_ix_rad=0.0,
+        delta_iy_rad=0.0,
+    )
+    chief_spacecraft = Spacecraft(
+        name="chief",
+        dry_mass_kg=200.0,
+        cannonball=Cannonball(drag_area_m2=2.0),
+    )
+    deputy_spacecraft = Spacecraft(
+        name="deputy",
+        dry_mass_kg=100.0,
+        cannonball=Cannonball(drag_area_m2=4.0),
+    )
+
+    history = propagate_relative_orbital_elements(
+        initial,
+        [0.0, 300.0],
+        chief_initial_state_eci=chief,
+        mu_m3ps2=EARTH.mu_m3ps2,
+        perturbations=Perturbations(drag=True),
+        chief_spacecraft=chief_spacecraft,
+        deputy_spacecraft=deputy_spacecraft,
+        max_step_s=2.0,
+    )
+
+    assert history.shape == (2, 7)
+    assert np.all(np.isfinite(history))
+    assert np.linalg.norm(history[-1, 0:6] - history[0, 0:6]) > 1.0e-8
 
 
 def test_relative_element_perturbations_require_zero_time_endpoint() -> None:
@@ -662,8 +770,7 @@ def test_coupled_ric_derivative_matches_eccentric_absolute_propagation() -> None
         max_step_s=1.0e-4,
     )
     finite_difference = (
-        propagated.relative_states_ric[1]
-        - propagated.relative_states_ric[0]
+        propagated.relative_states_ric[1] - propagated.relative_states_ric[0]
     ) / interval_s
 
     np.testing.assert_allclose(

@@ -26,9 +26,10 @@ from ...constraints import (
 from ...coordinates import StateLayout
 from ...dynamics import (
     ThirdBodyTable,
-    _gravity_acceleration,
-    gravity_acceleration_components,
+    _translational_acceleration,
+    translational_acceleration_components,
 )
+from ...forces import EARTH_EXPONENTIAL_ATMOSPHERE
 from ...phase import Phase
 from ...relative import (
     NonlinearRelative,
@@ -43,7 +44,7 @@ from ...relative.transforms import (
     ric_basis,
 )
 from ...specs import BoundaryState
-from ..third_bodies import phase_perturbations, tables_for_phase
+from ..third_bodies import phase_perturbations, sun_table_for_phase, tables_for_phase
 from .relative_constraint_compiler import RelativeGeometryConstraint
 
 
@@ -91,9 +92,7 @@ def relative_state_expressions(
     ):
         raise TypeError("Exact RIC expressions require Dynamics.relative(...)")
     arguments = vf.Arguments(13)
-    argument_indices = tuple(range(12)) + (
-        12 if layout is None else layout.time_column,
-    )
+    argument_indices = tuple(range(12)) + (12 if layout is None else layout.time_column,)
     chief_position = arguments.head(3)
     chief_velocity = arguments.segment(3, 3)
     deputy_position = arguments.segment(6, 3)
@@ -118,14 +117,26 @@ def relative_state_expressions(
     relative_position = rotate_to_ric(deputy_position - chief_position)
     inertial_velocity_difference_ric = rotate_to_ric(deputy_velocity - chief_velocity)
     perturbations = phase_perturbations(phase)
-    chief_acceleration = _gravity_acceleration(
+    chief_spacecraft = model.chief_spacecraft
+    atmosphere = perturbations.atmosphere
+    if perturbations.drag and atmosphere is None:
+        atmosphere = EARTH_EXPONENTIAL_ATMOSPHERE
+    chief_acceleration = _translational_acceleration(
         chief_position,
+        chief_velocity,
+        (float(chief_spacecraft.initial_mass_kg) if chief_spacecraft is not None else 1.0),
         mu_m3ps2=float(dynamics.mu_m3ps2),
         include_j2=bool(perturbations.j2),
         central_body_radius_m=float(dynamics.central_body_radius_m),
         j2_coefficient=float(dynamics.j2_coefficient),
         time_var=time,
         third_body_tables=tables_for_phase(phase, third_body_tables),
+        include_drag=bool(perturbations.drag),
+        include_srp=bool(perturbations.srp),
+        cannonball=(chief_spacecraft.cannonball if chief_spacecraft is not None else None),
+        atmosphere=atmosphere,
+        sun_table=sun_table_for_phase(phase, third_body_tables),
+        solar_pressure_at_1au_Npm2=perturbations.solar_pressure_at_1au_Npm2,
     )
     frame_rate_ric = vf.stack(
         [
@@ -331,27 +342,43 @@ def coupled_trajectory_rvt(
         raise TypeError("Coupled extraction requires Dynamics.relative(...)")
     perturbations = phase_perturbations(phase)
     body_tables = tables_for_phase(phase, third_body_tables)
+    sun_table = sun_table_for_phase(phase, third_body_tables)
+    model = model_for_phase(phase)
+    if model is None:
+        raise TypeError("Coupled extraction requires Dynamics.relative(...)")
+    chief_spacecraft = model.chief_spacecraft
+    atmosphere = perturbations.atmosphere
+    if perturbations.drag and atmosphere is None:
+        atmosphere = EARTH_EXPONENTIAL_ATMOSPHERE
     converted = np.empty((raw.shape[0], 7), dtype=float)
     for index, row in enumerate(raw):
         chief = BoundaryState(row[0:3], row[3:6])
         deputy = BoundaryState(row[6:9], row[9:12])
-        chief_acceleration = gravity_acceleration_components(
+        chief_acceleration = translational_acceleration_components(
             chief.r_m,
+            chief.v_mps,
             time_s=float(row[time_column]),
+            mass_kg=(
+                float(chief_spacecraft.initial_mass_kg) if chief_spacecraft is not None else 1.0
+            ),
             mu_m3ps2=float(dynamics.mu_m3ps2),
             include_j2=bool(perturbations.j2),
             central_body_radius_m=float(dynamics.central_body_radius_m),
             j2_coefficient=float(dynamics.j2_coefficient),
             third_body_tables=body_tables,
+            include_drag=bool(perturbations.drag),
+            include_srp=bool(perturbations.srp),
+            cannonball=(chief_spacecraft.cannonball if chief_spacecraft is not None else None),
+            atmosphere=atmosphere,
+            sun_table=sun_table,
+            solar_pressure_at_1au_Npm2=perturbations.solar_pressure_at_1au_Npm2,
         )
         relative = inertial_to_relative_state(
             chief,
             deputy,
             chief_acceleration_mps2=chief_acceleration,
         )
-        converted[index] = np.hstack(
-            [relative.r_m, relative.v_mps, float(row[time_column])]
-        )
+        converted[index] = np.hstack([relative.r_m, relative.v_mps, float(row[time_column])])
     return converted
 
 

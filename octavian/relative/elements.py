@@ -16,6 +16,7 @@ from ..bodies import EARTH, CelestialBody
 from ..bodies import resolve as resolve_body
 from ..data.ephemeris import DEFAULT_EPHEMERIS_BSP
 from ..models import Perturbations
+from ..spacecraft import Spacecraft
 from ..specs import BoundaryState
 from .transforms import inertial_to_relative_state, relative_to_inertial_state
 
@@ -534,6 +535,8 @@ def propagate_relative_orbital_elements(
     max_step_s: float = 10.0,
     ephemeris_step_s: float = 600.0,
     bsp_path: str | Path = DEFAULT_EPHEMERIS_BSP,
+    chief_spacecraft: Spacecraft | None = None,
+    deputy_spacecraft: Spacecraft | None = None,
 ) -> NDArray[np.float64]:
     """Propagate relative elements at requested elapsed times.
 
@@ -552,12 +555,15 @@ def propagate_relative_orbital_elements(
         mu_m3ps2: Central-body gravitational parameter.
         representation: ``"damico"`` or ``"classical_elements"``.
         central_body: Body constants used by numerical central gravity and J2.
-        perturbations: Optional differential J2, Moon, or Sun configuration.
-            SRP and drag are not yet supported by the numerical propagator.
-        initial_epoch: UTC or SPICE ET at time zero. Required for Sun or Moon.
+        perturbations: Optional differential gravity, drag, and SRP configuration.
+        initial_epoch: UTC or SPICE ET at time zero. Required for Sun, Moon,
+            or SRP.
         max_step_s: Maximum internal RK4 step for numerical propagation.
         ephemeris_step_s: Sun/Moon interpolation spacing.
         bsp_path: SPICE BSP containing Earth-centered Sun/Moon states.
+        chief_spacecraft: Optional chief mass and cannonball properties.
+        deputy_spacecraft: Deputy mass and cannonball properties, required for
+            drag or SRP.
 
     Returns:
         An ``(N, 7)`` array of native element states and time.
@@ -575,6 +581,8 @@ def propagate_relative_orbital_elements(
             max_step_s=max_step_s,
             ephemeris_step_s=ephemeris_step_s,
             bsp_path=bsp_path,
+            chief_spacecraft=chief_spacecraft,
+            deputy_spacecraft=deputy_spacecraft,
         )
         return _relative_elements_from_coupled_history(
             numerical,
@@ -629,6 +637,8 @@ def propagate_relative_elements_to_ric(
     max_step_s: float = 10.0,
     ephemeris_step_s: float = 600.0,
     bsp_path: str | Path = DEFAULT_EPHEMERIS_BSP,
+    chief_spacecraft: Spacecraft | None = None,
+    deputy_spacecraft: Spacecraft | None = None,
 ) -> NDArray[np.float64]:
     """Propagate relative elements and return equivalent RIC state history.
 
@@ -645,11 +655,15 @@ def propagate_relative_elements_to_ric(
         mu_m3ps2: Central-body gravitational parameter.
         representation: ``"damico"`` or ``"classical_elements"``.
         central_body: Body constants used by numerical central gravity and J2.
-        perturbations: Optional differential J2, Moon, or Sun configuration.
-        initial_epoch: UTC or SPICE ET at time zero. Required for Sun or Moon.
+        perturbations: Optional differential gravity, drag, and SRP configuration.
+        initial_epoch: UTC or SPICE ET at time zero. Required for Sun, Moon,
+            or SRP.
         max_step_s: Maximum internal RK4 step for numerical propagation.
         ephemeris_step_s: Sun/Moon interpolation spacing.
         bsp_path: SPICE BSP containing Earth-centered Sun/Moon states.
+        chief_spacecraft: Optional chief mass and cannonball properties.
+        deputy_spacecraft: Deputy mass and cannonball properties, required for
+            drag or SRP.
 
     Returns:
         An ``(N, 7)`` RIC state-and-time history ready for plotting.
@@ -667,6 +681,8 @@ def propagate_relative_elements_to_ric(
             max_step_s=max_step_s,
             ephemeris_step_s=ephemeris_step_s,
             bsp_path=bsp_path,
+            chief_spacecraft=chief_spacecraft,
+            deputy_spacecraft=deputy_spacecraft,
         )
         return numerical.relative_trajectory_ric
 
@@ -714,6 +730,8 @@ def _propagate_relative_elements_numerical(
     max_step_s: float,
     ephemeris_step_s: float,
     bsp_path: str | Path,
+    chief_spacecraft: Spacecraft | None,
+    deputy_spacecraft: Spacecraft | None,
 ):
     """Convert element initial conditions and run coupled propagation."""
     from .propagation import propagate_relative_numerical
@@ -754,6 +772,8 @@ def _propagate_relative_elements_numerical(
         max_step_s=max_step_s,
         ephemeris_step_s=ephemeris_step_s,
         bsp_path=bsp_path,
+        chief_spacecraft=chief_spacecraft,
+        deputy_spacecraft=deputy_spacecraft,
     )
 
 
