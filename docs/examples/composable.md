@@ -10,7 +10,7 @@ solver order and the solve/report statements stay visible at the bottom. Tests
 exercise these scripts as scenarios, while numerical regression fixtures live
 under `tests/` so test import mechanics do not shape the user examples.
 
-The files are grouped into two folders:
+The files are grouped into three folders:
 
 | Folder | Focus |
 | --- | --- |
@@ -33,6 +33,8 @@ The files are grouped into two folders:
 | `link=links.continuous()` | Enforces continuous position, velocity, and time at the boundary. |
 | `link=links.impulsive()` | Enforces continuous position and time while allowing velocity to jump. |
 | `constraints.state(..., where="Front" or "Back")` | Fixes boundary state information. |
+| `constraints.state_component(...)` | Targets one Cartesian component directly in the phase frame. |
+| `constraints.periodic_state(...)` | Equates selected Cartesian components at the front and back of one phase. |
 | `constraints.min_radius(..., where="Path")` | Keeps the trajectory above a radius floor along the phase. |
 | `variables.ImpulsiveDeltaV(...)` | Exposes a boundary velocity jump as a decision variable and maneuver. |
 | `objectives.minimize_total_delta_v()` | Minimizes the sum of declared impulsive delta-v terms. |
@@ -611,3 +613,83 @@ Expected outputs:
 
 - `traj_cannonball_drag_srp.html`
 - `diagnostics_cannonball_drag_srp.html`
+
+## Earth-Centered 20: Inertial Cannonball Drag And SRP
+
+Path: `examples/composable/earth_centered/20_cannonball_drag_srp.py`
+
+This example propagates a nominal two-body quarter orbit, then uses that
+endpoint as an ASSET recapture target under Earth J2, a co-rotating
+exponential atmosphere, and BSP-driven solar radiation pressure. The
+spacecraft's `Cannonball` declaration keeps drag and optical properties with
+the vehicle, while front/back impulses expose the force-model correction.
+
+Expected outputs:
+
+- `traj_inertial_cannonball_drag_srp.html`
+- `diagnostics_inertial_cannonball_drag_srp.html`
+
+## Relative 24: Classical Relative-Element Targeting
+
+Path: `examples/composable/relative/24_classical_relative_elements.py`
+
+This is example 17's classical-difference counterpart. The optimizer
+propagates `[Δa, Δe, Δi, ΔΩ, Δω, ΔM]` as its native layout, fixes all six
+initial relative elements, leaves time free, and directly targets terminal
+relative mean anomaly without converting the constraint to an absolute state.
+
+Expected outputs:
+
+- `traj_classical_relative_elements.html`
+- `diagnostics_classical_relative_elements.html`
+
+## Cislunar 24: Canonical L1 Periodic Orbit
+
+Path: `examples/composable/cislunar/24_canonical_periodic_orbit.py`
+
+This example starts from a conventional nondimensional L1 planar Lyapunov
+seed. It converts the seed to SI at the composable solver boundary, applies a
+direct ASSET front/back Cartesian equality with
+`constraints.periodic_state()`, and uses native synodic component constraints
+to select the orbit family member and symmetry-plane crossing. The solution
+is converted back to canonical units for period, closure, and Jacobi
+diagnostics.
+
+Expected outputs:
+
+- `traj_canonical_L1_periodic_orbit.html`
+- `diagnostics_canonical_L1_periodic_orbit.html`
+
+## Cislunar 25: Transfer Between Periodic Orbits
+
+Path: `examples/composable/cislunar/25_periodic_orbit_transfer.py`
+
+The mission is an explicit three-phase L1 coast, free-time transfer, and L2
+coast. Impulsive links create the departure and insertion maneuvers, and the
+CR3BP plot overlays full L1/L2 reference orbits while coloring the optimized
+phase segments.
+
+Expected outputs:
+
+- `traj_L1_to_L2_periodic_orbits.html`
+- `diagnostics_L1_to_L2_periodic_orbits.html`
+
+## Cislunar 26: Perturbed Inertial Recapture
+
+Path: `examples/composable/cislunar/26_high_fidelity_recapture.py`
+
+This example samples the BSP Moon at the mission epoch, aligns the circular
+synodic frame, converts nominal CR3BP endpoints to Earth-centered inertial
+states, and solves a second mission under Earth J2, ephemeris Moon/Sun
+gravity, and cannonball SRP. The correction is reported as model mismatch; the
+example does not claim that the ephemeris trajectory is mathematically
+periodic.
+
+Expected outputs:
+
+- `traj_high_fidelity_cislunar_recapture.html`
+- `diagnostics_high_fidelity_cislunar_recapture.html`
+
+For the canonical/SI boundary, periodicity formulation, transfer topology,
+and current model limits, read
+[Designing In The Cislunar Regime](cislunar.md).

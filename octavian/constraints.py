@@ -19,6 +19,30 @@ from .specs import BoundaryState
 Where = Literal["Front", "Back", "Path"]
 RelativeElementRepresentation = Literal["damico", "classical_elements"]
 
+_CARTESIAN_COMPONENT_ALIASES = {
+    "x": "x",
+    "rx": "x",
+    "r_x": "x",
+    "y": "y",
+    "ry": "y",
+    "r_y": "y",
+    "z": "z",
+    "rz": "z",
+    "r_z": "z",
+    "vx": "vx",
+    "v_x": "vx",
+    "xdot": "vx",
+    "x_dot": "vx",
+    "vy": "vy",
+    "v_y": "vy",
+    "ydot": "vy",
+    "y_dot": "vy",
+    "vz": "vz",
+    "v_z": "vz",
+    "zdot": "vz",
+    "z_dot": "vz",
+}
+
 
 def _normalize_where(where: str) -> Where:
     """Normalize user spelling variants for constraint locations."""
@@ -48,6 +72,15 @@ def _optional_nonnegative_float(name: str, value: float | None) -> float | None:
     if scalar < 0.0:
         raise ValueError(f"{name} must be >= 0.")
     return scalar
+
+
+def _normalize_cartesian_component(component: str) -> str:
+    """Return a canonical Cartesian position or velocity component name."""
+    normalized = str(component).strip().lower().replace("-", "_").replace(" ", "_")
+    try:
+        return _CARTESIAN_COMPONENT_ALIASES[normalized]
+    except KeyError as exc:
+        raise ValueError("component must be one of x, y, z, vx, vy, or vz") from exc
 
 
 class Constraint(ABC):
@@ -400,6 +433,85 @@ class Position(Constraint):
 
 
 @dataclass(frozen=True, slots=True)
+class StateComponent(Constraint):
+    """Constrain one Cartesian state component in the phase's native frame.
+
+    Position components are ``x``, ``y``, and ``z``; velocity components are
+    ``vx``, ``vy``, and ``vz``. Position targets and tolerances use meters,
+    while velocity targets and tolerances use meters per second. The
+    constraint is applied directly to the phase state without changing frames.
+    """
+
+    kind: ClassVar[str] = "state_component"
+    family: ClassVar[str] = "boundary_state"
+
+    component: str = "x"
+    target: float = 0.0
+    where: Where = "Front"
+    tolerance: float | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "component",
+            _normalize_cartesian_component(self.component),
+        )
+        object.__setattr__(self, "target", _finite_float("target", self.target))
+        object.__setattr__(self, "where", _normalize_where(self.where))
+        object.__setattr__(
+            self,
+            "tolerance",
+            _optional_nonnegative_float("tolerance", self.tolerance),
+        )
+
+    @property
+    def value(self) -> dict[str, float | str | None]:
+        """Return the normalized component target payload."""
+        return {
+            "component": self.component,
+            "target": self.target,
+            "tolerance": self.tolerance,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class PeriodicState(Constraint):
+    """Require selected Cartesian components to match at both phase ends.
+
+    The equality is imposed directly between the phase's front and back state
+    in its declared frame. Time is intentionally excluded: periodicity closes
+    the physical state while allowing a positive orbit period. At least one
+    independent front-boundary phase condition is normally needed to remove
+    the arbitrary time shift of an autonomous periodic orbit.
+
+    Args:
+        components: Cartesian components to close. The default closes the full
+            position and velocity state.
+    """
+
+    kind: ClassVar[str] = "periodic_state"
+    family: ClassVar[str] = "boundary_state"
+    where: ClassVar[str] = "FrontAndBack"
+
+    components: tuple[str, ...] = ("x", "y", "z", "vx", "vy", "vz")
+
+    def __post_init__(self) -> None:
+        normalized = tuple(
+            _normalize_cartesian_component(component) for component in self.components
+        )
+        if not normalized:
+            raise ValueError("PeriodicState.components must not be empty")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("PeriodicState.components must be unique")
+        object.__setattr__(self, "components", normalized)
+
+    @property
+    def value(self) -> dict[str, tuple[str, ...]]:
+        """Return the components equated between the phase boundaries."""
+        return {"components": self.components}
+
+
+@dataclass(frozen=True, slots=True)
 class RelativeStateComponent(Constraint):
     """Constrain one native RIC position or velocity component.
 
@@ -629,6 +741,56 @@ def state(x: BoundaryState, where: str = "Front", groups: Sequence[str] = ("R", 
 def position(r_m: Sequence[float], where: str = "Front") -> Position:
     """Create a boundary position constraint."""
     return Position(r_m=r_m, where=where)
+
+
+def state_component(
+    component: str,
+    target: float,
+    *,
+    where: str = "Front",
+    tolerance: float | None = None,
+) -> StateComponent:
+    """Create a native-frame Cartesian component constraint.
+
+    Args:
+        component: Position component ``x``, ``y``, or ``z``; or velocity
+            component ``vx``, ``vy``, or ``vz``. Common spellings such as
+            ``xdot`` are normalized.
+        target: Component target in meters or meters per second.
+        where: ``"Front"``, ``"Back"``, or ``"Path"``.
+        tolerance: Optional symmetric non-negative tolerance in the
+            component's units. Omitting it creates an equality.
+
+    Returns:
+        A declarative constraint applied without a coordinate conversion.
+    """
+    return StateComponent(
+        component=component,
+        target=target,
+        where=where,
+        tolerance=tolerance,
+    )
+
+
+def periodic_state(
+    components: Sequence[str] = ("x", "y", "z", "vx", "vy", "vz"),
+) -> PeriodicState:
+    """Create a direct front-to-back Cartesian periodicity constraint.
+
+    Args:
+        components: Cartesian components to equate between the phase
+            boundaries. The default closes all six position/velocity
+            components while leaving time unconstrained.
+
+    Returns:
+        A periodic-state declaration for the composable ASSET compiler.
+
+    Notes:
+        Autonomous periodic-orbit problems normally need an additional phase
+        condition, such as a fixed front position component, to remove the
+        arbitrary time shift around the orbit.
+    """
+    return PeriodicState(components=tuple(components))
 
 
 def ric_state(

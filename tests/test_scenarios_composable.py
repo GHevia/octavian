@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from octavian.cislunar import CR3BPSystem
 from octavian.solution import Solution
 from octavian.solvers.preconfigured import RendezvousResult
 from octavian.types import Maneuver
@@ -101,11 +102,16 @@ def _fake_solution() -> Solution:
         ("examples/composable/relative/17_damico_free_time_target.py", 1),
         ("examples/composable/earth_centered/18_low_thrust_orbit_raise.py", 1),
         ("examples/composable/earth_centered/19_thrust_frames_and_attitude.py", 1),
+        ("examples/composable/earth_centered/20_cannonball_drag_srp.py", 1),
         ("examples/composable/relative/18_safety_ellipse_transfer.py", 1),
         ("examples/composable/relative/19_relative_finite_burn_coast.py", 1),
         ("examples/composable/relative/20_relative_three_burn_transfer.py", 1),
         ("examples/composable/relative/21_perturbed_relative_element_propagation.py", 0),
         ("examples/composable/cislunar/22_earth_moon_cr3bp.py", 1),
+        ("examples/composable/relative/24_classical_relative_elements.py", 1),
+        ("examples/composable/cislunar/24_canonical_periodic_orbit.py", 1),
+        ("examples/composable/cislunar/25_periodic_orbit_transfer.py", 1),
+        ("examples/composable/cislunar/26_high_fidelity_recapture.py", 1),
     ],
 )
 def test_composable_examples_run_as_scenarios(
@@ -152,6 +158,11 @@ def test_composable_examples_run_as_scenarios(
     )
     monkeypatch.setattr(
         "octavian.viz.plotly.save_cr3bp_trajectory_html",
+        fake_plot,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "octavian.viz.save_cr3bp_trajectory_html",
         fake_plot,
         raising=True,
     )
@@ -247,6 +258,18 @@ def test_composable_examples_run_as_scenarios(
         assert control.frame == "ric"
         assert control.max_slew_rate_radps == pytest.approx(np.deg2rad(0.5))
         assert plotted == ["traj_composable_thrust_frames_and_attitude.html"]
+    elif script_rel.endswith("20_cannonball_drag_srp.py") and "earth_centered" in script_rel:
+        mission = missions[0]
+        phase = mission.phases[0]
+        perturbations = phase.dynamics.active_perturbations()
+        assert perturbations.j2 is True
+        assert perturbations.drag is True
+        assert perturbations.srp is True
+        assert phase.spacecraft.cannonball is not None
+        assert plotted == [
+            "traj_inertial_cannonball_drag_srp.html",
+            "diagnostics_inertial_cannonball_drag_srp.html",
+        ]
     elif script_rel.endswith("18_safety_ellipse_transfer.py"):
         mission = missions[0]
         initial_coast, transfer = mission.phases
@@ -333,6 +356,55 @@ def test_composable_examples_run_as_scenarios(
         assert model.secondary.name == "moon"
         assert mission.phases[0].dynamics.frame.kind == "rotating"
         assert plotted == ["traj_composable_earth_moon_cr3bp.html"]
+    elif script_rel.endswith("24_classical_relative_elements.py"):
+        phase = missions[0].phases[0]
+        assert phase.dynamics.model.propagation_mode.value == "classical_elements"
+        assert [constraint.kind for constraint in phase.constraints] == [
+            "relative_orbital_elements",
+            "relative_orbital_element",
+        ]
+        assert plotted == [
+            "traj_classical_relative_elements.html",
+            "diagnostics_classical_relative_elements.html",
+        ]
+    elif script_rel.endswith("24_canonical_periodic_orbit.py"):
+        phase = missions[0].phases[0]
+        assert phase.dynamics.model == CR3BPSystem.earth_moon()
+        assert [constraint.kind for constraint in phase.constraints] == [
+            "periodic_state",
+            "state_component",
+            "state_component",
+        ]
+        assert plotted == [
+            "traj_canonical_L1_periodic_orbit.html",
+            "diagnostics_canonical_L1_periodic_orbit.html",
+        ]
+    elif script_rel.endswith("25_periodic_orbit_transfer.py"):
+        mission = missions[0]
+        assert [phase.name for phase in mission.phases] == [
+            "coast_on_L1_orbit",
+            "L1_to_L2_transfer",
+            "coast_on_L2_orbit",
+        ]
+        assert [phase.link.kind if phase.link else None for phase in mission.phases] == [
+            None,
+            "impulsive",
+            "impulsive",
+        ]
+        assert plotted == [
+            "traj_L1_to_L2_periodic_orbits.html",
+            "diagnostics_L1_to_L2_periodic_orbits.html",
+        ]
+    elif script_rel.endswith("26_high_fidelity_recapture.py"):
+        mission = missions[0]
+        perturbations = mission.phases[0].dynamics.active_perturbations()
+        assert perturbations.j2 is True
+        assert perturbations.active_third_bodies() == ("moon", "sun")
+        assert perturbations.srp is True
+        assert plotted == [
+            "traj_high_fidelity_cislunar_recapture.html",
+            "diagnostics_high_fidelity_cislunar_recapture.html",
+        ]
     elif script_rel.endswith("15_perturbed_relative_solar.py"):
         mission = missions[0]
         phase = mission.phases[0]

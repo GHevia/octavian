@@ -16,7 +16,15 @@ import numpy as np
 from .._asset import vf
 from ..astro.kepler import cartesian_to_classic
 from ..astro.types import as_vec3
-from ..constraints import Constraint, OrbitalElementConstraint, Position, State
+from ..constraints import (
+    Constraint,
+    OrbitalElementConstraint,
+    PeriodicState,
+    Position,
+    State,
+    StateComponent,
+)
+from ..coordinates import StateLayout
 from ..links import impulsive as impulsive_link
 from ..phase import Phase
 from ..variables import ImpulsiveDeltaV
@@ -91,6 +99,76 @@ def position_boundary_value(constraint: Constraint | None) -> np.ndarray | None:
     if constraint is None:
         return None
     return np.asarray(constraint.value, dtype=float).reshape(3)
+
+
+def _cartesian_component_index(layout: StateLayout, component: str) -> int:
+    """Return one direct Cartesian component index for a state layout."""
+    try:
+        position_indices = layout.state_indices("position")
+        velocity_indices = layout.state_indices("velocity")
+    except KeyError as exc:
+        raise ValueError(
+            f"State layout {layout.name!r} does not expose a direct Cartesian "
+            "position/velocity state"
+        ) from exc
+    component_indices = {
+        "x": position_indices[0],
+        "y": position_indices[1],
+        "z": position_indices[2],
+        "vx": velocity_indices[0],
+        "vy": velocity_indices[1],
+        "vz": velocity_indices[2],
+    }
+    return component_indices[component]
+
+
+def apply_state_component_constraint(
+    asset_phase: Any,
+    constraint: StateComponent,
+    layout: StateLayout,
+) -> None:
+    """Apply one native Cartesian component boundary or path constraint."""
+    index = _cartesian_component_index(layout, constraint.component)
+    target = float(constraint.target)
+    if constraint.tolerance is None:
+        if constraint.where == "Path":
+            argument = vf.Arguments(1)
+            asset_phase.addEqualCon(
+                "Path",
+                argument - target,
+                [index],
+            )
+            return
+        asset_phase.addBoundaryValue(
+            constraint.where,
+            [index],
+            np.asarray([target], dtype=float),
+        )
+        return
+    tolerance = float(constraint.tolerance)
+    asset_phase.addLUVarBound(
+        constraint.where,
+        index,
+        target - tolerance,
+        target + tolerance,
+    )
+
+
+def apply_periodic_state_constraint(
+    asset_phase: Any,
+    constraint: PeriodicState,
+    layout: StateLayout,
+) -> None:
+    """Equate selected Cartesian components at a phase's front and back."""
+    indices = [_cartesian_component_index(layout, component) for component in constraint.components]
+    arguments = vf.Arguments(2 * len(indices))
+    front = arguments.head(len(indices))
+    back = arguments.tail(len(indices))
+    asset_phase.addEqualCon(
+        "FrontandBack",
+        front - back,
+        indices,
+    )
 
 
 def make_terminal_shell(last_phase: Phase) -> tuple[Phase, Phase] | None:

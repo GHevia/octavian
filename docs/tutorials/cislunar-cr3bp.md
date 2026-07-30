@@ -1,6 +1,6 @@
 # Cislunar CR3BP
 
-Octavian's first cislunar model is the circular restricted three-body problem
+Octavian's foundational cislunar model is the circular restricted three-body problem
 (CR3BP). It represents two massive bodies on circular orbits about their
 barycenter and a massless spacecraft moving under their gravity.
 
@@ -148,13 +148,56 @@ solver scaling while keeping public inputs and results in SI. Multiple CR3BP
 coast phases can be linked when they use the same system. Impulsive links work
 through the ordinary composable phase machinery.
 
-This first increment supports ballistic phases. Finite thrust, ephemeris
-primaries, and transitions between inertial and synodic phases require
-additional models and are intentionally rejected rather than silently
-approximated.
+CR3BP phases currently support ballistic dynamics and impulsive links. Finite
+thrust and ephemeris primaries require a different dynamics model and are
+intentionally rejected rather than silently approximated.
 
 Osculating two-body orbital-element constraints are not meaningful in this
 rotating three-body frame. Target Cartesian synodic states directly.
+
+## Solve A Periodic Orbit
+
+Periodic-orbit correction uses the same composable constraint vocabulary:
+
+```python
+arc = Phase(
+    name="L1_planar_Lyapunov",
+    mode="coast",
+    spacecraft=probe,
+    dynamics=Dynamics.cr3bp(),
+    initial_state=initial_seed_si,
+    final_state=terminal_seed_si,
+    tof_bounds_s=(period_min_s, period_max_s),
+    constraints=[
+        constraints.periodic_state(),
+        constraints.state_component("x", x0_m, where="Front"),
+        constraints.state_component("y", 0.0, where="Front"),
+    ],
+)
+```
+
+`periodic_state()` creates a direct ASSET front/back equality in the synodic
+frame. Time is excluded, so the optimizer remains free to select the period.
+The component constraints choose one orbit-family member and a symmetry-plane
+crossing. The `initial_state` and `final_state` values seed solver scaling and
+the collocation mesh; they are not substitutes for the periodic constraint.
+
+Canonical seeds from CR3BP references remain convenient at the user boundary:
+dimensionalize them before declaring the phase, then nondimensionalize the
+solved rows for family comparisons and canonical plotting.
+
+## Transfer And Increase Fidelity
+
+Compatible CR3BP coasts can be joined with ordinary continuous or impulsive
+links. This supports a direct sequence such as an L1 orbit coast, impulsive
+departure, free-time transfer, L2 insertion, and L2 orbit coast.
+
+To assess a design under J2, ephemeris Sun/Moon gravity, drag, or SRP, first
+convert selected synodic states to an inertial frame and solve a separate
+inertial mission with `Dynamics.for_body(...)`. Aligning the circular
+synodic geometry with the BSP Moon at the handoff epoch keeps the initial
+geometry consistent. The resulting arc is not a CR3BP periodic orbit; it is a
+perturbed-model retargeting problem with explicit boundary corrections.
 
 ## Plot The Synodic Geometry
 
@@ -168,6 +211,19 @@ save_cr3bp_trajectory_html(
 )
 ```
 
-The plot includes both primaries and all five Lagrange points. See
-`examples/composable/cislunar/22_earth_moon_cr3bp.py` for an executable
-propagate–target–solve–convert workflow.
+The plot includes both primaries and all five Lagrange points. It can also
+overlay reference periodic orbits, color phase segments, and mark maneuvers.
+
+Run the executable progression:
+
+- `examples/composable/cislunar/22_earth_moon_cr3bp.py` — dimensional
+  propagate–target–solve–convert workflow;
+- `examples/composable/cislunar/24_canonical_periodic_orbit.py` — canonical
+  L1 periodic-orbit correction;
+- `examples/composable/cislunar/25_periodic_orbit_transfer.py` — L1-to-L2
+  coast/impulse/transfer/impulse/coast mission;
+- `examples/composable/cislunar/26_high_fidelity_recapture.py` — BSP-aligned
+  handoff to inertial J2, Sun/Moon, and SRP dynamics.
+
+The [cislunar example guide](../examples/cislunar.md) explains the design
+choices and current fidelity boundaries in detail.

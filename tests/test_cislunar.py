@@ -8,6 +8,7 @@ from octavian.cislunar import (
     CR3BPSystem,
     cr3bp_derivative,
     dimensionalize_state,
+    dimensionalize_time,
     inertial_to_synodic_state,
     jacobi_constant,
     nondimensionalize_state,
@@ -15,6 +16,7 @@ from octavian.cislunar import (
     synodic_to_inertial_state,
 )
 from octavian.solvers import SolverOptions
+from octavian.types import Maneuver
 from octavian.viz.diagnostics import cr3bp_diagnostic_panels
 from octavian.viz.plotly import cr3bp_trajectory_figure
 
@@ -115,6 +117,109 @@ def test_cr3bp_plot_contains_trajectory_primaries_and_lagrange_points() -> None:
         "Primary geometry",
         "CR3BP invariant",
     ]
+
+
+def test_cr3bp_plot_can_overlay_references_phases_and_maneuvers() -> None:
+    pytest.importorskip("plotly")
+    system = CR3BPSystem.earth_moon()
+    trajectory = np.zeros((4, 7), dtype=float)
+    trajectory[:, 0] = [0.82, 0.83, 0.84, 0.85]
+    trajectory[:, 6] = [0.0, 1.0, 2.0, 3.0]
+    reference = trajectory.copy()
+    reference[:, 1] = 0.01
+    maneuver = Maneuver(
+        r_m=trajectory[1, 0:3],
+        t_s=1.0,
+        dv_mps=[0.0, 0.01, 0.0],
+        name="departure",
+    )
+
+    figure = cr3bp_trajectory_figure(
+        trajectory,
+        system=system,
+        dimensional=False,
+        maneuvers=[maneuver],
+        phase_segments=[
+            {
+                "name": "transfer",
+                "t_start_s": 0.0,
+                "t_end_s": 3.0,
+                "color": "gold",
+            }
+        ],
+        reference_trajectories=[
+            {
+                "name": "L1 reference",
+                "traj": reference,
+                "color": "green",
+            }
+        ],
+    )
+
+    assert [trace.name for trace in figure.data] == [
+        "Trajectory",
+        "L1 reference",
+        "transfer",
+        "M1: departure",
+        "Primaries",
+        "Lagrange points",
+    ]
+
+
+def test_composable_cr3bp_periodic_state_constraint_solves() -> None:
+    system = CR3BPSystem.earth_moon()
+    canonical_initial = state(
+        [0.82, 0.0, 0.0],
+        [0.0, 0.16221305707437475, 0.0],
+    )
+    period_tu = 2.779749966597294
+    initial = dimensionalize_state(canonical_initial, system)
+    period_s = float(dimensionalize_time(period_tu, system))
+    propagated = propagate_cr3bp(
+        initial,
+        [0.0, period_s],
+        system=system,
+        max_step=300.0,
+    )
+    terminal_seed = state(propagated[-1, 0:3], propagated[-1, 3:6])
+    phase = Phase(
+        name="L1_planar_periodic",
+        mode="coast",
+        spacecraft=Spacecraft(name="probe", dry_mass_kg=1.0),
+        dynamics=Dynamics.cr3bp(),
+        initial_state=initial,
+        final_state=terminal_seed,
+        tof_bounds_s=(0.98 * period_s, 1.02 * period_s),
+        constraints=[
+            constraints.periodic_state(),
+            constraints.state_component("x", initial.r_m[0], where="Front"),
+            constraints.state_component("y", 0.0, where="Front"),
+        ],
+    )
+
+    solution = Mission(
+        phases=[phase],
+        mesh_nsegs_transfer=40,
+        solver_options=SolverOptions(
+            print_level=0,
+            max_ls_iters=3,
+            enable_adaptive_mesh=False,
+            asset_threads=(1, 1),
+        ),
+    ).solve()
+
+    assert solution.ok
+    closure_canonical = (solution.traj[-1, 0:6] - solution.traj[0, 0:6]) / np.hstack(
+        [
+            np.full(3, system.separation_m),
+            np.full(3, system.velocity_scale_mps),
+        ]
+    )
+    assert np.linalg.norm(closure_canonical) < 1.0e-7
+    assert solution.traj[-1, 6] / system.time_scale_s == pytest.approx(
+        period_tu,
+        rel=0.02,
+    )
 
 
 def test_composable_cr3bp_arc_compiles_and_solves() -> None:

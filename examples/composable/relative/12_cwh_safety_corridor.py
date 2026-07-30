@@ -34,6 +34,9 @@ approach = Phase(
     constraints=[
         constraints.state(initial_state, where="Front"),
         constraints.state(stand_off_state, where="Back"),
+        # This native RIC path target is applied directly to cross-track
+        # position; no absolute deputy state is reconstructed.
+        constraints.ric_state("C", 0.0, where="Path", tolerance=1.0),
         constraints.keep_out_sphere(radius_m=75.0),
         constraints.approach_cone(axis=[0.0, -1.0, 0.0], half_angle_deg=30.0),
         constraints.lighting_angle(

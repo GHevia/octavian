@@ -52,7 +52,7 @@ from ..astro.lambert import select_best_lambert_seed
 from ..astro.types import as_vec3
 from ..astro.units import default_scaling
 from ..cislunar import CR3BPSystem, cr3bp_hermite_guess, propagate_cr3bp
-from ..constraints import OrbitalElementConstraint
+from ..constraints import OrbitalElementConstraint, PeriodicState, StateComponent
 from ..coordinates import StateLayout
 from ..guesses import LowThrustSpiralGuess
 from ..phase import Phase
@@ -2147,7 +2147,19 @@ def solve_composable_mission(
 
         # Path constraints (e.g., min radius)
         for constraint in getattr(ph, "constraints", []) or []:
-            if relative_state_constraint_compiler.is_native_relative_constraint(constraint):
+            if isinstance(constraint, StateComponent):
+                constraint_compiler.apply_state_component_constraint(
+                    ap,
+                    constraint,
+                    b.layout,
+                )
+            elif isinstance(constraint, PeriodicState):
+                constraint_compiler.apply_periodic_state_constraint(
+                    ap,
+                    constraint,
+                    b.layout,
+                )
+            elif relative_state_constraint_compiler.is_native_relative_constraint(constraint):
                 relative_state_constraint_compiler.apply_native_relative_constraint(
                     ap,
                     constraint,

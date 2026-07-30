@@ -12,12 +12,14 @@ from octavian import EARTH, state
 from octavian.astro import classic_to_cartesian
 from octavian.relative import (
     absolute_to_classical_relative_orbital_elements,
+    absolute_to_relative_history,
     absolute_to_relative_orbital_elements,
     absolute_to_relative_state,
     classical_to_damico_relative_orbital_elements,
     damico_to_classical_relative_orbital_elements,
     relative_orbital_elements_to_relative_state,
     relative_state_to_relative_orbital_elements,
+    relative_to_absolute_history,
     relative_to_absolute_state,
 )
 
@@ -69,6 +71,26 @@ classical_to_damico = classical_to_damico_relative_orbital_elements(
     mu_m3ps2=EARTH.mu_m3ps2,
 )
 
+# History converters accept the same seven-column state-and-time convention
+# used by solver results. They vectorize the per-state transforms above.
+chief_history = np.vstack(
+    [
+        np.hstack([chief_eci.r_m, chief_eci.v_mps, 0.0]),
+        np.hstack([chief_eci.r_m, chief_eci.v_mps, 10.0]),
+    ]
+)
+deputy_history = np.vstack(
+    [
+        np.hstack([deputy_eci.r_m, deputy_eci.v_mps, 0.0]),
+        np.hstack([deputy_eci.r_m, deputy_eci.v_mps, 10.0]),
+    ]
+)
+relative_history = absolute_to_relative_history(chief_history, deputy_history)
+recovered_deputy_history = relative_to_absolute_history(
+    chief_history,
+    relative_history,
+)
+
 np.testing.assert_allclose(recovered_ric.r_m, deputy_ric.r_m, atol=1.0e-8)
 np.testing.assert_allclose(recovered_ric.v_mps, deputy_ric.v_mps, atol=1.0e-10)
 np.testing.assert_allclose(damico_to_ric.r_m, deputy_ric.r_m, atol=1.0e-6)
@@ -87,6 +109,7 @@ np.testing.assert_allclose(
     relative_elements.as_vector(),
     atol=1.0e-12,
 )
+np.testing.assert_allclose(recovered_deputy_history, deputy_history, atol=1.0e-8)
 
 print("Chief ECI state:")
 print(np.hstack([chief_eci.r_m, chief_eci.v_mps]))
