@@ -18,6 +18,7 @@ from . import (
     constraints,
     coordinates,
     events,
+    forces,
     guesses,
     links,
     objectives,
@@ -32,6 +33,13 @@ from .control import ThrustControl
 from .coordinates import CoordinateFrame, SolverScaling, StateLayout
 from .events import BoundaryEvent
 from .exports import Ephemeris
+from .forces import (
+    EARTH_EXPONENTIAL_ATMOSPHERE,
+    Cannonball,
+    ExponentialAtmosphere,
+    cannonball_drag_acceleration,
+    cannonball_srp_acceleration,
+)
 from .guesses import LowThrustSpiralGuess
 from .links import Link
 from .mission import Mission
@@ -65,6 +73,11 @@ __all__ = [
     "Thruster",
     "ThrustControl",
     "Spacecraft",
+    "Cannonball",
+    "ExponentialAtmosphere",
+    "EARTH_EXPONENTIAL_ATMOSPHERE",
+    "cannonball_drag_acceleration",
+    "cannonball_srp_acceleration",
     "Dynamics",
     "Perturbations",
     "SolveConfig",
@@ -118,6 +131,7 @@ __all__ = [
     "Objective",
     "links",
     "events",
+    "forces",
     "guesses",
     "objectives",
     "constraints",

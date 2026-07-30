@@ -7,7 +7,16 @@ from collections.abc import Sequence
 from .._asset import oc, require_asset, vf
 from .._control_dynamics import thrust_vector_and_rate
 from ..control import ThrustControl
-from ..dynamics import ThirdBodyTable, _gravity_acceleration
+from ..dynamics import (
+    ThirdBodyTable,
+    _gravity_acceleration,
+    _translational_acceleration,
+)
+from ..forces import (
+    SOLAR_PRESSURE_AT_1_AU_NPM2,
+    Cannonball,
+    ExponentialAtmosphere,
+)
 
 
 class ClohessyWiltshireODE(oc.ODEBase if oc is not None else object):
@@ -63,6 +72,15 @@ class CoupledRelativeODE(oc.ODEBase if oc is not None else object):
         central_body_radius_m: float = 6_378_136.3,
         j2_coefficient: float = 1.08262668e-3,
         third_body_tables: Sequence[ThirdBodyTable] = (),
+        chief_mass_kg: float = 1.0,
+        chief_cannonball: Cannonball | None = None,
+        deputy_mass_kg: float = 1.0,
+        deputy_cannonball: Cannonball | None = None,
+        drag: bool = False,
+        srp: bool = False,
+        atmosphere: ExponentialAtmosphere | None = None,
+        sun_table: ThirdBodyTable | None = None,
+        solar_pressure_at_1au_Npm2: float = SOLAR_PRESSURE_AT_1_AU_NPM2,
     ) -> None:
         require_asset("nonlinear relative dynamics")
         arguments = oc.ODEArguments(12, 0)
@@ -72,7 +90,7 @@ class CoupledRelativeODE(oc.ODEBase if oc is not None else object):
         deputy_position = state.segment(6, 3)
         deputy_velocity = state.segment(9, 3)
         time = arguments.TVar()
-        force_options = {
+        gravity_options = {
             "mu_m3ps2": float(mu_m3ps2),
             "include_j2": bool(j2),
             "central_body_radius_m": float(central_body_radius_m),
@@ -80,13 +98,27 @@ class CoupledRelativeODE(oc.ODEBase if oc is not None else object):
             "time_var": time,
             "third_body_tables": tuple(third_body_tables),
         }
-        chief_acceleration = _gravity_acceleration(
+        environment_options = {
+            **gravity_options,
+            "include_drag": bool(drag),
+            "include_srp": bool(srp),
+            "atmosphere": atmosphere,
+            "sun_table": sun_table,
+            "solar_pressure_at_1au_Npm2": float(solar_pressure_at_1au_Npm2),
+        }
+        chief_acceleration = _translational_acceleration(
             chief_position,
-            **force_options,
+            chief_velocity,
+            float(chief_mass_kg),
+            cannonball=chief_cannonball,
+            **environment_options,
         )
-        deputy_acceleration = _gravity_acceleration(
+        deputy_acceleration = _translational_acceleration(
             deputy_position,
-            **force_options,
+            deputy_velocity,
+            float(deputy_mass_kg),
+            cannonball=deputy_cannonball,
+            **environment_options,
         )
         ode = vf.stack(
             [
@@ -125,6 +157,14 @@ class CoupledRelativeMassCoastODE(oc.ODEBase if oc is not None else object):
         j2_coefficient: float = 1.08262668e-3,
         third_body_tables: Sequence[ThirdBodyTable] = (),
         thrust_control: ThrustControl | None = None,
+        chief_mass_kg: float = 1.0,
+        chief_cannonball: Cannonball | None = None,
+        deputy_cannonball: Cannonball | None = None,
+        drag: bool = False,
+        srp: bool = False,
+        atmosphere: ExponentialAtmosphere | None = None,
+        sun_table: ThirdBodyTable | None = None,
+        solar_pressure_at_1au_Npm2: float = SOLAR_PRESSURE_AT_1_AU_NPM2,
     ) -> None:
         """Build a mass-carrying coupled relative coast ODE."""
         require_asset("mass-carrying coupled relative dynamics")
@@ -147,7 +187,7 @@ class CoupledRelativeMassCoastODE(oc.ODEBase if oc is not None else object):
             else None
         )
         time = arguments.TVar()
-        force_options = {
+        gravity_options = {
             "mu_m3ps2": float(mu_m3ps2),
             "include_j2": bool(j2),
             "central_body_radius_m": float(central_body_radius_m),
@@ -155,11 +195,31 @@ class CoupledRelativeMassCoastODE(oc.ODEBase if oc is not None else object):
             "time_var": time,
             "third_body_tables": tuple(third_body_tables),
         }
+        environment_options = {
+            **gravity_options,
+            "include_drag": bool(drag),
+            "include_srp": bool(srp),
+            "atmosphere": atmosphere,
+            "sun_table": sun_table,
+            "solar_pressure_at_1au_Npm2": float(solar_pressure_at_1au_Npm2),
+        }
         ode_terms = [
             chief_velocity,
-            _gravity_acceleration(chief_position, **force_options),
+            _translational_acceleration(
+                chief_position,
+                chief_velocity,
+                float(chief_mass_kg),
+                cannonball=chief_cannonball,
+                **environment_options,
+            ),
             deputy_velocity,
-            _gravity_acceleration(deputy_position, **force_options),
+            _translational_acceleration(
+                deputy_position,
+                deputy_velocity,
+                mass,
+                cannonball=deputy_cannonball,
+                **environment_options,
+            ),
             0.0 * mass,
         ]
         if attitude_rate is not None:
@@ -205,6 +265,14 @@ class FiniteThrustRelativeODE(oc.ODEBase if oc is not None else object):
         third_body_tables: Sequence[ThirdBodyTable] = (),
         g0_mps2: float = 9.80665,
         thrust_control: ThrustControl | None = None,
+        chief_mass_kg: float = 1.0,
+        chief_cannonball: Cannonball | None = None,
+        deputy_cannonball: Cannonball | None = None,
+        drag: bool = False,
+        srp: bool = False,
+        atmosphere: ExponentialAtmosphere | None = None,
+        sun_table: ThirdBodyTable | None = None,
+        solar_pressure_at_1au_Npm2: float = SOLAR_PRESSURE_AT_1_AU_NPM2,
     ) -> None:
         """Build exact coupled relative finite-thrust dynamics."""
         require_asset("finite-thrust coupled relative dynamics")
@@ -224,9 +292,7 @@ class FiniteThrustRelativeODE(oc.ODEBase if oc is not None else object):
         control_dim = (
             4
             if control_config.representation == "euler"
-            else 1
-            if control_config.representation == "fixed"
-            else 3
+            else 1 if control_config.representation == "fixed" else 3
         )
         arguments = oc.ODEArguments(state_dim, control_dim)
         state = arguments.XVec()
@@ -238,7 +304,7 @@ class FiniteThrustRelativeODE(oc.ODEBase if oc is not None else object):
         mass = state[12]
         attitude = state.segment(13, 3) if carries_attitude else None
         time = arguments.TVar()
-        force_options = {
+        gravity_options = {
             "mu_m3ps2": float(mu_m3ps2),
             "include_j2": bool(j2),
             "central_body_radius_m": float(central_body_radius_m),
@@ -246,8 +312,28 @@ class FiniteThrustRelativeODE(oc.ODEBase if oc is not None else object):
             "time_var": time,
             "third_body_tables": tuple(third_body_tables),
         }
-        chief_acceleration = _gravity_acceleration(chief_position, **force_options)
-        deputy_acceleration = _gravity_acceleration(deputy_position, **force_options)
+        environment_options = {
+            **gravity_options,
+            "include_drag": bool(drag),
+            "include_srp": bool(srp),
+            "atmosphere": atmosphere,
+            "sun_table": sun_table,
+            "solar_pressure_at_1au_Npm2": float(solar_pressure_at_1au_Npm2),
+        }
+        chief_acceleration = _translational_acceleration(
+            chief_position,
+            chief_velocity,
+            float(chief_mass_kg),
+            cannonball=chief_cannonball,
+            **environment_options,
+        )
+        deputy_acceleration = _translational_acceleration(
+            deputy_position,
+            deputy_velocity,
+            mass,
+            cannonball=deputy_cannonball,
+            **environment_options,
+        )
         thrust_vector, throttle, attitude_rate = thrust_vector_and_rate(
             control_config,
             controls=control,

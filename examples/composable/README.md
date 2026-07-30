@@ -15,3 +15,6 @@ The numeric prefixes preserve the tutorial build-up order documented in
 
 Earth-centered example 19 introduces frame-aware finite-thrust controls and
 bounded Euler-angle kinematics.
+
+Relative example 23 introduces spacecraft-specific cannonball properties,
+exponential drag, and BSP-driven solar radiation pressure.

@@ -9,6 +9,7 @@ import numpy as np
 
 from ..bodies import EARTH, CelestialBody
 from ..coordinates import CoordinateFrame, SolverScaling, ric
+from ..spacecraft import Spacecraft
 from ..specs import BoundaryState
 
 
@@ -71,6 +72,8 @@ class NonlinearRelative:
         chief_initial_state_eci: Absolute chief state defining the RIC frame.
         central_body: Body whose gravity defines the reference orbit.
         chief_name: Human-readable name used by the returned RIC frame.
+        chief_spacecraft: Optional chief mass and cannonball properties. When
+            omitted, drag and SRP act only on the deputy.
         reference_length_m: Characteristic separation used for solver scaling.
         propagation_mode: Native state representation and relative equations.
     """
@@ -80,6 +83,7 @@ class NonlinearRelative:
     chief_name: str = "chief"
     reference_length_m: float = 1_000.0
     propagation_mode: RelativePropagationMode | str = RelativePropagationMode.COUPLED_ECI
+    chief_spacecraft: Spacecraft | None = None
 
     def __post_init__(self) -> None:
         radius_m = float(np.linalg.norm(self.chief_initial_state_eci.r_m))

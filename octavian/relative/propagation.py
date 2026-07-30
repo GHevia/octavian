@@ -24,6 +24,13 @@ from ..data.ephemeris import (
     sample_sun_moon_positions_eci_tod,
 )
 from ..dynamics import j2_acceleration_components, third_body_acceleration_components
+from ..forces import (
+    EARTH_EXPONENTIAL_ATMOSPHERE,
+    ExponentialAtmosphere,
+    cannonball_drag_acceleration,
+    cannonball_srp_acceleration,
+)
+from ..spacecraft import Spacecraft
 from ..specs import BoundaryState
 from .transforms import (
     inertial_to_relative_state,
@@ -96,14 +103,16 @@ def propagate_relative_numerical(
     max_step_s: float = 10.0,
     ephemeris_step_s: float = 600.0,
     bsp_path: str | Path = DEFAULT_EPHEMERIS_BSP,
+    chief_spacecraft: Spacecraft | None = None,
+    deputy_spacecraft: Spacecraft | None = None,
 ) -> RelativePropagationResult:
     """Propagate chief and deputy together and report their RIC separation.
 
     The integrator is fixed-step fourth-order Runge-Kutta with exact output at
     each requested time.  Both spacecraft receive central gravity plus the
-    requested J2, lunar, and solar accelerations.  This coupled absolute-state
-    formulation is deliberately simple and physically consistent for a first
-    perturbed relative-motion capability.
+    requested gravitational and cannonball accelerations.  This coupled
+    absolute-state formulation keeps differential drag and SRP physical
+    without inserting approximations into rotating-frame equations.
 
     Args:
         chief_initial_eci: Chief absolute Cartesian state at elapsed time zero.
@@ -118,13 +127,16 @@ def propagate_relative_numerical(
             the deputy under a perturbed force model. Exactly one deputy
             initial-state representation must be supplied.
         central_body: Central-body constants used by gravity and J2.
-        perturbations: An :class:`octavian.Perturbations` configuration.  J2,
-            Moon, and Sun are supported; drag and SRP raise explicitly.
+        perturbations: An :class:`octavian.Perturbations` configuration.
         initial_epoch: UTC or SPICE ET corresponding to time zero.  Required
-            when lunar or solar gravity is enabled.
+            when lunar/solar gravity or SRP is enabled.
         max_step_s: Maximum internal RK4 step in seconds.
         ephemeris_step_s: Sun/Moon interpolation sample spacing in seconds.
         bsp_path: SPICE BSP containing Earth-centered Sun/Moon states.
+        chief_spacecraft: Optional chief mass and cannonball properties. When
+            omitted, non-gravitational forces act only on the deputy.
+        deputy_spacecraft: Deputy mass and cannonball properties. Required
+            when drag or SRP is enabled.
 
     Returns:
         Absolute chief/deputy histories and the equivalent RIC history.
@@ -151,14 +163,35 @@ def propagate_relative_numerical(
     if not np.isfinite(ephemeris_step) or ephemeris_step <= 0.0:
         raise ValueError("ephemeris_step_s must be finite and positive")
     if (relative_initial_ric is None) == (deputy_initial_eci is None):
-        raise ValueError(
-            "Supply exactly one of relative_initial_ric or deputy_initial_eci"
-        )
+        raise ValueError("Supply exactly one of relative_initial_ric or deputy_initial_eci")
 
     flags = _normalize_perturbations(perturbations)
-    requested_bodies = flags["third_bodies"]
+    if flags["srp"] and central_body.name.strip().lower() != "earth":
+        raise ValueError(
+            "The bundled Sun BSP is Earth-centered, so SRP propagation "
+            "currently requires an Earth central body."
+        )
+    _validate_cannonball_spacecraft(
+        deputy_spacecraft,
+        flags=flags,
+        role="deputy",
+        required=bool(flags["drag"] or flags["srp"]),
+    )
+    _validate_cannonball_spacecraft(
+        chief_spacecraft,
+        flags=flags,
+        role="chief",
+        required=False,
+    )
+    atmosphere = _resolved_atmosphere(
+        flags=flags,
+        central_body=central_body,
+    )
+    requested_bodies = list(flags["third_bodies"])
+    if flags["srp"] and "sun" not in requested_bodies:
+        requested_bodies.append("sun")
     body_positions = _build_body_position_interpolator(
-        requested_bodies=requested_bodies,
+        requested_bodies=tuple(requested_bodies),
         initial_epoch=initial_epoch,
         start_time_s=float(np.min(integration_times)),
         end_time_s=float(np.max(integration_times)),
@@ -168,9 +201,12 @@ def propagate_relative_numerical(
 
     initial_chief_acceleration = _absolute_acceleration(
         chief_initial_eci.r_m,
+        chief_initial_eci.v_mps,
         central_body=central_body,
-        include_j2=flags["j2"],
-        third_bodies=body_positions(0.0),
+        flags=flags,
+        sampled_bodies=body_positions(0.0),
+        spacecraft=chief_spacecraft,
+        atmosphere=atmosphere,
     )
     if deputy_initial_eci is None:
         if relative_initial_ric is None:  # guarded by the exclusive-input check
@@ -200,15 +236,21 @@ def propagate_relative_numerical(
         sampled_bodies = body_positions(time_s)
         chief_acceleration = _absolute_acceleration(
             chief_position,
+            chief_velocity,
             central_body=central_body,
-            include_j2=flags["j2"],
-            third_bodies=sampled_bodies,
+            flags=flags,
+            sampled_bodies=sampled_bodies,
+            spacecraft=chief_spacecraft,
+            atmosphere=atmosphere,
         )
         deputy_acceleration = _absolute_acceleration(
             deputy_position,
+            deputy_velocity,
             central_body=central_body,
-            include_j2=flags["j2"],
-            third_bodies=sampled_bodies,
+            flags=flags,
+            sampled_bodies=sampled_bodies,
+            spacecraft=deputy_spacecraft,
+            atmosphere=atmosphere,
         )
         return np.hstack(
             [
@@ -247,9 +289,12 @@ def propagate_relative_numerical(
         )
         chief_acceleration = _absolute_acceleration(
             chief.r_m,
+            chief.v_mps,
             central_body=central_body,
-            include_j2=flags["j2"],
-            third_bodies=body_positions(float(time_s)),
+            flags=flags,
+            sampled_bodies=body_positions(float(time_s)),
+            spacecraft=chief_spacecraft,
+            atmosphere=atmosphere,
         )
         relative = inertial_to_relative_state(
             chief,
@@ -342,27 +387,18 @@ def coupled_relative_ric_derivative(
     chief_acceleration = -mu * chief.r_m / chief_radius**3
     deputy_acceleration = -mu * deputy.r_m / deputy_radius**3
     basis = ric_basis(chief.r_m, chief.v_mps)
-    gravity_difference_ric = basis @ (
-        deputy_acceleration - chief_acceleration
-    )
+    gravity_difference_ric = basis @ (deputy_acceleration - chief_acceleration)
     angular_momentum = float(np.linalg.norm(np.cross(chief.r_m, chief.v_mps)))
     frame_rate = angular_momentum / chief_radius**2
     frame_rate_derivative = (
-        -2.0
-        * frame_rate
-        * float(np.dot(chief.r_m, chief.v_mps))
-        / chief_radius**2
+        -2.0 * frame_rate * float(np.dot(chief.r_m, chief.v_mps)) / chief_radius**2
     )
     x, y, _ = relative.r_m
     xdot, ydot, _ = relative.v_mps
     rotating_terms = np.asarray(
         [
-            2.0 * frame_rate * ydot
-            + frame_rate_derivative * y
-            + frame_rate**2 * x,
-            -2.0 * frame_rate * xdot
-            - frame_rate_derivative * x
-            + frame_rate**2 * y,
+            2.0 * frame_rate * ydot + frame_rate_derivative * y + frame_rate**2 * x,
+            -2.0 * frame_rate * xdot - frame_rate_derivative * x + frame_rate**2 * y,
             0.0,
         ],
         dtype=float,
@@ -437,13 +473,14 @@ def propagate_nonlinear_relative_ric(
 
 def _normalize_perturbations(perturbations: Any | None) -> dict[str, Any]:
     if perturbations is None:
-        return {"j2": False, "third_bodies": ()}
-    unsupported = [name for name in ("srp", "drag") if bool(getattr(perturbations, name, False))]
-    if unsupported:
-        raise NotImplementedError(
-            "Perturbed relative propagation currently supports J2, Moon, and Sun; "
-            f"unsupported flags: {', '.join(unsupported)}"
-        )
+        return {
+            "j2": False,
+            "drag": False,
+            "srp": False,
+            "third_bodies": (),
+            "atmosphere": None,
+            "solar_pressure_at_1au_Npm2": 4.56e-6,
+        }
     if hasattr(perturbations, "active_third_bodies"):
         bodies = tuple(perturbations.active_third_bodies())
     else:
@@ -459,21 +496,69 @@ def _normalize_perturbations(perturbations: Any | None) -> dict[str, Any]:
             "Perturbed relative propagation supports Moon and Sun third-body gravity; "
             f"unsupported bodies: {', '.join(unsupported_bodies)}"
         )
-    return {"j2": bool(getattr(perturbations, "j2", False)), "third_bodies": bodies}
+    return {
+        "j2": bool(getattr(perturbations, "j2", False)),
+        "drag": bool(getattr(perturbations, "drag", False)),
+        "srp": bool(getattr(perturbations, "srp", False)),
+        "third_bodies": bodies,
+        "atmosphere": getattr(perturbations, "atmosphere", None),
+        "solar_pressure_at_1au_Npm2": float(
+            getattr(perturbations, "solar_pressure_at_1au_Npm2", 4.56e-6)
+        ),
+    }
+
+
+def _validate_cannonball_spacecraft(
+    spacecraft: Spacecraft | None,
+    *,
+    flags: dict[str, Any],
+    role: str,
+    required: bool,
+) -> None:
+    """Validate one participant's mass and requested cannonball areas."""
+    if spacecraft is None:
+        if required:
+            raise ValueError(f"{role}_spacecraft is required when drag or SRP is enabled")
+        return
+    if spacecraft.initial_mass_kg <= 0.0:
+        raise ValueError(f"{role}_spacecraft must have positive initial mass")
+    if required and flags["drag"] and spacecraft.cannonball.drag_area_m2 <= 0.0:
+        raise ValueError(f"{role}_spacecraft.cannonball.drag_area_m2 must be positive")
+    if required and flags["srp"] and spacecraft.cannonball.srp_area_m2 <= 0.0:
+        raise ValueError(f"{role}_spacecraft.cannonball.srp_area_m2 must be positive")
+
+
+def _resolved_atmosphere(
+    *,
+    flags: dict[str, Any],
+    central_body: CelestialBody,
+) -> ExponentialAtmosphere | None:
+    """Resolve the default Earth atmosphere without guessing for other bodies."""
+    if not flags["drag"]:
+        return None
+    atmosphere = flags["atmosphere"]
+    if atmosphere is not None:
+        return atmosphere
+    if central_body.name.strip().lower() == "earth":
+        return EARTH_EXPONENTIAL_ATMOSPHERE
+    raise ValueError("Non-Earth drag propagation requires Perturbations(atmosphere=...).")
 
 
 def _absolute_acceleration(
     position_m: NDArray[np.float64],
+    velocity_mps: NDArray[np.float64],
     *,
     central_body: CelestialBody,
-    include_j2: bool,
-    third_bodies: dict[str, NDArray[np.float64]],
+    flags: dict[str, Any],
+    sampled_bodies: dict[str, NDArray[np.float64]],
+    spacecraft: Spacecraft | None,
+    atmosphere: ExponentialAtmosphere | None,
 ) -> NDArray[np.float64]:
     radius = float(np.linalg.norm(position_m))
     if radius <= 0.0:
         raise ValueError("Absolute spacecraft position must have non-zero norm")
     acceleration = -float(central_body.mu_m3ps2) * position_m / radius**3
-    if include_j2:
+    if flags["j2"]:
         acceleration += np.asarray(
             j2_acceleration_components(
                 position_m,
@@ -484,7 +569,8 @@ def _absolute_acceleration(
             dtype=float,
         )
     third_body_catalog = {"moon": MOON, "sun": SUN}
-    for name, body_position_m in third_bodies.items():
+    for name in flags["third_bodies"]:
+        body_position_m = sampled_bodies[name]
         acceleration += np.asarray(
             third_body_acceleration_components(
                 position_m,
@@ -492,6 +578,23 @@ def _absolute_acceleration(
                 mu_m3ps2=third_body_catalog[name].mu_m3ps2,
             ),
             dtype=float,
+        )
+    if spacecraft is not None and flags["drag"]:
+        acceleration += cannonball_drag_acceleration(
+            position_m,
+            velocity_mps,
+            mass_kg=spacecraft.initial_mass_kg,
+            central_body_radius_m=central_body.mean_radius_m,
+            cannonball=spacecraft.cannonball,
+            atmosphere=atmosphere or EARTH_EXPONENTIAL_ATMOSPHERE,
+        )
+    if spacecraft is not None and flags["srp"]:
+        acceleration += cannonball_srp_acceleration(
+            position_m,
+            sampled_bodies["sun"],
+            mass_kg=spacecraft.initial_mass_kg,
+            cannonball=spacecraft.cannonball,
+            solar_pressure_at_1au_Npm2=flags["solar_pressure_at_1au_Npm2"],
         )
     return acceleration
 

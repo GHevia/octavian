@@ -26,6 +26,7 @@ nav:
   - JSON And YAML Missions: tutorials/config-files.md
   - Mission Patterns: tutorials/mission-patterns.md
   - Thrust Direction And Attitude: tutorials/thrust-control.md
+  - Cannonball Drag And SRP: tutorials/cannonball-forces.md
   - Cislunar CR3BP: tutorials/cislunar-cr3bp.md
   - Output Files: tutorials/output-files.md
   - Concepts: concepts.md
