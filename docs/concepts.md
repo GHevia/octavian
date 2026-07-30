@@ -150,16 +150,31 @@ and C is cross-track. Two dynamics levels are deliberately separate:
   absolute histories remain available as `solution.chief_trajectory_eci` and
   `solution.deputy_trajectory_eci`.
 
-`octavian.relative` includes explicit single-state and vectorized history
-transforms:
+For analysis propagation, start with the consolidated namespace:
+
+```python
+from octavian import propagate
+```
+
+It exposes `two_body`, `cwh`, `nonlinear_ric`, `relative`,
+`relative_elements`, and `cr3bp` without hiding the selected dynamics model.
+State-history arrays use `[state, time]` columns. Coupled relative and
+relative-element calls return result objects so their absolute, RIC, and native
+representations remain available together.
+
+`octavian.relative` retains the specialized functions and includes explicit
+single-state and vectorized history transforms:
 
 - `absolute_to_relative_state(...)` and `relative_to_absolute_state(...)`;
 - `absolute_to_relative_history(...)` and `relative_to_absolute_history(...)`;
 - `ric_basis(...)` and the compatibility name `lvlh_basis(...)`.
 - absolute Cartesian, RIC, D'Amico ROE, and classical relative-element
   conversions in `octavian.relative.elements`;
-- `propagate_relative_orbital_elements(...)` for analytical two-body or
-  numerically perturbed ROE history;
+- `propagate_relative_element_history(...)` for paired native and RIC output
+  from one analytical or numerical propagation;
+- `propagate_relative_orbital_elements(...)` and
+  `propagate_relative_elements_to_ric(...)` as compatibility helpers when only
+  one representation is needed;
 - `propagate_nonlinear_relative_ric(...)` for the exact circular-chief RIC
   equations.
 
@@ -170,10 +185,10 @@ direction-cosine matrix alone is not a valid relative velocity.
 
 For analysis that should propagate the chief rather than prescribe it,
 `propagate_relative_numerical(...)` advances absolute chief and deputy states
-together with central gravity, J2, lunar gravity, and solar gravity. Its result
-contains both absolute histories and the converted RIC history. It uses a
-fixed-step fourth-order Runge-Kutta integrator, so `max_step_s` is an explicit
-accuracy/cost choice rather than a hidden tolerance.
+together with central gravity, J2, lunar/solar gravity, drag, and SRP. Its
+result contains both absolute histories and the converted RIC history. It uses
+a fixed-step fourth-order Runge-Kutta integrator, so `max_step_s` is an
+explicit accuracy/cost choice rather than a hidden tolerance.
 
 Passing `perturbations=` to `propagate_relative_orbital_elements(...)` or
 `propagate_relative_elements_to_ric(...)` selects this same coupled numerical

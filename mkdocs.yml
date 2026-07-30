@@ -22,6 +22,8 @@ plugins:
 nav:
   - Home: index.md
   - Getting Started: tutorials/getting-started.md
+  - Feature Guide: feature-guide.md
+  - Analysis Propagation: tutorials/propagation.md
   - Development Environment: tutorials/development-environment.md
   - JSON And YAML Missions: tutorials/config-files.md
   - Mission Patterns: tutorials/mission-patterns.md

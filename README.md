@@ -27,6 +27,8 @@ This MVP includes:
   markers, RIC state/range/solar phase, and inertial state/elements.
 - STK ``.e``, CCSDS OEM, SPICE BSP/SPK, and CSV trajectory exports with
   explicit epoch, frame, center, and object metadata.
+- A consolidated `octavian.propagate` namespace for two-body, CWH, exact RIC,
+  coupled relative, relative-element, and CR3BP analysis histories.
 - Dimensional Earth–Moon/general CR3BP propagation and composable coast
   phases, canonical/synodic conversions, Lagrange points, Jacobi diagnostics,
   and synodic plotting.
@@ -100,6 +102,7 @@ python examples/quick/01_two_impulse_free_time.py
 python examples/quick/02_two_impulse_precoast_impulsive_link.py
 python examples/composable/earth_centered/08_chemical_burn_j2.py
 python examples/composable/earth_centered/19_thrust_frames_and_attitude.py
+python examples/analysis/01_propagation_namespace.py
 python examples/composable/relative/23_cannonball_drag_srp.py
 python examples/composable/cislunar/22_earth_moon_cr3bp.py
 python examples/outputs/01_ephemeris_files.py

@@ -367,7 +367,9 @@ solution.viz().save_diagnostics_html("relative_diagnostics.html")
 For analysis-only ROE propagation with the same force-model vocabulary:
 
 ```python
-history = propagate_relative_orbital_elements(
+from octavian import propagate
+
+history = propagate.relative_elements(
     initial_roe,
     np.linspace(0.0, 6.0 * 3_600.0, 145),
     chief_initial_state_eci=chief_eci,
@@ -375,6 +377,9 @@ history = propagate_relative_orbital_elements(
     perturbations=Perturbations(j2=True, sun=True),
     initial_epoch="2026-01-01T00:00:00Z",
 )
+
+osculating_elements = history.elements
+ric_for_plotting = history.ric
 ```
 
 Use times ending at zero, such as `[-600.0, -300.0, 0.0]`, to generate a

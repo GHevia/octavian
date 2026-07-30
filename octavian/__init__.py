@@ -22,6 +22,7 @@ from . import (
     guesses,
     links,
     objectives,
+    propagate,
     relative,
     variables,
 )
@@ -52,7 +53,12 @@ from .quick import (
     state,
     two_burn_rendezvous,
 )
-from .relative import ClohessyWiltshire, NonlinearRelative, RelativePropagationMode
+from .relative import (
+    ClohessyWiltshire,
+    NonlinearRelative,
+    RelativeElementPropagationResult,
+    RelativePropagationMode,
+)
 from .solution import Solution
 from .solvers import SolverOptions
 from .solvers.preconfigured import (
@@ -94,6 +100,7 @@ __all__ = [
     "ClohessyWiltshire",
     "NonlinearRelative",
     "RelativePropagationMode",
+    "RelativeElementPropagationResult",
     "LowThrustSpiralGuess",
     "MissionConfigError",
     "EARTH",
@@ -134,6 +141,7 @@ __all__ = [
     "forces",
     "guesses",
     "objectives",
+    "propagate",
     "constraints",
     "cislunar",
     "bodies",
