@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 
+from .control import ThrustControl
 from .events import BoundaryEvent
 from .links import Link
 from .links import continuous as continuous_link
@@ -36,6 +37,8 @@ class Phase:
         constraints: Boundary, path, geometry, and element constraints.
         tof_bounds_s: Lower and upper phase-end time or duration.
         initial_guess: Optional specialized guess configuration.
+        thrust_control: Optional finite-thrust direction or kinematic-attitude
+            representation. Linked phases inherit the previous declaration.
     """
 
     name: str = "phase"
@@ -59,6 +62,7 @@ class Phase:
     tof_is_relative: bool = False
     info: dict[str, Any] = field(default_factory=dict)
     initial_guess: Any | None = None
+    thrust_control: ThrustControl | None = None
 
     def inherit_defaults(self) -> None:
         """Inherit spacecraft, dynamics, and default link from the previous phase."""
@@ -69,6 +73,8 @@ class Phase:
             self.spacecraft = self.previous.spacecraft
         if self.dynamics is None:
             self.dynamics = self.previous.dynamics
+        if self.thrust_control is None:
+            self.thrust_control = self.previous.thrust_control
 
         if self.link is None:
             normalized_mode = (self.mode or "").lower()

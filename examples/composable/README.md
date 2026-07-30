@@ -10,3 +10,6 @@ mission:
 
 The numeric prefixes preserve the tutorial build-up order documented in
 `docs/examples/composable.md`.
+
+Earth-centered example 19 introduces frame-aware finite-thrust controls and
+bounded Euler-angle kinematics.

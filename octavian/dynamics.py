@@ -18,7 +18,9 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from ._asset import oc, require_asset, vf
+from ._control_dynamics import thrust_vector_and_rate
 from .bodies import MOON, SUN
+from .control import ThrustControl
 
 SUN_MU_M3PS2 = SUN.mu_m3ps2
 MOON_MU_M3PS2 = MOON.mu_m3ps2
@@ -46,20 +48,13 @@ class ThirdBodyTable:
     def position_at(self, time_s: float) -> NDArray[np.float64]:
         """Interpolate the numeric Earth-centered position at ``time_s``."""
         if self.times_s is None or self.positions_eci_m is None:
-            raise ValueError(
-                f"ThirdBodyTable {self.name!r} does not contain numeric samples"
-            )
+            raise ValueError(f"ThirdBodyTable {self.name!r} does not contain numeric samples")
         times = np.asarray(self.times_s, dtype=float)
         positions = np.asarray(self.positions_eci_m, dtype=float)
         if float(time_s) < times[0] or float(time_s) > times[-1]:
-            raise ValueError(
-                f"Requested {self.name} position lies outside the sampled time range"
-            )
+            raise ValueError(f"Requested {self.name} position lies outside the sampled time range")
         return np.asarray(
-            [
-                np.interp(float(time_s), times, positions[:, component])
-                for component in range(3)
-            ],
+            [np.interp(float(time_s), times, positions[:, component]) for component in range(3)],
             dtype=float,
         )
 
@@ -340,7 +335,8 @@ class MassCoastECI(oc.ODEBase if oc is not None else object):
     This ODE is used between finite-burn phases so ASSET continuity links can
     preserve the spacecraft mass state across burn-coast-burn transfers. The
     mass derivative is identically zero; translational acceleration still uses
-    the configured gravity and perturbation model.
+    the configured gravity and perturbation model. A phase using Euler thrust
+    control also carries its kinematic attitude through the coast.
     """
 
     def __init__(
@@ -351,15 +347,27 @@ class MassCoastECI(oc.ODEBase if oc is not None else object):
         central_body_radius_m: float = 6_378_136.3,
         j2_coefficient: float = 1.08262668e-3,
         third_body_tables: Sequence[ThirdBodyTable] = (),
+        thrust_control: ThrustControl | None = None,
     ) -> None:
         _require_asset()
         self.mu = float(mu_m3ps2)
+        control_config = thrust_control or ThrustControl.vector()
+        carries_attitude = control_config.carries_attitude
 
-        XtU = oc.ODEArguments(7, 0)
+        state_dim = 10 if carries_attitude else 7
+        control_dim = 3 if carries_attitude else 0
+        XtU = oc.ODEArguments(state_dim, control_dim)
         X = XtU.XVec()
         R = X.head(3)
         V = X.segment(3, 3)
         M = X[6]
+        attitude = X.segment(7, 3) if carries_attitude else None
+        slew_control = XtU.UVec() if carries_attitude else None
+        attitude_rate = (
+            float(control_config.max_slew_rate_radps) * slew_control
+            if slew_control is not None
+            else None
+        )
 
         A = _gravity_acceleration(
             R,
@@ -370,7 +378,10 @@ class MassCoastECI(oc.ODEBase if oc is not None else object):
             time_var=XtU.TVar(),
             third_body_tables=tuple(third_body_tables),
         )
-        ode = vf.stack([V, A, M * 0.0])
+        ode_terms = [V, A, M * 0.0]
+        if attitude_rate is not None:
+            ode_terms.append(attitude_rate)
+        ode = vf.stack(ode_terms)
 
         Vgroups = {
             ("R", "Position"): R,
@@ -379,19 +390,24 @@ class MassCoastECI(oc.ODEBase if oc is not None else object):
             ("t", "time"): XtU.TVar(),
             "RV": [0, 1, 2, 3, 4, 5],
         }
+        if attitude is not None and attitude_rate is not None and slew_control is not None:
+            Vgroups[("Attitude", "EulerAngles")] = attitude
+            Vgroups[("AttitudeRate", "EulerRates")] = attitude_rate
+            Vgroups[("SlewControl", "NormalizedAttitudeRate")] = slew_control
+            Vgroups["Yaw"] = attitude[0]
+            Vgroups["Pitch"] = attitude[1]
+            Vgroups["Roll"] = attitude[2]
 
-        super().__init__(ode, 7, 0, Vgroups=Vgroups)
+        super().__init__(ode, state_dim, control_dim, Vgroups=Vgroups)
 
 
 class FiniteThrustECI(oc.ODEBase if oc is not None else object):
-    """Finite-thrust dynamics with three vector-throttle controls.
+    """Finite-thrust dynamics with configurable direction representation.
 
-    ODE state is ``[r(3), v(3), m]`` and controls are a dimensionless thrust
-    direction/throttle vector. The model is propulsion-neutral: chemical and
-    electric thrusters differ through thrust and specific impulse rather than
-    separate equations of motion. The compiler bounds the control norm to one.
-    Mass flow is proportional to ``|U|`` so a zero control vector coasts without
-    consuming propellant while any partial throttle consumes proportionally.
+    The default retains the original three-component inertial vector-throttle
+    control. RIC vectors are rotated into inertial coordinates from the current
+    state. Fixed direction uses one scalar throttle. Euler mode augments the
+    state with yaw, pitch, and roll and uses throttle plus three angular rates.
     """
 
     def __init__(
@@ -405,6 +421,7 @@ class FiniteThrustECI(oc.ODEBase if oc is not None else object):
         j2_coefficient: float = 1.08262668e-3,
         third_body_tables: Sequence[ThirdBodyTable] = (),
         g0_mps2: float = 9.80665,
+        thrust_control: ThrustControl | None = None,
     ) -> None:
         _require_asset()
         self.mu = float(mu_m3ps2)
@@ -417,12 +434,23 @@ class FiniteThrustECI(oc.ODEBase if oc is not None else object):
         if self.isp_s <= 0.0:
             raise ValueError("FiniteThrustECI requires isp_s > 0.")
 
-        XtU = oc.ODEArguments(7, 3)
+        control_config = thrust_control or ThrustControl.vector()
+        carries_attitude = control_config.carries_attitude
+        state_dim = 10 if carries_attitude else 7
+        control_dim = (
+            4
+            if control_config.representation == "euler"
+            else 1
+            if control_config.representation == "fixed"
+            else 3
+        )
+        XtU = oc.ODEArguments(state_dim, control_dim)
         X = XtU.XVec()
         U = XtU.UVec()
         R = X.head(3)
         V = X.segment(3, 3)
         M = X[6]
+        attitude = X.segment(7, 3) if carries_attitude else None
 
         gravity = _gravity_acceleration(
             R,
@@ -433,20 +461,40 @@ class FiniteThrustECI(oc.ODEBase if oc is not None else object):
             time_var=XtU.TVar(),
             third_body_tables=tuple(third_body_tables),
         )
-        thrust_acceleration = (self.thrust_N / M) * U
-        mass_flow = -(self.thrust_N / (self.isp_s * self.g0_mps2)) * U.norm()
-        ode = vf.stack([V, gravity + thrust_acceleration, mass_flow])
+        thrust_vector, throttle, attitude_rate = thrust_vector_and_rate(
+            control_config,
+            controls=U,
+            position=R,
+            velocity=V,
+            attitude=attitude,
+        )
+        thrust_acceleration = (self.thrust_N / M) * thrust_vector
+        mass_flow = -(self.thrust_N / (self.isp_s * self.g0_mps2)) * throttle
+        ode_terms = [V, gravity + thrust_acceleration, mass_flow]
+        if attitude_rate is not None:
+            ode_terms.append(attitude_rate)
+        ode = vf.stack(ode_terms)
 
         Vgroups = {
             ("R", "Position"): R,
             ("V", "Velocity"): V,
             ("M", "Mass"): [6],
-            ("U", "Control", "Throttle"): U,
             ("t", "time"): XtU.TVar(),
             "RV": [0, 1, 2, 3, 4, 5],
         }
+        if control_config.representation == "vector":
+            Vgroups[("U", "Control", "Thrust")] = U
+        else:
+            Vgroups["Throttle"] = vf.stack([U[0]])
+        if attitude is not None and attitude_rate is not None:
+            Vgroups[("Attitude", "EulerAngles")] = attitude
+            Vgroups[("AttitudeRate", "EulerRates")] = attitude_rate
+            Vgroups[("SlewControl", "NormalizedAttitudeRate")] = U.segment(1, 3)
+            Vgroups["Yaw"] = attitude[0]
+            Vgroups["Pitch"] = attitude[1]
+            Vgroups["Roll"] = attitude[2]
 
-        super().__init__(ode, 7, 3, Vgroups=Vgroups)
+        super().__init__(ode, state_dim, control_dim, Vgroups=Vgroups)
 
 
 # Compatibility name for code written before the powered dynamics were made

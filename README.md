@@ -18,6 +18,8 @@ This MVP includes:
 - Central-body selection, CWH relative motion, RIC transforms and plots,
   differential relative perturbations, and SPICE solar-phase geometry.
 - Finite-thrust and low-thrust phases with mass depletion and spiral seeding.
+- Finite-thrust directions expressed as free inertial/RIC vectors, prescribed
+  inertial/RIC directions, or bounded 3-2-1 Euler kinematics.
 - Optional schema-versioned JSON and YAML mission configuration.
 - Lambert-Izzo seed sweeps across time of flight, longway, and multi-rev cases.
 - Frame-aware Plotly trajectory and time-series diagnostics with maneuver
@@ -93,6 +95,7 @@ python -c "import asset_asrl; print(asset_asrl.__file__)"
 python examples/quick/01_two_impulse_free_time.py
 python examples/quick/02_two_impulse_precoast_impulsive_link.py
 python examples/composable/earth_centered/08_chemical_burn_j2.py
+python examples/composable/earth_centered/19_thrust_frames_and_attitude.py
 python examples/outputs/01_ephemeris_files.py
 python -m octavian.config examples/config/01_two_impulse_transfer.json
 ```
