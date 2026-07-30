@@ -16,6 +16,7 @@ comparison with the literature.
 | --- | --- |
 | A standard impulsive transfer or relative hop | The quick API examples. |
 | Explicit coasts, burns, links, constraints, or force models | The composable examples. |
+| Propagation or coordinate analysis without a solve | The analysis example and propagation tutorial. |
 | Portable ephemeris files after a solve | The output example. |
 | A versioned JSON or YAML mission artifact | The config example and config tutorial. |
 
@@ -85,6 +86,7 @@ handoff rather than a perturbed CR3BP periodic orbit.
 
 | Task | Example | Capabilities |
 | --- | --- | --- |
+| Compare propagation entry points | `examples/analysis/01_propagation_namespace.py` | Two-body, CWH, exact RIC, coupled relative, ROE, and CR3BP analysis histories. |
 | Load a declarative mission | `examples/config/01_two_impulse_transfer.json` | Versioned config schema and the same public mission objects. |
 | Export a solved trajectory | `examples/outputs/01_ephemeris_files.py` | STK `.e`, CCSDS OEM, SPICE BSP/SPK, and CSV. |
 

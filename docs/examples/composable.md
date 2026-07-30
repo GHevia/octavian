@@ -416,8 +416,9 @@ Path: `examples/composable/relative/13_relative_representations.py`
 
 This optimizer-free example builds a chief ECI state and deputy RIC state,
 converts RIC to absolute ECI and back, and moves between D'Amico and classical
-relative orbital elements. It is the representation layer used by both CWH and
-nonlinear missions.
+relative orbital elements. It also demonstrates vectorized absolute/RIC
+history conversion and the chief frame's RIC angular velocity. It is the
+representation layer used by both CWH and nonlinear missions.
 
 ## 14: Nonlinear Relative Rendezvous
 

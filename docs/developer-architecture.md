@@ -91,6 +91,8 @@ of the phase definition.
   propellant, and final time.
 - `octavian/conops.py`: reusable concept-of-operations mission builders.
 - `octavian/quick.py`: high-level quick-start problem builders.
+- `octavian/propagate.py`: compatibility-preserving analysis facade over
+  two-body, relative, relative-element, and CR3BP propagators.
 - `octavian/specs.py`: lower-level problem specifications used by legacy quick
   and rendezvous flows.
 

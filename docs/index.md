@@ -17,13 +17,14 @@ optimization, then inspect summaries and Plotly trajectory views.
 - Optional precoast phases before impulsive transfers.
 - Composable coast phases with continuous or impulsive links.
 - Terminal state, terminal delta-v, minimum-radius, absolute/relative
-  orbital-element, RIC-component, and periodic-state constraints.
+  orbital-element, RIC-component, safety, solar-geometry, and periodic-state
+  constraints.
 - Finite chemical and low-thrust phases with mass depletion, frame-aware
   thrust directions, and kinematic Euler-angle controls.
 - J2, Sun/Moon gravity, exponential drag, and cannonball SRP in inertial and
   exact relative dynamics.
-- CWH and exact relative formulations, relative-element propagation, and
-  solar-phase geometry.
+- CWH, nonlinear RIC, coupled chief/deputy, relative-element, and CR3BP
+  propagation through one analysis namespace.
 - Canonical/dimensional CR3BP propagation, periodic-orbit correction,
   impulsive inter-orbit transfers, and inertial perturbed-model handoff.
 - Plotly HTML trajectory and frame-aware time-series diagnostics with maneuver
@@ -33,6 +34,8 @@ optimization, then inspect summaries and Plotly trajectory views.
 ## Documentation Map
 
 - [Getting Started](tutorials/getting-started.md) covers installation, ASSET, and the basic mission workflow.
+- [Feature Guide](feature-guide.md) maps common needs to APIs, tutorials, and executable examples.
+- [Analysis Propagation](tutorials/propagation.md) collects two-body, relative, ROE, and CR3BP propagators.
 - [Development Environment](tutorials/development-environment.md) gives the supported isolated ASSET setup.
 - [JSON And YAML Missions](tutorials/config-files.md) documents the optional declarative config interface.
 - [Mission Patterns](tutorials/mission-patterns.md) shows how to combine the current options into real scripts.
@@ -46,9 +49,9 @@ optimization, then inspect summaries and Plotly trajectory views.
 - [GitHub Pages](publishing.md) explains how this site is deployed.
 - [API Reference](api.md) is generated from numpy-style docstrings with mkdocstrings.
 
-The files under `examples/` are intentionally flat, executable mission
-configurations. They are designed to be copied and edited from top to bottom,
-without application entry-point boilerplate around the mission declaration.
+The files under `examples/` are executable mission and analysis scripts. They
+are designed to be copied and edited from top to bottom, without application
+entry-point boilerplate around the declarations.
 
 ## Local Docs
 

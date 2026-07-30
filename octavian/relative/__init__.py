@@ -9,6 +9,7 @@ from .cwh import (
 )
 from .elements import (
     ClassicalRelativeOrbitalElements,
+    RelativeElementPropagationResult,
     RelativeOrbitalElements,
     absolute_to_classical_relative_orbital_elements,
     absolute_to_relative_orbital_elements,
@@ -16,6 +17,7 @@ from .elements import (
     classical_relative_orbital_elements_to_relative_state,
     classical_to_damico_relative_orbital_elements,
     damico_to_classical_relative_orbital_elements,
+    propagate_relative_element_history,
     propagate_relative_elements_to_ric,
     propagate_relative_orbital_elements,
     propagate_two_body_state,
@@ -57,6 +59,7 @@ __all__ = [
     "NonlinearRelative",
     "RelativePropagationMode",
     "RelativePropagationResult",
+    "RelativeElementPropagationResult",
     "RelativeOrbitalElements",
     "SolarDirectionTable",
     "cwh_derivative",
@@ -79,6 +82,7 @@ __all__ = [
     "propagate_cwh",
     "propagate_nonlinear_relative_ric",
     "propagate_relative_numerical",
+    "propagate_relative_element_history",
     "propagate_relative_elements_to_ric",
     "propagate_relative_orbital_elements",
     "propagate_two_body_state",

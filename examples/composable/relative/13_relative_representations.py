@@ -15,6 +15,7 @@ from octavian.relative import (
     absolute_to_relative_history,
     absolute_to_relative_orbital_elements,
     absolute_to_relative_state,
+    chief_ric_angular_velocity,
     classical_to_damico_relative_orbital_elements,
     damico_to_classical_relative_orbital_elements,
     relative_orbital_elements_to_relative_state,
@@ -70,6 +71,7 @@ classical_to_damico = classical_to_damico_relative_orbital_elements(
     classical_differences,
     mu_m3ps2=EARTH.mu_m3ps2,
 )
+ric_angular_velocity = chief_ric_angular_velocity(chief_eci)
 
 # History converters accept the same seven-column state-and-time convention
 # used by solver results. They vectorize the per-state transforms above.
@@ -109,7 +111,11 @@ np.testing.assert_allclose(
     relative_elements.as_vector(),
     atol=1.0e-12,
 )
-np.testing.assert_allclose(recovered_deputy_history, deputy_history, atol=1.0e-8)
+np.testing.assert_allclose(
+    recovered_deputy_history,
+    deputy_history,
+    atol=1.0e-8,
+)
 
 print("Chief ECI state:")
 print(np.hstack([chief_eci.r_m, chief_eci.v_mps]))
@@ -121,3 +127,5 @@ print("D'Amico quasi-nonsingular relative orbital elements:")
 print(relative_elements.as_vector())
 print("Classical relative orbital-element differences:")
 print(classical_differences.as_vector())
+print("Chief RIC angular velocity expressed in RIC:")
+print(ric_angular_velocity)
