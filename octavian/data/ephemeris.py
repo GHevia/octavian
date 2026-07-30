@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from contextlib import suppress
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -103,6 +103,46 @@ def epoch_to_et(epoch: str | datetime | float | int) -> float:
         return _datetime_utc_to_et_approx(epoch)
 
     raise TypeError("epoch must be a UTC string, datetime, or ET seconds.")
+
+
+def epoch_to_datetime_utc(epoch: str | datetime | float | int) -> datetime:
+    """Convert a user epoch to a timezone-aware UTC datetime.
+
+    String and :class:`datetime.datetime` inputs are interpreted as UTC.
+    Numeric inputs are SPICE ephemeris seconds past J2000, matching
+    :func:`epoch_to_et`. If a leap-second kernel is loaded, SpiceyPy performs
+    the conversion. Otherwise Octavian uses the same built-in leap-second
+    history as :func:`epoch_to_et`, neglecting only the millisecond-scale
+    periodic TDB-minus-TT term.
+
+    Args:
+        epoch: UTC string, datetime, or SPICE ET seconds past J2000.
+
+    Returns:
+        A timezone-aware UTC datetime.
+    """
+    if isinstance(epoch, str):
+        return _parse_utc_datetime(epoch)
+    if isinstance(epoch, datetime):
+        value = epoch if epoch.tzinfo is not None else epoch.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+    if not isinstance(epoch, int | float):
+        raise TypeError("epoch must be a UTC string, datetime, or ET seconds.")
+
+    et = float(epoch)
+    if not math.isfinite(et):
+        raise ValueError("Numeric ET epochs must be finite.")
+    with suppress(Exception):
+        return spice.et2datetime(et).astimezone(UTC)
+
+    # Fixed-point inversion of the UTC -> ET fallback. TAI-UTC changes only at
+    # leap-second boundaries, so two iterations are sufficient away from the
+    # exact inserted second and a third keeps the intent obvious.
+    utc = _J2000_UTC + timedelta(seconds=et - 64.184)
+    for _ in range(3):
+        tai_minus_utc = _tai_minus_utc_seconds(utc)
+        utc = _J2000_UTC + timedelta(seconds=et - tai_minus_utc - 32.184)
+    return utc
 
 
 def sample_sun_moon_positions_eci_tod(

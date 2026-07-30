@@ -76,7 +76,14 @@ class MissionRunner:
 
                 attempt_logs.append(AttemptLog(stage=stage_label, attempt=attempt_index, status="ok"))
                 solution = Solution(ok=bool(result.converged), result=result, attempts=attempt_logs)
-                solution.info.update({"stage": stage_label, "stage_index": stage_index})
+                solution.info.update(
+                    {
+                        "stage": stage_label,
+                        "stage_index": stage_index,
+                        "mission_name": mission.name,
+                        "initial_epoch": mission.initial_epoch,
+                    }
+                )
                 if result.converged or not self.solve_config.raise_on_fail:
                     return solution
                 last_error = "Solver did not converge"
