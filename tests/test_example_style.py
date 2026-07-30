@@ -23,4 +23,4 @@ def test_composable_examples_are_grouped_by_frame() -> None:
         path.parent.name
         for path in COMPOSABLE_DIR.rglob("*.py")
     }
-    assert categories == {"earth_centered", "relative"}
+    assert categories == {"cislunar", "earth_centered", "relative"}

@@ -1,9 +1,12 @@
 from .diagnostics import DiagnosticPanel as DiagnosticPanel
 from .diagnostics import DiagnosticSeries as DiagnosticSeries
+from .diagnostics import cr3bp_diagnostic_panels as cr3bp_diagnostic_panels
 from .diagnostics import inertial_diagnostic_panels as inertial_diagnostic_panels
 from .diagnostics import relative_diagnostic_panels as relative_diagnostic_panels
 from .plotly import EARTH_RADIUS_M as EARTH_RADIUS_M
+from .plotly import cr3bp_trajectory_figure as cr3bp_trajectory_figure
 from .plotly import relative_trajectory_figure as relative_trajectory_figure
+from .plotly import save_cr3bp_trajectory_html as save_cr3bp_trajectory_html
 from .plotly import save_relative_trajectory_html as save_relative_trajectory_html
 from .plotly import (
     save_trajectory_diagnostics_html as save_trajectory_diagnostics_html,
@@ -15,10 +18,13 @@ __all__ = [
     "EARTH_RADIUS_M",
     "DiagnosticPanel",
     "DiagnosticSeries",
+    "cr3bp_trajectory_figure",
+    "cr3bp_diagnostic_panels",
     "inertial_diagnostic_panels",
     "relative_trajectory_figure",
     "relative_diagnostic_panels",
     "save_relative_trajectory_html",
+    "save_cr3bp_trajectory_html",
     "save_trajectory_diagnostics_html",
     "save_trajectory_html",
     "trajectory_diagnostics_figure",

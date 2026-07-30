@@ -103,6 +103,9 @@ of the phase definition.
 - `octavian/relative/`: CWH, exact RIC, coupled chief/deputy, coupled relative
   finite-thrust, and native relative-element models; analytic/numerical
   propagation; seeding; and absolute/RIC/ROE transforms.
+- `octavian/cislunar/`: CR3BP physical-system metadata, canonical and
+  synodic/inertial transforms, deterministic propagation, Hermite collocation
+  seeds, invariants, and the dimensional ASSET ODE.
 - `octavian/time.py`: time-bound normalization.
 - `octavian/data/ephemeris.py`: bundled reduced Sun/Moon ephemeris access,
   epoch conversion, and SPICE sampling.
