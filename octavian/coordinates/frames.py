@@ -90,4 +90,27 @@ def ric(chief: str = "chief", *, name: str | None = None) -> CoordinateFrame:
     )
 
 
+def synodic(
+    primary: str,
+    secondary: str,
+    *,
+    name: str | None = None,
+) -> CoordinateFrame:
+    """Create a barycentric primary-secondary rotating frame.
+
+    The +X axis points from primary to secondary and +Z follows the circular
+    system angular momentum.
+    """
+    primary_name = str(primary).strip().lower().replace(" ", "_")
+    secondary_name = str(secondary).strip().lower().replace(" ", "_")
+    if not primary_name or not secondary_name:
+        raise ValueError("Synodic primary and secondary names must not be empty")
+    return CoordinateFrame(
+        name=name or f"{primary_name}_{secondary_name}_synodic",
+        origin=f"{primary_name}_{secondary_name}_barycenter",
+        orientation=f"{primary_name}_to_{secondary_name}_rotating",
+        kind="rotating",
+    )
+
+
 EARTH_INERTIAL = inertial("earth", orientation="ECI", name="earth_inertial")

@@ -105,6 +105,7 @@ def _fake_solution() -> Solution:
         ("examples/composable/relative/19_relative_finite_burn_coast.py", 1),
         ("examples/composable/relative/20_relative_three_burn_transfer.py", 1),
         ("examples/composable/relative/21_perturbed_relative_element_propagation.py", 0),
+        ("examples/composable/cislunar/22_earth_moon_cr3bp.py", 1),
     ],
 )
 def test_composable_examples_run_as_scenarios(
@@ -146,6 +147,11 @@ def test_composable_examples_run_as_scenarios(
     )
     monkeypatch.setattr(
         "octavian.viz.save_trajectory_diagnostics_html",
+        fake_plot,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        "octavian.viz.plotly.save_cr3bp_trajectory_html",
         fake_plot,
         raising=True,
     )
@@ -320,6 +326,13 @@ def test_composable_examples_run_as_scenarios(
             "traj_perturbed_relative_elements.html",
             "diagnostics_perturbed_relative_elements.html",
         ]
+    elif script_rel.endswith("22_earth_moon_cr3bp.py"):
+        mission = missions[0]
+        model = mission.phases[0].dynamics.model
+        assert model.primary.name == "earth"
+        assert model.secondary.name == "moon"
+        assert mission.phases[0].dynamics.frame.kind == "rotating"
+        assert plotted == ["traj_composable_earth_moon_cr3bp.html"]
     elif script_rel.endswith("15_perturbed_relative_solar.py"):
         mission = missions[0]
         phase = mission.phases[0]

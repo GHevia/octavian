@@ -58,6 +58,16 @@ The API reference is generated from source docstrings with `mkdocstrings`.
 
 ::: octavian.relative.solar
 
+::: octavian.cislunar.model
+
+::: octavian.cislunar.transforms
+
+::: octavian.cislunar.propagation
+
+::: octavian.cislunar.guessing
+
+::: octavian.cislunar.dynamics
+
 ## Quick Builders And Specs
 
 ::: octavian.quick

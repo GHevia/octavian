@@ -7,6 +7,8 @@ mission:
   perturbation demonstrations, and powered-flight examples.
 - `relative/` contains chief-centered RIC missions, relative representations,
   relative-element propagation, and relative finite-burn examples.
+- `cislunar/` contains rotating-frame CR3BP propagation and optimization
+  examples.
 
 The numeric prefixes preserve the tutorial build-up order documented in
 `docs/examples/composable.md`.
