@@ -512,6 +512,51 @@ class PeriodicState(Constraint):
 
 
 @dataclass(frozen=True, slots=True)
+class JacobiConstant(Constraint):
+    """Constrain the Jacobi integral of a CR3BP phase.
+
+    The compiler evaluates the invariant directly from the phase's synodic
+    Cartesian state. Canonical targets are convenient for comparison with
+    CR3BP literature; dimensional targets use square meters per square second.
+
+    Args:
+        target: Desired Jacobi constant.
+        where: ``"Front"``, ``"Back"``, or ``"Path"``.
+        tolerance: Optional symmetric non-negative tolerance in the selected
+            unit system. Omitting it creates an equality.
+        dimensional: Interpret ``target`` and ``tolerance`` as ``m²/s²`` when
+            true or canonical CR3BP units when false.
+    """
+
+    kind: ClassVar[str] = "jacobi_constant"
+    family: ClassVar[str] = "cr3bp_invariant"
+
+    target: float = 0.0
+    where: Where = "Front"
+    tolerance: float | None = None
+    dimensional: bool = True
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "target", _finite_float("target", self.target))
+        object.__setattr__(self, "where", _normalize_where(self.where))
+        object.__setattr__(
+            self,
+            "tolerance",
+            _optional_nonnegative_float("tolerance", self.tolerance),
+        )
+        object.__setattr__(self, "dimensional", bool(self.dimensional))
+
+    @property
+    def value(self) -> dict[str, float | bool | None]:
+        """Return the target, tolerance, and selected unit system."""
+        return {
+            "target": self.target,
+            "tolerance": self.tolerance,
+            "dimensional": self.dimensional,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class RelativeStateComponent(Constraint):
     """Constrain one native RIC position or velocity component.
 
@@ -791,6 +836,34 @@ def periodic_state(
         arbitrary time shift around the orbit.
     """
     return PeriodicState(components=tuple(components))
+
+
+def jacobi_constant(
+    target: float,
+    *,
+    where: str = "Front",
+    tolerance: float | None = None,
+    dimensional: bool = True,
+) -> JacobiConstant:
+    """Create a direct Jacobi-constant constraint for a CR3BP phase.
+
+    Args:
+        target: Desired Jacobi constant.
+        where: ``"Front"``, ``"Back"``, or ``"Path"``.
+        tolerance: Optional symmetric non-negative tolerance.
+        dimensional: Interpret the target and tolerance as ``m²/s²`` when
+            true. Set false for the canonical values normally published with
+            nondimensional CR3BP states.
+
+    Returns:
+        A declarative CR3BP invariant constraint.
+    """
+    return JacobiConstant(
+        target=target,
+        where=where,
+        tolerance=tolerance,
+        dimensional=dimensional,
+    )
 
 
 def ric_state(

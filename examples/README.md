@@ -53,9 +53,9 @@ constraints:
   differential cannonball drag/SRP;
 - relative example 24 — native classical relative-element propagation and
   targeting;
-- cislunar examples 22 and 24–26 — dimensional CR3BP fundamentals,
+- cislunar examples 22 and 24–27 — dimensional CR3BP fundamentals,
   nondimensional periodic-orbit correction, an impulsive L1-to-L2 transfer,
-  and perturbed inertial recapture.
+  perturbed inertial recapture, and Jacobi-targeted family selection.
 
 For analysis without a solve, run
 `analysis/01_propagation_namespace.py` to compare the two-body, CWH, nonlinear

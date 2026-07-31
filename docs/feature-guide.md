@@ -22,6 +22,7 @@ user scripts.
 | Solar-phase constraints | `constraints.solar_phase_angle` | Mission Patterns | `examples/composable/relative/15_perturbed_relative_solar.py` |
 | RIC trajectory and time histories | `solution.viz()` | Concepts | `examples/composable/relative/14_nonlinear_relative_rendezvous.py` |
 | Earth–Moon/general CR3BP | `CR3BPSystem`, `Dynamics.cr3bp` | Cislunar CR3BP | `examples/composable/cislunar/22_earth_moon_cr3bp.py` |
+| Periodic orbits at a Jacobi value | `constraints.periodic_state`, `constraints.jacobi_constant` | Cislunar Design Guide | `examples/composable/cislunar/27_jacobi_targeted_periodic_orbit.py` |
 | STK/OEM/BSP/CSV output | `solution.export_ephemeris` | Output Files | `examples/outputs/01_ephemeris_files.py` |
 | JSON/YAML missions | `load_mission(...)` | JSON And YAML Missions | `examples/config/01_two_impulse_transfer.json` |
 

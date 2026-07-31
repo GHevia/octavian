@@ -76,6 +76,7 @@ comparison with the literature.
 | Solve a nondimensional periodic orbit | `examples/composable/cislunar/24_canonical_periodic_orbit.py` | Canonical L1 seed, ASSET front/back periodicity, phase condition, canonical diagnostics. |
 | Transfer between periodic-orbit families | `examples/composable/cislunar/25_periodic_orbit_transfer.py` | L1 coast, departure impulse, free-time CR3BP transfer, L2 insertion and coast. |
 | Re-target in a perturbed model | `examples/composable/cislunar/26_high_fidelity_recapture.py` | BSP Moon alignment, synodic/inertial conversion, J2, Sun/Moon gravity, SRP. |
+| Select a periodic orbit by invariant | `examples/composable/cislunar/27_jacobi_targeted_periodic_orbit.py` | Canonical Jacobi target, ASSET front/back periodicity, free initial state and period. |
 
 Read [Designing In The Cislunar Regime](cislunar.md) before adapting the last
 three examples. It explains where canonical and SI units meet, what

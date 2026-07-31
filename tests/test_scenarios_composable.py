@@ -112,6 +112,7 @@ def _fake_solution() -> Solution:
         ("examples/composable/cislunar/24_canonical_periodic_orbit.py", 1),
         ("examples/composable/cislunar/25_periodic_orbit_transfer.py", 1),
         ("examples/composable/cislunar/26_high_fidelity_recapture.py", 1),
+        ("examples/composable/cislunar/27_jacobi_targeted_periodic_orbit.py", 1),
     ],
 )
 def test_composable_examples_run_as_scenarios(
@@ -404,6 +405,20 @@ def test_composable_examples_run_as_scenarios(
         assert plotted == [
             "traj_high_fidelity_cislunar_recapture.html",
             "diagnostics_high_fidelity_cislunar_recapture.html",
+        ]
+    elif script_rel.endswith("27_jacobi_targeted_periodic_orbit.py"):
+        phase = missions[0].phases[0]
+        assert [constraint.kind for constraint in phase.constraints] == [
+            "periodic_state",
+            "state_component",
+            "jacobi_constant",
+        ]
+        jacobi_target = phase.constraints[-1]
+        assert jacobi_target.target == pytest.approx(3.16)
+        assert jacobi_target.dimensional is False
+        assert plotted == [
+            "traj_jacobi_targeted_L1_periodic_orbit.html",
+            "diagnostics_jacobi_targeted_L1_periodic_orbit.html",
         ]
     elif script_rel.endswith("15_perturbed_relative_solar.py"):
         mission = missions[0]

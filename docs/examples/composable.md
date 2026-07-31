@@ -35,6 +35,7 @@ The files are grouped into three folders:
 | `constraints.state(..., where="Front" or "Back")` | Fixes boundary state information. |
 | `constraints.state_component(...)` | Targets one Cartesian component directly in the phase frame. |
 | `constraints.periodic_state(...)` | Equates selected Cartesian components at the front and back of one phase. |
+| `constraints.jacobi_constant(...)` | Targets the dimensional or canonical CR3BP invariant directly. |
 | `constraints.min_radius(..., where="Path")` | Keeps the trajectory above a radius floor along the phase. |
 | `variables.ImpulsiveDeltaV(...)` | Exposes a boundary velocity jump as a decision variable and maneuver. |
 | `objectives.minimize_total_delta_v()` | Minimizes the sum of declared impulsive delta-v terms. |
@@ -690,6 +691,21 @@ Expected outputs:
 
 - `traj_high_fidelity_cislunar_recapture.html`
 - `diagnostics_high_fidelity_cislunar_recapture.html`
+
+## Cislunar 27: Jacobi-Targeted Periodic Orbit
+
+Path: `examples/composable/cislunar/27_jacobi_targeted_periodic_orbit.py`
+
+This example selects an L1 planar Lyapunov family member by canonical Jacobi
+constant instead of fixing its initial x coordinate. Direct ASSET front/back
+periodicity closes the orbit, a symmetry-plane component constraint fixes
+phase, and `constraints.jacobi_constant(..., dimensional=False)` leaves the
+initial state and period free to move to the requested invariant.
+
+Expected outputs:
+
+- `traj_jacobi_targeted_L1_periodic_orbit.html`
+- `diagnostics_jacobi_targeted_L1_periodic_orbit.html`
 
 For the canonical/SI boundary, periodicity formulation, transfer topology,
 and current model limits, read

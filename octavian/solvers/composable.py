@@ -52,7 +52,12 @@ from ..astro.lambert import select_best_lambert_seed
 from ..astro.types import as_vec3
 from ..astro.units import default_scaling
 from ..cislunar import CR3BPSystem, cr3bp_hermite_guess, propagate_cr3bp
-from ..constraints import OrbitalElementConstraint, PeriodicState, StateComponent
+from ..constraints import (
+    JacobiConstant,
+    OrbitalElementConstraint,
+    PeriodicState,
+    StateComponent,
+)
 from ..coordinates import StateLayout
 from ..guesses import LowThrustSpiralGuess
 from ..phase import Phase
@@ -2159,6 +2164,17 @@ def solve_composable_mission(
                     constraint,
                     b.layout,
                 )
+            elif isinstance(constraint, JacobiConstant):
+                system = _cr3bp_model(ph)
+                if system is None:
+                    raise ValueError(
+                        "Jacobi-constant constraints require Dynamics.cr3bp()."
+                    )
+                constraint_compiler.apply_jacobi_constant_constraint(
+                    ap,
+                    constraint,
+                    system,
+                )
             elif relative_state_constraint_compiler.is_native_relative_constraint(constraint):
                 relative_state_constraint_compiler.apply_native_relative_constraint(
                     ap,
@@ -2586,6 +2602,20 @@ def solve_composable_mission(
                     constraint=constraint,
                     phase_traj=phase_traj,
                     mu_m3ps2=mu,
+                )
+            )
+        for constraint in constraint_phase.constraints:
+            if not isinstance(constraint, JacobiConstant):
+                continue
+            system = _cr3bp_model(constraint_phase)
+            if system is None:
+                continue
+            constraint_report.append(
+                constraint_compiler.jacobi_constraint_report_row(
+                    phase_name=constraint_phase.name,
+                    constraint=constraint,
+                    phase_traj=phase_traj,
+                    system=system,
                 )
             )
         for constraint in relative_constraint_compiler.relative_geometry_constraints(

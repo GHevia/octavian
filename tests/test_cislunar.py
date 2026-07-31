@@ -166,13 +166,32 @@ def test_cr3bp_plot_can_overlay_references_phases_and_maneuvers() -> None:
     ]
 
 
-def test_composable_cr3bp_periodic_state_constraint_solves() -> None:
+def test_jacobi_constraint_validates_units_and_tolerance() -> None:
+    constraint = constraints.jacobi_constant(
+        3.16,
+        where="start",
+        tolerance=1.0e-5,
+        dimensional=False,
+    )
+
+    assert constraint.target == pytest.approx(3.16)
+    assert constraint.where == "Front"
+    assert constraint.tolerance == pytest.approx(1.0e-5)
+    assert constraint.dimensional is False
+    with pytest.raises(ValueError, match="target must be finite"):
+        constraints.jacobi_constant(np.nan)
+    with pytest.raises(ValueError, match="tolerance must be >= 0"):
+        constraints.jacobi_constant(3.16, tolerance=-1.0)
+
+
+def test_composable_cr3bp_jacobi_targeted_periodic_state_solves() -> None:
     system = CR3BPSystem.earth_moon()
     canonical_initial = state(
         [0.82, 0.0, 0.0],
         [0.0, 0.16221305707437475, 0.0],
     )
     period_tu = 2.779749966597294
+    target_jacobi = 3.16
     initial = dimensionalize_state(canonical_initial, system)
     period_s = float(dimensionalize_time(period_tu, system))
     propagated = propagate_cr3bp(
@@ -189,11 +208,15 @@ def test_composable_cr3bp_periodic_state_constraint_solves() -> None:
         dynamics=Dynamics.cr3bp(),
         initial_state=initial,
         final_state=terminal_seed,
-        tof_bounds_s=(0.98 * period_s, 1.02 * period_s),
+        tof_bounds_s=(0.85 * period_s, 1.15 * period_s),
         constraints=[
             constraints.periodic_state(),
-            constraints.state_component("x", initial.r_m[0], where="Front"),
             constraints.state_component("y", 0.0, where="Front"),
+            constraints.jacobi_constant(
+                target_jacobi,
+                where="Front",
+                dimensional=False,
+            ),
         ],
     )
 
@@ -216,10 +239,21 @@ def test_composable_cr3bp_periodic_state_constraint_solves() -> None:
         ]
     )
     assert np.linalg.norm(closure_canonical) < 1.0e-7
+    solved_jacobi = jacobi_constant(
+        solution.traj[0, 0:6],
+        system=system,
+        dimensional=True,
+    ) / system.velocity_scale_mps**2
+    assert solved_jacobi == pytest.approx(target_jacobi, abs=1.0e-8)
     assert solution.traj[-1, 6] / system.time_scale_s == pytest.approx(
-        period_tu,
-        rel=0.02,
+        2.801037769641,
+        rel=1.0e-4,
     )
+    report = solution.result.info["constraint_report"]
+    assert len(report) == 1
+    assert report[0]["constraint"] == "jacobi_constant"
+    assert report[0]["actual"] == pytest.approx(target_jacobi, abs=1.0e-8)
+    assert report[0]["satisfied"] is True
 
 
 def test_composable_cr3bp_arc_compiles_and_solves() -> None:

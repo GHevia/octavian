@@ -186,6 +186,21 @@ Canonical seeds from CR3BP references remain convenient at the user boundary:
 dimensionalize them before declaring the phase, then nondimensionalize the
 solved rows for family comparisons and canonical plotting.
 
+To select the family member by invariant instead of initial x, use:
+
+```python
+constraints=[
+    constraints.periodic_state(),
+    constraints.state_component("y", 0.0, where="Front"),
+    constraints.jacobi_constant(3.16, dimensional=False),
+]
+```
+
+The Jacobi target is applied directly to the synodic phase state. Canonical
+targets use `dimensional=False`; the default accepts dimensional `m²/s²`.
+`where` may be `"Front"`, `"Back"`, or `"Path"`, and an optional `tolerance`
+creates symmetric bounds instead of an equality.
+
 ## Transfer And Increase Fidelity
 
 Compatible CR3BP coasts can be joined with ordinary continuous or impulsive
@@ -224,6 +239,8 @@ Run the executable progression:
   coast/impulse/transfer/impulse/coast mission;
 - `examples/composable/cislunar/26_high_fidelity_recapture.py` — BSP-aligned
   handoff to inertial J2, Sun/Moon, and SRP dynamics.
+- `examples/composable/cislunar/27_jacobi_targeted_periodic_orbit.py` —
+  periodic-orbit correction with a canonical Jacobi family target.
 
 The [cislunar example guide](../examples/cislunar.md) explains the design
 choices and current fidelity boundaries in detail.

@@ -261,6 +261,7 @@ rejected in this initial implementation.
 - all five Lagrange points;
 - deterministic forward or backward RK4 propagation;
 - dimensional or canonical Jacobi constants;
+- direct front, back, or path constraints on the Jacobi constant;
 - a cubic Hermite seed used by composable CR3BP collocation phases.
 
 The rotating-frame trajectory plot shows both primaries and the Lagrange

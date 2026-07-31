@@ -8,6 +8,7 @@ The cislunar examples form one continuous design progression:
 | 24 | Canonical CR3BP at the user boundary | Correct a planar L1 Lyapunov orbit with direct front/back periodicity. |
 | 25 | Dimensional CR3BP inside ASSET | Coast on L1, transfer impulsively, insert at L2, and coast on L2. |
 | 26 | Earth-centered ephemeris perturbation model | Re-target the nominal CR3BP endpoints under J2, Sun/Moon gravity, and SRP. |
+| 27 | Canonical CR3BP target | Select a different L1 family member by Jacobi constant instead of initial x. |
 
 This separation is intentional. Canonical CR3BP units make orbit families
 easy to compare with published initial conditions; SI units keep Octavian's
@@ -67,6 +68,34 @@ constraints.periodic_state(("x", "y", "vx", "vy"))
 
 That is useful for a planar formulation when out-of-plane components are
 separately fixed.
+
+## Select The Orbit By Jacobi Constant
+
+Example 27 replaces example 24's fixed initial x coordinate with a target
+invariant:
+
+```python
+constraints=[
+    constraints.periodic_state(),
+    constraints.state_component("y", 0.0, where="Front"),
+    constraints.jacobi_constant(
+        3.16,
+        where="Front",
+        dimensional=False,
+    ),
+]
+```
+
+The front/back equality closes the physical state, `y=0` supplies the phase
+condition, and the Jacobi target selects the orbit-family member. Initial
+position, velocity, and period remain free for ASSET to correct.
+
+`dimensional=False` accepts the order-one canonical values commonly tabulated
+with nondimensional CR3BP states. The default `dimensional=True` accepts
+`m²/s²`, consistent with `octavian.cislunar.jacobi_constant`. Internally the
+compiler evaluates the constraint in canonical units for conditioning. An
+optional `tolerance` produces symmetric upper and lower bounds; without one,
+the target is an equality.
 
 ## Transfer Between Periodic Orbits
 
@@ -134,7 +163,8 @@ python examples/composable/cislunar/22_earth_moon_cr3bp.py
 python examples/composable/cislunar/24_canonical_periodic_orbit.py
 python examples/composable/cislunar/25_periodic_orbit_transfer.py
 python examples/composable/cislunar/26_high_fidelity_recapture.py
+python examples/composable/cislunar/27_jacobi_targeted_periodic_orbit.py
 ```
 
 Each script prints solver and model diagnostics and writes an interactive
-trajectory plot. Examples 24–26 also write time-history diagnostics.
+trajectory plot. Examples 24–27 also write time-history diagnostics.

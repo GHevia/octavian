@@ -21,7 +21,7 @@ For a task-oriented map of every script, use `docs/examples/index.md`.
 | --- | --- |
 | Earth-centered | Transfer basics (01–07), finite burns and perturbations (08–10), low thrust and attitude (18–19), cannonball drag/SRP (20). |
 | Relative | CWH and geometry (11–12), representations and exact dynamics (13–16), ROE targeting and multiphase missions (17–21), differential forces and classical ROEs (23–24). |
-| Cislunar | Dimensional CR3BP fundamentals (22), canonical periodic-orbit correction (24), L1-to-L2 transfer (25), perturbed inertial recapture (26). |
+| Cislunar | Dimensional CR3BP fundamentals (22), canonical periodic-orbit correction (24), L1-to-L2 transfer (25), perturbed inertial recapture (26), Jacobi-targeted family selection (27). |
 
 The cislunar sequence is explained in detail in
 `docs/examples/cislunar.md`, including the canonical/SI boundary and current
