@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from ..constraints import SolarPhaseAngle
 from ..data.ephemeris import DEFAULT_EPHEMERIS_BSP
 from ..phase import Phase
 from ..relative import (
@@ -35,7 +34,7 @@ def build_solar_direction_tables(
         solar_constraints = [
             constraint
             for constraint in phase.constraints
-            if isinstance(constraint, SolarPhaseAngle)
+            if getattr(constraint, "kind", "") == "solar_phase_angle"
         ]
         if not solar_constraints:
             continue

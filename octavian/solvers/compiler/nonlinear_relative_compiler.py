@@ -9,7 +9,6 @@ with a CWH linearization.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,12 +16,6 @@ import numpy as np
 
 from ..._asset import vf
 from ...astro.types import as_vec3
-from ...constraints import (
-    ApproachCone,
-    KeepOutSphere,
-    LightingAngle,
-    SolarPhaseAngle,
-)
 from ...coordinates import StateLayout
 from ...dynamics import (
     ThirdBodyTable,
@@ -44,6 +37,7 @@ from ...relative.transforms import (
     ric_basis,
 )
 from ...specs import BoundaryState
+from ..constraint_compiler import ConstraintContext
 from ..third_bodies import phase_perturbations, sun_table_for_phase, tables_for_phase
 from .relative_constraint_compiler import RelativeGeometryConstraint
 
@@ -176,52 +170,6 @@ def fix_initial_chief(asset_phase: Any, model: NonlinearRelative) -> None:
     )
 
 
-def apply_position_boundary(
-    asset_phase: Any,
-    where: str,
-    target_position_m: np.ndarray,
-    expressions: RelativeStateExpressions,
-) -> None:
-    """Apply a public RIC position constraint to a coupled phase."""
-    residual = expressions.position - as_vec3(target_position_m)
-    asset_phase.addEqualCon(where, residual, expressions.argument_indices)
-
-
-def apply_state_boundary(
-    asset_phase: Any,
-    where: str,
-    state: BoundaryState,
-    groups: Sequence[str],
-    expressions: RelativeStateExpressions,
-) -> None:
-    """Apply selected public RIC state groups to a coupled phase."""
-    for group in groups:
-        if group == "R":
-            residual = expressions.position - as_vec3(state.r_m)
-        elif group == "V":
-            residual = expressions.velocity - as_vec3(state.v_mps)
-        elif group in {"t", "time"}:
-            continue
-        else:
-            raise ValueError(f"Unsupported State.groups element: {group!r}")
-        asset_phase.addEqualCon(where, residual, expressions.argument_indices)
-
-
-def apply_minimum_range(
-    asset_phase: Any,
-    where: str,
-    minimum_range_m: float,
-    expressions: RelativeStateExpressions,
-) -> None:
-    """Keep deputy range above a lower bound in the public RIC frame."""
-    violation = float(minimum_range_m) ** 2 - expressions.position.dot(expressions.position)
-    asset_phase.addInequalCon(
-        where,
-        vf.stack([violation]),
-        expressions.argument_indices,
-    )
-
-
 def apply_geometry_constraint(
     asset_phase: Any,
     constraint: RelativeGeometryConstraint,
@@ -229,75 +177,16 @@ def apply_geometry_constraint(
     *,
     solar_position_table: Any | None = None,
 ) -> None:
-    """Compile relative geometry against exact coupled-state expressions."""
-    position = expressions.position
-    where = constraint.where
-
-    if isinstance(constraint, KeepOutSphere):
-        offset = position - np.asarray(constraint.center_m, dtype=float)
-        violation = constraint.radius_m**2 - offset.dot(offset)
-        asset_phase.addInequalCon(
-            where,
-            vf.stack([violation]),
-            expressions.argument_indices,
-        )
-        return
-
-    if isinstance(constraint, ApproachCone):
-        offset = position - np.asarray(constraint.vertex_m, dtype=float)
-        axial_distance = offset.dot(np.asarray(constraint.axis, dtype=float))
-        cosine_sq = float(np.cos(np.deg2rad(constraint.half_angle_deg)) ** 2)
-        cone_violation = cosine_sq * offset.dot(offset) - axial_distance**2
-        asset_phase.addInequalCon(
-            where,
-            vf.stack([cone_violation]),
-            expressions.argument_indices,
-        )
-        asset_phase.addInequalCon(
-            where,
-            vf.stack([-axial_distance]),
-            expressions.argument_indices,
-        )
-        return
-
-    if isinstance(constraint, LightingAngle):
-        offset = position - np.asarray(constraint.origin_m, dtype=float)
-        direction = np.asarray(constraint.sun_direction, dtype=float)
-        _apply_angle_bounds(
-            asset_phase,
-            where,
-            offset,
-            direction,
-            constraint.min_angle_deg,
-            constraint.max_angle_deg,
-            expressions.argument_indices,
-        )
-        return
-
-    if isinstance(constraint, SolarPhaseAngle):
-        if solar_position_table is None:
-            raise ValueError("SolarPhaseAngle requires a SPICE-derived ECI Sun position table")
-        offset_ric = position - np.asarray(constraint.origin_m, dtype=float)
-        sun_line_eci = solar_position_table(expressions.time) - expressions.chief_position
-        sun_line_ric = vf.stack(
-            [
-                expressions.radial_axis.dot(sun_line_eci),
-                expressions.in_track_axis.dot(sun_line_eci),
-                expressions.cross_track_axis.dot(sun_line_eci),
-            ]
-        )
-        _apply_angle_bounds(
-            asset_phase,
-            where,
-            offset_ric,
-            sun_line_ric,
-            constraint.min_angle_deg,
-            constraint.max_angle_deg,
-            expressions.argument_indices,
-        )
-        return
-
-    raise TypeError(f"Unsupported relative geometry constraint {type(constraint).__name__}")
+    """Compatibility wrapper for exact-relative geometry ``apply`` methods."""
+    constraint.apply(
+        asset_phase,
+        ConstraintContext(
+            vector_functions=vf,
+            relative_expressions=expressions,
+            is_relative_phase=True,
+            solar_position_table=solar_position_table,
+        ),
+    )
 
 
 def add_velocity_objective(
@@ -497,30 +386,3 @@ def solar_directions_ric(
         line_ric = ric_basis(row[0:3], row[3:6]) @ line_eci
         directions[index] = line_ric / np.linalg.norm(line_ric)
     return directions
-
-
-def _apply_angle_bounds(
-    asset_phase: Any,
-    where: str,
-    vector: Any,
-    direction: Any,
-    minimum_angle_deg: float,
-    maximum_angle_deg: float,
-    argument_indices: tuple[int, ...],
-) -> None:
-    vector_norm = vector.norm()
-    direction_norm = direction.norm() if hasattr(direction, "norm") else 1.0
-    projection = vector.dot(direction)
-    scale = vector_norm * direction_norm
-    minimum_cosine = float(np.cos(np.deg2rad(minimum_angle_deg)))
-    maximum_cosine = float(np.cos(np.deg2rad(maximum_angle_deg)))
-    asset_phase.addInequalCon(
-        where,
-        vf.stack([maximum_cosine * scale - projection]),
-        argument_indices,
-    )
-    asset_phase.addInequalCon(
-        where,
-        vf.stack([projection - minimum_cosine * scale]),
-        argument_indices,
-    )
