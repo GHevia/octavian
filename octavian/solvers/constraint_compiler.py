@@ -1,30 +1,25 @@
 """Constraint helpers for the composable ASSET backend.
 
-This module owns the translation-oriented pieces for user-facing constraint
-objects. It keeps constraint lookup, orbital-element ASSET expressions, terminal
-post-burn shell handling, and solved-trajectory constraint reports out of the
-main composable solver flow.
+This module supplies transient application/report contexts, compatibility
+wrappers, lookup helpers, and terminal post-burn shell handling. Concrete
+constraint formulas live with their declarations in ``octavian.constraints``.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
 
 from .._asset import vf
-from ..astro.kepler import cartesian_to_classic
-from ..astro.types import as_vec3
 from ..cislunar import CR3BPSystem
-from ..cislunar import jacobi_constant as evaluate_jacobi_constant
 from ..constraints import (
     Constraint,
     JacobiConstant,
     OrbitalElementConstraint,
     PeriodicState,
-    Position,
-    State,
     StateComponent,
 )
 from ..coordinates import StateLayout
@@ -33,25 +28,86 @@ from ..phase import Phase
 from ..variables import ImpulsiveDeltaV
 
 
-def get_constraint_of_type(
-    phase: Phase, constraint_type: type[Constraint], where: str
-) -> Constraint | None:
-    """Return the first constraint of ``constraint_type`` at a phase boundary."""
-    loc = "Front" if where.lower().startswith("f") else "Back"
-    for constraint in getattr(phase, "constraints", []) or []:
-        if isinstance(constraint, constraint_type) and getattr(constraint, "where", "") == loc:
-            return constraint
-    return None
+@dataclass(frozen=True, slots=True)
+class ConstraintContext:
+    """Phase-specific inputs shared by concrete ``Constraint.apply`` methods."""
+
+    vector_functions: Any = vf
+    layout: Any = None
+    declared_phase: Any = None
+    phase_index: int = 0
+    mu_m3ps2: float = 0.0
+    cr3bp_system: Any | None = None
+    is_relative_phase: bool = False
+    relative_expressions: Any | None = None
+    third_body_tables: dict[str, Any] | None = None
+    solar_direction_table: Any | None = None
+    solar_position_table: Any | None = None
+
+    def __post_init__(self) -> None:
+        if self.third_body_tables is None:
+            object.__setattr__(self, "third_body_tables", {})
+
+
+@dataclass(frozen=True, slots=True)
+class ConstraintReport:
+    """Solved phase data supplied to polymorphic constraint reports."""
+
+    phase_name: str
+    phase_trajectory: np.ndarray
+    native_trajectory: np.ndarray
+    relative_trajectory: np.ndarray | None
+    layout: Any
+    mu_m3ps2: float
+    cr3bp_system: Any | None = None
+    solar_direction_at: Callable[[np.ndarray], np.ndarray] | None = None
+
+
+def apply_constraint(
+    asset_phase: Any,
+    constraint: Constraint,
+    context: ConstraintContext,
+) -> None:
+    """Apply one declaration through its concrete single-dispatch method."""
+    constraint.apply(asset_phase, context)
+
+
+def apply_constraints(
+    asset_phase: Any,
+    constraints: Iterable[Constraint],
+    context: ConstraintContext,
+) -> None:
+    """Apply phase constraints without a central concrete-type registry."""
+    for constraint in constraints:
+        constraint.apply(asset_phase, context)
 
 
 def get_state_constraint(phase: Phase, where: str) -> Constraint | None:
     """Return the first state constraint at a phase boundary, if present."""
-    return get_constraint_of_type(phase, State, where)
+    location = "Front" if where.lower().startswith("f") else "Back"
+    return next(
+        (
+            constraint
+            for constraint in getattr(phase, "constraints", []) or []
+            if getattr(constraint, "kind", "") == "state"
+            and getattr(constraint, "where", "") == location
+        ),
+        None,
+    )
 
 
 def get_position_constraint(phase: Phase, where: str) -> Constraint | None:
     """Return the first position constraint at a phase boundary, if present."""
-    return get_constraint_of_type(phase, Position, where)
+    location = "Front" if where.lower().startswith("f") else "Back"
+    return next(
+        (
+            constraint
+            for constraint in getattr(phase, "constraints", []) or []
+            if getattr(constraint, "kind", "") == "position"
+            and getattr(constraint, "where", "") == location
+        ),
+        None,
+    )
 
 
 def orbital_element_constraints(
@@ -74,7 +130,7 @@ def orbital_element_constraints(
 
     matches: list[OrbitalElementConstraint] = []
     for constraint in getattr(phase, "constraints", []) or []:
-        if not isinstance(constraint, OrbitalElementConstraint):
+        if getattr(constraint, "family", "") != "orbital_element":
             continue
         if expected_where is not None and constraint.where != expected_where:
             continue
@@ -104,56 +160,15 @@ def position_boundary_value(constraint: Constraint | None) -> np.ndarray | None:
     return np.asarray(constraint.value, dtype=float).reshape(3)
 
 
-def _cartesian_component_index(layout: StateLayout, component: str) -> int:
-    """Return one direct Cartesian component index for a state layout."""
-    try:
-        position_indices = layout.state_indices("position")
-        velocity_indices = layout.state_indices("velocity")
-    except KeyError as exc:
-        raise ValueError(
-            f"State layout {layout.name!r} does not expose a direct Cartesian "
-            "position/velocity state"
-        ) from exc
-    component_indices = {
-        "x": position_indices[0],
-        "y": position_indices[1],
-        "z": position_indices[2],
-        "vx": velocity_indices[0],
-        "vy": velocity_indices[1],
-        "vz": velocity_indices[2],
-    }
-    return component_indices[component]
-
-
 def apply_state_component_constraint(
     asset_phase: Any,
     constraint: StateComponent,
     layout: StateLayout,
 ) -> None:
-    """Apply one native Cartesian component boundary or path constraint."""
-    index = _cartesian_component_index(layout, constraint.component)
-    target = float(constraint.target)
-    if constraint.tolerance is None:
-        if constraint.where == "Path":
-            argument = vf.Arguments(1)
-            asset_phase.addEqualCon(
-                "Path",
-                argument - target,
-                [index],
-            )
-            return
-        asset_phase.addBoundaryValue(
-            constraint.where,
-            [index],
-            np.asarray([target], dtype=float),
-        )
-        return
-    tolerance = float(constraint.tolerance)
-    asset_phase.addLUVarBound(
-        constraint.where,
-        index,
-        target - tolerance,
-        target + tolerance,
+    """Compatibility wrapper for ``StateComponent.apply``."""
+    constraint.apply(
+        asset_phase,
+        ConstraintContext(vector_functions=vf, layout=layout),
     )
 
 
@@ -162,37 +177,11 @@ def apply_periodic_state_constraint(
     constraint: PeriodicState,
     layout: StateLayout,
 ) -> None:
-    """Equate selected Cartesian components at a phase's front and back."""
-    indices = [_cartesian_component_index(layout, component) for component in constraint.components]
-    arguments = vf.Arguments(2 * len(indices))
-    front = arguments.head(len(indices))
-    back = arguments.tail(len(indices))
-    asset_phase.addEqualCon(
-        "FrontandBack",
-        front - back,
-        indices,
+    """Compatibility wrapper for ``PeriodicState.apply``."""
+    constraint.apply(
+        asset_phase,
+        ConstraintContext(vector_functions=vf, layout=layout),
     )
-
-
-def canonical_jacobi_expression(system: CR3BPSystem) -> Any:
-    """Build an order-one canonical Jacobi expression from an SI phase state."""
-    arguments = vf.Arguments(6)
-    position_m, velocity_mps = arguments.tolist([(0, 3), (3, 3)])
-    position = position_m / float(system.separation_m)
-    velocity = velocity_mps / float(system.velocity_scale_mps)
-    mass_parameter = float(system.mass_parameter)
-    x = position[0]
-    y = position[1]
-    z = position[2]
-    primary_displacement = vf.stack([x + mass_parameter, y, z])
-    secondary_displacement = vf.stack([x - 1.0 + mass_parameter, y, z])
-    potential_twice = (
-        x**2
-        + y**2
-        + 2.0 * (1.0 - mass_parameter) / primary_displacement.norm()
-        + 2.0 * mass_parameter / secondary_displacement.norm()
-    )
-    return potential_twice - velocity.dot(velocity)
 
 
 def apply_jacobi_constant_constraint(
@@ -200,31 +189,10 @@ def apply_jacobi_constant_constraint(
     constraint: JacobiConstant,
     system: CR3BPSystem,
 ) -> None:
-    """Apply a canonical or dimensional Jacobi target to a CR3BP phase."""
-    expression = canonical_jacobi_expression(system)
-    unit_scale = float(system.velocity_scale_mps**2) if constraint.dimensional else 1.0
-    target = float(constraint.target) / unit_scale
-    tolerance = (
-        float(constraint.tolerance) / unit_scale
-        if constraint.tolerance is not None
-        else None
-    )
-    if tolerance is None:
-        asset_phase.addEqualCon(
-            constraint.where,
-            vf.stack([expression - target]),
-            range(0, 6),
-        )
-        return
-    asset_phase.addInequalCon(
-        constraint.where,
-        vf.stack([expression - (target + tolerance)]),
-        range(0, 6),
-    )
-    asset_phase.addInequalCon(
-        constraint.where,
-        vf.stack([(target - tolerance) - expression]),
-        range(0, 6),
+    """Compatibility wrapper for ``JacobiConstant.apply``."""
+    constraint.apply(
+        asset_phase,
+        ConstraintContext(vector_functions=vf, cr3bp_system=system),
     )
 
 
@@ -271,118 +239,14 @@ def make_terminal_shell(last_phase: Phase) -> tuple[Phase, Phase] | None:
     return compile_last, shell_phase
 
 
-@dataclass(frozen=True)
-class OrbitalElementExpressions:
-    """ASSET scalar expressions used by orbital-element constraints."""
-
-    semi_major_axis_m: Any
-    eccentricity_sq: Any
-    inclination_cosine: Any
-
-
-def orbital_element_expressions(mu_m3ps2: float) -> OrbitalElementExpressions:
-    """Build ASSET expressions for the orbital elements used by Octavian."""
-    arguments = vf.Arguments(6)
-    position_vec, velocity_vec = arguments.tolist([(0, 3), (3, 3)])
-    angular_momentum_vec = position_vec.cross(velocity_vec)
-    radius_norm = position_vec.norm()
-    speed_norm = velocity_vec.norm()
-    specific_energy = 0.5 * (speed_norm**2) - float(mu_m3ps2) / radius_norm
-    angular_momentum_sq = angular_momentum_vec.dot(angular_momentum_vec)
-    return OrbitalElementExpressions(
-        semi_major_axis_m=-0.5 * float(mu_m3ps2) / specific_energy,
-        eccentricity_sq=1.0
-        + (2.0 * specific_energy * angular_momentum_sq) / (float(mu_m3ps2) ** 2),
-        inclination_cosine=angular_momentum_vec.normalized()[2],
-    )
-
-
 def apply_orbital_element_constraint(
     asset_phase: Any, constraint: OrbitalElementConstraint, mu_m3ps2: float
 ) -> None:
-    """Apply one orbital-element constraint to an ASSET phase.
-
-    Equality constraints are used when the user did not specify a tolerance.
-    With a tolerance, the compiler emits paired upper/lower inequality
-    constraints around the target element value.
-    """
-    expressions = orbital_element_expressions(mu_m3ps2)
-    where = getattr(constraint, "where", "Path")
-    values = constraint.value
-
-    if constraint.kind == "semi_major_axis":
-        target = float(values["a_m"])
-        tolerance = values["tol_m"]
-        if tolerance is None:
-            asset_phase.addEqualCon(
-                where, vf.stack([expressions.semi_major_axis_m - target]), range(0, 6)
-            )
-            return
-        tolerance = float(tolerance)
-        asset_phase.addInequalCon(
-            where,
-            vf.stack([expressions.semi_major_axis_m - (target + tolerance)]),
-            range(0, 6),
-        )
-        asset_phase.addInequalCon(
-            where,
-            vf.stack([(target - tolerance) - expressions.semi_major_axis_m]),
-            range(0, 6),
-        )
-        return
-
-    if constraint.kind == "eccentricity":
-        target = float(values["e"])
-        tolerance = values["tol"]
-        if tolerance is None:
-            asset_phase.addEqualCon(
-                where, vf.stack([expressions.eccentricity_sq - target**2]), range(0, 6)
-            )
-            return
-        tolerance = float(tolerance)
-        asset_phase.addInequalCon(
-            where,
-            vf.stack([expressions.eccentricity_sq - (target + tolerance) ** 2]),
-            range(0, 6),
-        )
-        asset_phase.addInequalCon(
-            where,
-            vf.stack([(target - tolerance) ** 2 - expressions.eccentricity_sq]),
-            range(0, 6),
-        )
-        return
-
-    if constraint.kind == "inclination_deg":
-        target_deg = float(values["inc_deg"])
-        tolerance_deg = values["tol_deg"]
-        target_cosine = float(np.cos(np.deg2rad(target_deg)))
-        if tolerance_deg is None:
-            asset_phase.addEqualCon(
-                where, vf.stack([expressions.inclination_cosine - target_cosine]), range(0, 6)
-            )
-            return
-        tolerance_deg = float(tolerance_deg)
-        upper_cosine = float(np.cos(np.deg2rad(target_deg - tolerance_deg)))
-        lower_cosine = float(np.cos(np.deg2rad(target_deg + tolerance_deg)))
-        asset_phase.addInequalCon(
-            where,
-            vf.stack([expressions.inclination_cosine - upper_cosine]),
-            range(0, 6),
-        )
-        asset_phase.addInequalCon(
-            where,
-            vf.stack([lower_cosine - expressions.inclination_cosine]),
-            range(0, 6),
-        )
-        return
-
-    raise ValueError(f"Unsupported orbital-element constraint kind: {constraint.kind!r}")
-
-
-def boundary_state_from_traj(traj: np.ndarray, where: str) -> tuple[np.ndarray, np.ndarray]:
-    """Extract a Cartesian boundary state from one phase trajectory."""
-    row = np.asarray(traj[0], dtype=float) if where == "Front" else np.asarray(traj[-1], dtype=float)
-    return as_vec3(row[0:3]), as_vec3(row[3:6])
+    """Compatibility wrapper for concrete orbital-element ``apply`` methods."""
+    constraint.apply(
+        asset_phase,
+        ConstraintContext(vector_functions=vf, mu_m3ps2=float(mu_m3ps2)),
+    )
 
 
 def orbital_constraint_report_row(
@@ -392,44 +256,21 @@ def orbital_constraint_report_row(
     phase_traj: np.ndarray,
     mu_m3ps2: float,
 ) -> dict[str, float | str | bool]:
-    """Summarize one orbital-element constraint against the solved trajectory."""
-    position_m, velocity_mps = boundary_state_from_traj(phase_traj, constraint.where)
-    actual_elements = cartesian_to_classic(
-        r_m=position_m,
-        v_mps=velocity_mps,
-        mu_m3ps2=mu_m3ps2,
+    """Compatibility wrapper for orbital-element ``report`` methods."""
+    trajectory = np.asarray(phase_traj, dtype=float)
+    rows = constraint.report(
+        ConstraintReport(
+            phase_name=phase_name,
+            phase_trajectory=trajectory,
+            native_trajectory=trajectory,
+            relative_trajectory=trajectory,
+            layout=None,
+            mu_m3ps2=float(mu_m3ps2),
+        )
     )
-
-    if constraint.kind == "semi_major_axis":
-        target = float(constraint.a_m)
-        tolerance = constraint.tol_m
-        actual = float(actual_elements["a_m"])
-    elif constraint.kind == "eccentricity":
-        target = float(constraint.e)
-        tolerance = constraint.tol
-        actual = float(actual_elements["e"])
-    elif constraint.kind == "inclination_deg":
-        target = float(constraint.inc_deg)
-        tolerance = constraint.tol_deg
-        actual = float(actual_elements["inc_deg"])
-    else:
-        raise ValueError(f"Unsupported orbital-element constraint kind: {constraint.kind!r}")
-
-    error = actual - target
-    base_tolerance = float(tolerance) if tolerance is not None else 1e-6
-    report_tolerance = base_tolerance + max(1e-9, 1e-7 * max(1.0, abs(target)))
-    satisfied = abs(error) <= report_tolerance
-    return {
-        "phase": phase_name,
-        "where": constraint.where,
-        "family": constraint.family,
-        "constraint": constraint.kind,
-        "target": target,
-        "tolerance": base_tolerance,
-        "actual": actual,
-        "error": error,
-        "satisfied": satisfied,
-    }
+    if not rows:
+        raise ValueError("Orbital-element reporting requires a Front or Back constraint")
+    return rows[0]
 
 
 def jacobi_constraint_report_row(
@@ -439,42 +280,22 @@ def jacobi_constraint_report_row(
     phase_traj: np.ndarray,
     system: CR3BPSystem,
 ) -> dict[str, float | str | bool]:
-    """Summarize a Jacobi constraint against the worst solved phase sample."""
-    values = np.asarray(
-        [
-            evaluate_jacobi_constant(
-                row[0:6],
-                system=system,
-                dimensional=True,
-            )
-            for row in phase_traj
-        ],
-        dtype=float,
+    """Compatibility wrapper for ``JacobiConstant.report``."""
+    trajectory = np.asarray(phase_traj, dtype=float)
+    rows = constraint.report(
+        ConstraintReport(
+            phase_name=phase_name,
+            phase_trajectory=trajectory,
+            native_trajectory=trajectory,
+            relative_trajectory=trajectory,
+            layout=None,
+            mu_m3ps2=0.0,
+            cr3bp_system=system,
+        )
     )
-    if not constraint.dimensional:
-        values /= float(system.velocity_scale_mps**2)
-    if constraint.where == "Front":
-        actual = float(values[0])
-    elif constraint.where == "Back":
-        actual = float(values[-1])
-    else:
-        errors = np.abs(values - float(constraint.target))
-        actual = float(values[int(np.argmax(errors))])
-    target = float(constraint.target)
-    error = actual - target
-    base_tolerance = float(constraint.tolerance or 0.0)
-    report_tolerance = base_tolerance + max(1.0e-10, 1.0e-7 * max(1.0, abs(target)))
-    return {
-        "phase": phase_name,
-        "where": constraint.where,
-        "family": constraint.family,
-        "constraint": constraint.kind,
-        "target": target,
-        "tolerance": base_tolerance,
-        "actual": actual,
-        "error": error,
-        "satisfied": abs(error) <= report_tolerance,
-    }
+    if not rows:
+        raise ValueError("Jacobi reporting requires a CR3BP system")
+    return rows[0]
 
 
 def _has_terminal_post_burn_orbital_target(phase: Phase) -> bool:

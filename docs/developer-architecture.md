@@ -51,7 +51,22 @@ assembly.
   `Position` are specific constraint declarations.
 
 These classes share the same conceptual contract: each object describes a
-solver requirement and exposes a canonical `value`.
+solver requirement, exposes a canonical `value`, and implements
+`apply(asset_phase, context)`. The concrete method contains the ASSET formula,
+so a contributor can understand `StateComponent`, `SemiMajorAxis`, or another
+constraint without finding a matching type branch in the compiler.
+
+### Constraint Dispatch
+
+The composable compiler creates one lightweight `ConstraintContext` per phase
+and passes it to every declaration's `apply` method. The context supplies the
+state layout, dynamics model, vector-function namespace, relative-state
+expressions, and ephemeris tables needed by the formula. Constraint objects
+remain immutable and do not retain ASSET phases or context between solves.
+
+New constraint types therefore do not need registration in a central
+`isinstance` chain. A concrete subclass implements `value` and `apply`; optional
+solved-value diagnostics can override `report(context)`.
 
 ### Has-A Relationships
 
@@ -82,7 +97,8 @@ of the phase definition.
   atmospheres, and pure numerical drag/SRP accelerations shared by analysis and
   solver dynamics.
 - `octavian/guesses.py`: typed user declarations for phase initial guesses.
-- `octavian/constraints.py`: constraint class hierarchy and factory helpers.
+- `octavian/constraints.py`: constraint declarations, factory helpers, and the
+  concrete application/report formulas for each declaration.
 - `octavian/variables.py`: user-facing optimization variables such as
   `ImpulsiveDeltaV`.
 - `octavian/events.py`: boundary events such as impulses.
@@ -136,13 +152,10 @@ of the phase definition.
   dimensions, dynamics selection, guess shaping, and ASSET phase construction.
 - `octavian/solvers/compiler/powered_guessing.py`: pure numerical low-thrust
   spiral estimates and dynamics-integrated powered guess rows.
-- `octavian/solvers/compiler/relative_constraint_compiler.py`: Cartesian
-  keep-out, approach-cone, and lighting inequality compilation plus result
-  reports.
-- `octavian/solvers/compiler/relative_state_constraint_compiler.py`: direct
-  scalar/vector constraints and reports for native RIC and relative-element
-  layouts. It deliberately rejects requests that would require an implicit
-  absolute-coordinate conversion.
+- `octavian/solvers/compiler/relative_constraint_compiler.py`: compatibility
+  wrappers and relative-geometry constraint discovery used by guess selection.
+- `octavian/solvers/compiler/relative_state_constraint_compiler.py`:
+  compatibility wrappers and relative-state constraint discovery.
 - `octavian/solvers/compiler/nonlinear_relative_compiler.py`: the boundary
   between each nonlinear native layout and public RIC constraints, objectives,
   solar geometry, absolute-history reconstruction, and result extraction.
@@ -150,9 +163,9 @@ of the phase definition.
   scaling declarations shared by configuration, compilation, and reporting.
 - `octavian/bodies/`: immutable central-body constants and case-insensitive
   catalog lookup used by quick and composable dynamics configuration.
-- `octavian/solvers/constraint_compiler.py`: composable-backend constraint
-  lookup, orbital-element ASSET expressions, terminal post-burn shell handling,
-  and orbital-element result reports.
+- `octavian/solvers/constraint_compiler.py`: compiler-owned application/report
+  contexts, compatibility wrappers, constraint lookup, and terminal post-burn
+  shell handling.
 - `octavian/solvers/third_bodies.py`: shared ephemeris table construction and
   phase perturbation helpers used by third-body gravity and SRP. Ephemeris
   dependencies are kept separate from gravitational body selection.
@@ -240,7 +253,8 @@ compatibility or `third_bodies.py` for third-body table construction.
 
 - Use inheritance for shared contracts and true subtype relationships.
 - Use composition for mission assembly and solver configuration.
-- Keep user intent objects free of ASSET objects.
+- Do not retain ASSET objects on user intent declarations; receive transient
+  solver objects through compiler-owned contexts during `apply`.
 - Keep ASSET-specific code behind `_asset.py` or solver modules.
 - Prefer small dataclasses with explicit names over dictionaries when the
   structure is part of the API.

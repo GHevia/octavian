@@ -49,11 +49,11 @@ def test_capability_index_lists_every_executable_example() -> None:
     """The task-oriented index must not omit a runnable Python/config example."""
     capability_index = (ROOT / "docs" / "examples" / "index.md").read_text(encoding="utf-8")
     omitted = [
-        str(path.relative_to(ROOT))
+        path.relative_to(ROOT).as_posix()
         for path in sorted(EXAMPLES_DIR.rglob("*"))
         if path.is_file()
         and path.suffix in {".py", ".json", ".yaml", ".yml"}
-        and str(path.relative_to(ROOT)) not in capability_index
+        and path.relative_to(ROOT).as_posix() not in capability_index
     ]
 
     assert omitted == []

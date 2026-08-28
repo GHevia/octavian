@@ -52,12 +52,6 @@ from ..astro.lambert import select_best_lambert_seed
 from ..astro.types import as_vec3
 from ..astro.units import default_scaling
 from ..cislunar import CR3BPSystem, cr3bp_hermite_guess, propagate_cr3bp
-from ..constraints import (
-    JacobiConstant,
-    OrbitalElementConstraint,
-    PeriodicState,
-    StateComponent,
-)
 from ..coordinates import StateLayout
 from ..guesses import LowThrustSpiralGuess
 from ..phase import Phase
@@ -76,7 +70,6 @@ from .compiler import (
     phase_compiler,
     powered_guessing,
     relative_constraint_compiler,
-    relative_state_constraint_compiler,
 )
 from .options import SolverOptions
 from .preconfigured import RendezvousResult  # reuse stable result type
@@ -1472,13 +1465,13 @@ def solve_composable_mission(
     if relative_phases:
         _validate_relative_phase_chain(phases)
     if relative_phases and any(
-        isinstance(constraint, OrbitalElementConstraint)
+        getattr(constraint, "family", "") == "orbital_element"
         for phase in relative_phases
         for constraint in phase.constraints
     ):
         raise ValueError("Inertial orbital-element constraints are not valid in a relative frame.")
     if cr3bp_phases and any(
-        isinstance(constraint, OrbitalElementConstraint)
+        getattr(constraint, "family", "") == "orbital_element"
         for phase in cr3bp_phases
         for constraint in phase.constraints
     ):
@@ -2024,6 +2017,19 @@ def solve_composable_mission(
             and nonlinear_model.propagation_mode is RelativePropagationMode.COUPLED_ECI
             else None
         )
+        constraint_context = constraint_compiler.ConstraintContext(
+            vector_functions=vf,
+            layout=b.layout,
+            declared_phase=ph,
+            phase_index=b.index,
+            mu_m3ps2=mu,
+            cr3bp_system=_cr3bp_model(ph),
+            is_relative_phase=phase_compiler.is_relative_phase(ph),
+            relative_expressions=relative_expressions,
+            third_body_tables=third_body_tables,
+            solar_direction_table=asset_solar_direction_tables.get(b.index),
+            solar_position_table=asset_solar_position_tables.get(b.index),
+        )
 
         # First phase front time fixed at 0 unless user provides otherwise
         if b.index == 0:
@@ -2061,171 +2067,11 @@ def solve_composable_mission(
             fix_initial_attitude=not has_attitude_predecessor,
         )
 
-        # Apply State/Position boundary constraints with impulsive-variable override logic
-        for loc in ("Front", "Back"):
-            st = constraint_compiler.get_state_constraint(ph, loc)
-            pos = constraint_compiler.get_position_constraint(ph, loc)
-
-            # Position constraint always applied (if present)
-            if pos is not None:
-                if b.layout.name.endswith("relative_elements"):
-                    raise ValueError(
-                        "Cartesian Position constraints are not native to a "
-                        "relative-element phase. Use "
-                        "constraints.relative_orbital_element(...) instead."
-                    )
-                position_value = np.asarray(
-                    as_vec3(constraint_compiler.position_boundary_value(pos)),
-                    dtype=float,
-                )
-                if relative_expressions is not None:
-                    nonlinear_relative_compiler.apply_position_boundary(
-                        ap,
-                        loc,
-                        position_value,
-                        relative_expressions,
-                    )
-                else:
-                    ap.addBoundaryValue(loc, ["R"], position_value)
-
-            if st is not None:
-                if b.layout.name.endswith("relative_elements"):
-                    raise ValueError(
-                        "Cartesian State constraints are not native to a "
-                        "relative-element phase. Use "
-                        "constraints.relative_orbital_elements(...) or "
-                        "constraints.relative_orbital_element(...)."
-                    )
-                st_val = constraint_compiler.state_boundary_value(st)
-                groups = constraint_compiler.state_groups(st)
-
-                # At mission endpoints, an impulsive declaration turns the
-                # requested velocity into a delta-v target. At a linked Front,
-                # however, the impulse is the velocity jump across the link;
-                # retaining a declared V constraint lets a post-arrival coast
-                # begin on the exact requested orbit.
-                linked_front_impulse = (
-                    loc == "Front"
-                    and ph.previous is not None
-                    and ph.link is not None
-                    and not ph.link.is_continuous()
-                )
-                if _has_impulsive_var(ph, loc) and "V" in groups and not linked_front_impulse:
-                    groups = tuple(g for g in groups if g != "V")
-
-                if relative_expressions is not None:
-                    nonlinear_relative_compiler.apply_state_boundary(
-                        ap,
-                        loc,
-                        st_val,
-                        groups,
-                        relative_expressions,
-                    )
-                    continue
-
-                # build value vector for groups
-                vals = []
-                use_groups = []
-                for g in groups:
-                    if g == "R":
-                        vals.extend(list(as_vec3(st_val.r_m)))
-                        use_groups.append("R")
-                    elif g == "V":
-                        vals.extend(list(as_vec3(st_val.v_mps)))
-                        use_groups.append("V")
-                    elif g in ("t", "time"):
-                        # if user requested fixing time explicitly, we honor it if phase has epoch semantics (not yet)
-                        # for now ignore unless first phase front (already fixed)
-                        use_groups.append("t")
-                        vals.append(float(0.0 if (b.index == 0 and loc == "Front") else np.nan))
-                    else:
-                        raise ValueError(f"Unsupported State.groups element: {g!r}")
-
-                # Only apply if we have something concrete
-                if use_groups:
-                    if "t" in use_groups and not np.isfinite(vals[-1]):
-                        # if time is nan we skip setting time
-                        use_groups = [g for g in use_groups if g != "t"]
-                        vals = vals[:-1]
-                    if use_groups:
-                        ap.addBoundaryValue(loc, use_groups, np.asarray(vals, dtype=float))
-
-        # Path constraints (e.g., min radius)
-        for constraint in getattr(ph, "constraints", []) or []:
-            if isinstance(constraint, StateComponent):
-                constraint_compiler.apply_state_component_constraint(
-                    ap,
-                    constraint,
-                    b.layout,
-                )
-            elif isinstance(constraint, PeriodicState):
-                constraint_compiler.apply_periodic_state_constraint(
-                    ap,
-                    constraint,
-                    b.layout,
-                )
-            elif isinstance(constraint, JacobiConstant):
-                system = _cr3bp_model(ph)
-                if system is None:
-                    raise ValueError(
-                        "Jacobi-constant constraints require Dynamics.cr3bp()."
-                    )
-                constraint_compiler.apply_jacobi_constant_constraint(
-                    ap,
-                    constraint,
-                    system,
-                )
-            elif relative_state_constraint_compiler.is_native_relative_constraint(constraint):
-                relative_state_constraint_compiler.apply_native_relative_constraint(
-                    ap,
-                    constraint,
-                    b.layout,
-                )
-            elif getattr(constraint, "kind", "") == "min_radius":
-                if b.layout.name.endswith("relative_elements"):
-                    raise ValueError(
-                        "Minimum Cartesian range is not a native "
-                        "relative-element constraint; select a RIC formulation."
-                    )
-                minimum_radius_m = float(constraint.value)
-                location = (
-                    "Path"
-                    if getattr(constraint, "where", "Path") == "Path"
-                    else getattr(constraint, "where", "Path")
-                )
-                if relative_expressions is not None:
-                    nonlinear_relative_compiler.apply_minimum_range(
-                        ap,
-                        location,
-                        minimum_radius_m,
-                        relative_expressions,
-                    )
-                else:
-                    ap.addLowerNormBound(location, "R", minimum_radius_m)
-            elif isinstance(constraint, OrbitalElementConstraint):
-                constraint_compiler.apply_orbital_element_constraint(ap, constraint, mu)
-            elif relative_constraint_compiler.is_relative_geometry_constraint(constraint):
-                if relative_expressions is not None:
-                    nonlinear_relative_compiler.apply_geometry_constraint(
-                        ap,
-                        constraint,
-                        relative_expressions,
-                        solar_position_table=asset_solar_position_tables.get(b.index),
-                    )
-                else:
-                    if b.layout.name.endswith("relative_elements"):
-                        raise ValueError(
-                            "Cartesian relative-geometry constraints require a "
-                            "native RIC or coupled-ECI propagation mode; they "
-                            "are not defined directly on relative elements."
-                        )
-                    relative_constraint_compiler.apply_relative_geometry_constraint(
-                        ap,
-                        constraint,
-                        b.layout.state_indices("position"),
-                        time_index=b.layout.time_column,
-                        solar_direction_table=asset_solar_direction_tables.get(b.index),
-                    )
+        constraint_compiler.apply_constraints(
+            ap,
+            getattr(ph, "constraints", []) or [],
+            constraint_context,
+        )
 
         # Time bounds: normalize tof_bounds_s to absolute Back-time bounds.
         bounds = b.t_bounds
@@ -2593,61 +2439,26 @@ def solve_composable_mission(
     constraint_report: list[dict[str, float | str | bool]] = []
     for build, phase_traj in zip(built, trajs, strict=True):
         constraint_phase = build.compile_phase or build.ph
-        for constraint in constraint_compiler.orbital_element_constraints(constraint_phase):
-            if constraint.where not in {"Front", "Back"}:
-                continue
-            constraint_report.append(
-                constraint_compiler.orbital_constraint_report_row(
-                    phase_name=constraint_phase.name,
-                    constraint=constraint,
-                    phase_traj=phase_traj,
-                    mu_m3ps2=mu,
-                )
+        solar_direction_at = None
+        if build.index in solved_solar_directions:
+            solar_direction_at = _unit_vector_interpolator(
+                phase_traj[:, 6],
+                solved_solar_directions[build.index],
             )
+        elif build.index in solar_direction_tables:
+            solar_direction_at = solar_direction_tables[build.index].at
+        report_context = constraint_compiler.ConstraintReport(
+            phase_name=constraint_phase.name,
+            phase_trajectory=phase_traj,
+            native_trajectory=raw_trajs[build.index],
+            relative_trajectory=phase_traj,
+            layout=build.layout,
+            mu_m3ps2=mu,
+            cr3bp_system=_cr3bp_model(constraint_phase),
+            solar_direction_at=solar_direction_at,
+        )
         for constraint in constraint_phase.constraints:
-            if not isinstance(constraint, JacobiConstant):
-                continue
-            system = _cr3bp_model(constraint_phase)
-            if system is None:
-                continue
-            constraint_report.append(
-                constraint_compiler.jacobi_constraint_report_row(
-                    phase_name=constraint_phase.name,
-                    constraint=constraint,
-                    phase_traj=phase_traj,
-                    system=system,
-                )
-            )
-        for constraint in relative_constraint_compiler.relative_geometry_constraints(
-            constraint_phase
-        ):
-            solar_direction_at = None
-            if build.index in solved_solar_directions:
-                solar_direction_at = _unit_vector_interpolator(
-                    phase_traj[:, 6],
-                    solved_solar_directions[build.index],
-                )
-            elif build.index in solar_direction_tables:
-                solar_direction_at = solar_direction_tables[build.index].at
-            constraint_report.extend(
-                relative_constraint_compiler.relative_constraint_report_rows(
-                    phase_name=constraint_phase.name,
-                    constraint=constraint,
-                    phase_traj=phase_traj,
-                    solar_direction_at=solar_direction_at,
-                )
-            )
-        for constraint in relative_state_constraint_compiler.native_relative_constraints(
-            constraint_phase
-        ):
-            constraint_report.extend(
-                relative_state_constraint_compiler.relative_state_constraint_report_rows(
-                    phase_name=constraint_phase.name,
-                    constraint=constraint,
-                    native_trajectory=raw_trajs[build.index],
-                    layout=build.layout,
-                )
-            )
+            constraint_report.extend(constraint.report(report_context))
 
     powered_phases: list[dict[str, float | str]] = []
     chemical_burns: list[dict[str, float | str]] = []
