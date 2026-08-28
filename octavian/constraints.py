@@ -174,25 +174,6 @@ def _apply_scalar_target(
     )
 
 
-def _orbital_element_expressions(
-    context: ConstraintApplicationContext,
-) -> tuple[Any, Any, Any]:
-    """Build semi-major-axis, eccentricity-squared, and inclination expressions."""
-    vf = context.vector_functions
-    mu_m3ps2 = float(context.mu_m3ps2)
-    arguments = vf.Arguments(6)
-    position, velocity = arguments.tolist([(0, 3), (3, 3)])
-    angular_momentum = position.cross(velocity)
-    radius = position.norm()
-    speed = velocity.norm()
-    specific_energy = 0.5 * speed**2 - mu_m3ps2 / radius
-    angular_momentum_sq = angular_momentum.dot(angular_momentum)
-    semi_major_axis_m = -0.5 * mu_m3ps2 / specific_energy
-    eccentricity_sq = 1.0 + (2.0 * specific_energy * angular_momentum_sq) / mu_m3ps2**2
-    inclination_cosine = angular_momentum.normalized()[2]
-    return semi_major_axis_m, eccentricity_sq, inclination_cosine
-
-
 def _validate_inertial_orbital_context(context: ConstraintApplicationContext) -> None:
     """Reject two-body osculating elements in relative and CR3BP frames."""
     if context.is_relative_phase:
@@ -275,7 +256,13 @@ class SemiMajorAxis(OrbitalElementConstraint):
         """Apply the two-body specific-energy definition of semi-major axis."""
         _validate_inertial_orbital_context(context)
         vf = context.vector_functions
-        semi_major_axis_m, _, _ = _orbital_element_expressions(context)
+        mu_m3ps2 = float(context.mu_m3ps2)
+        arguments = vf.Arguments(6)
+        position, velocity = arguments.tolist([(0, 3), (3, 3)])
+        radius = position.norm()
+        speed = velocity.norm()
+        specific_energy = 0.5 * speed**2 - mu_m3ps2 / radius
+        semi_major_axis_m = -0.5 * mu_m3ps2 / specific_energy
         if self.tol_m is None:
             phase.addEqualCon(
                 self.where,
@@ -343,7 +330,17 @@ class Eccentricity(OrbitalElementConstraint):
         """Apply eccentricity through its non-negative squared expression."""
         _validate_inertial_orbital_context(context)
         vf = context.vector_functions
-        _, eccentricity_sq, _ = _orbital_element_expressions(context)
+        mu_m3ps2 = float(context.mu_m3ps2)
+        arguments = vf.Arguments(6)
+        position, velocity = arguments.tolist([(0, 3), (3, 3)])
+        angular_momentum = position.cross(velocity)
+        radius = position.norm()
+        speed = velocity.norm()
+        specific_energy = 0.5 * speed**2 - mu_m3ps2 / radius
+        angular_momentum_sq = angular_momentum.dot(angular_momentum)
+        eccentricity_sq = 1.0 + (
+            2.0 * specific_energy * angular_momentum_sq
+        ) / mu_m3ps2**2
         if self.tol is None:
             phase.addEqualCon(
                 self.where,
@@ -413,7 +410,10 @@ class InclinationDeg(OrbitalElementConstraint):
         """Apply inclination using the angular-momentum direction cosine."""
         _validate_inertial_orbital_context(context)
         vf = context.vector_functions
-        _, _, inclination_cosine = _orbital_element_expressions(context)
+        arguments = vf.Arguments(6)
+        position, velocity = arguments.tolist([(0, 3), (3, 3)])
+        angular_momentum = position.cross(velocity)
+        inclination_cosine = angular_momentum.normalized()[2]
         target_cosine = float(np.cos(np.deg2rad(self.inc_deg)))
         if self.tol_deg is None:
             phase.addEqualCon(
