@@ -1,7 +1,7 @@
-"""Earth-centered example 19: RIC-referenced kinematic thrust attitude.
+"""Earth-centered example 12: RIC-referenced kinematic thrust attitude.
 
 Run:
-  python examples/composable/earth_centered/19_thrust_frames_and_attitude.py
+  python examples/composable/earth_centered/12_thrust_frames_and_attitude.py
 """
 
 from __future__ import annotations

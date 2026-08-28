@@ -1,4 +1,4 @@
-"""Initial-guess builders for dimensional CR3BP phases."""
+"""Initial-guess builders for dimensional or canonical CR3BP phases."""
 
 from __future__ import annotations
 
@@ -22,10 +22,10 @@ def cr3bp_hermite_guess(
     actual equations of motion.
 
     Args:
-        initial_state: Dimensional synodic state at ``t0_s``.
-        final_state: Dimensional synodic state at ``tf_s``.
-        t0_s: Initial phase time.
-        tf_s: Final phase time.
+        initial_state: Synodic state at ``t0_s``.
+        final_state: Synodic state at ``tf_s``.
+        t0_s: Initial phase time in the state's consistent unit convention.
+        tf_s: Final phase time in the state's consistent unit convention.
         npts: Number of returned rows, including endpoints.
     """
     start = float(t0_s)

@@ -1,12 +1,12 @@
-"""Cislunar example 24: solve a canonical L1 planar Lyapunov orbit.
+"""Cislunar example 28: solve a canonical L1 planar Lyapunov orbit.
 
 CR3BP literature normally publishes states in distance units (DU), velocity
-units (VU), and time units (TU). Octavian keeps that familiar problem
-definition here, converts to SI only at the composable solver boundary, and
-converts the result back to canonical units for reporting and plotting.
+units (VU), and time units (TU). ``Dynamics.cr3bp(dimensional=False)`` keeps
+those canonical variables all the way through the ASSET solve and the
+frame-aware plotting helpers.
 
 Run:
-  python examples/composable/cislunar/24_canonical_periodic_orbit.py
+  python examples/composable/cislunar/28_canonical_periodic_orbit.py
 """
 
 from __future__ import annotations
@@ -16,10 +16,7 @@ import numpy as np
 from octavian import Dynamics, Mission, Phase, Spacecraft, constraints, state
 from octavian.cislunar import (
     CR3BPSystem,
-    dimensionalize_state,
-    dimensionalize_time,
     jacobi_constant,
-    nondimensionalize_state,
     propagate_cr3bp,
 )
 from octavian.solvers import SolverOptions
@@ -39,33 +36,32 @@ seed_state_canonical = state(
 )
 seed_period_tu = 2.779749966597294
 
-seed_state_si = dimensionalize_state(seed_state_canonical, system)
-seed_period_s = float(dimensionalize_time(seed_period_tu, system))
-seed_history_si = propagate_cr3bp(
-    seed_state_si,
-    [0.0, seed_period_s],
+seed_history_canonical = propagate_cr3bp(
+    seed_state_canonical,
+    [0.0, seed_period_tu],
     system=system,
-    max_step=300.0,
+    dimensional=False,
 )
-seed_terminal_si = state(
-    seed_history_si[-1, 0:3],
-    seed_history_si[-1, 3:6],
+seed_terminal_canonical = state(
+    seed_history_canonical[-1, 0:3],
+    seed_history_canonical[-1, 3:6],
 )
 
 periodic_orbit = Phase(
     name="L1_planar_Lyapunov",
     mode="coast",
     spacecraft=Spacecraft(name="Cislunar explorer", dry_mass_kg=250.0),
-    dynamics=Dynamics.cr3bp(),
-    initial_state=seed_state_si,
+    dynamics=Dynamics.cr3bp(dimensional=False),
+    initial_state=seed_state_canonical,
     # The propagated terminal seed supplies sensible solver scaling and an
     # initial mesh. Periodicity itself is still imposed by periodic_state().
-    final_state=seed_terminal_si,
-    tof_bounds_s=(0.98 * seed_period_s, 1.02 * seed_period_s),
+    final_state=seed_terminal_canonical,
+    # Canonical CR3BP phases interpret these values as time units (TU).
+    tof_bounds_s=(0.98 * seed_period_tu, 1.02 * seed_period_tu),
     constraints=[
         # This is an ASSET FrontAndBack equality in the phase's synodic frame.
         constraints.periodic_state(),
-        constraints.state_component("x", seed_state_si.r_m[0], where="Front"),
+        constraints.state_component("x", seed_state_canonical.r_m[0], where="Front"),
         constraints.state_component("y", 0.0, where="Front"),
     ],
 )
@@ -87,17 +83,8 @@ solution = mission.solve()
 if solution.result is None:
     raise RuntimeError("The periodic-orbit mission did not return a result.")
 
-# Public solved trajectories stay in SI. Convert each row back to the
-# nondimensional representation normally used to compare CR3BP orbit families.
-trajectory_si = solution.traj
-trajectory_canonical = np.empty_like(trajectory_si)
-for row_index, row in enumerate(trajectory_si):
-    canonical_state = nondimensionalize_state(
-        state(row[0:3], row[3:6]),
-        system,
-    )
-    trajectory_canonical[row_index, 0:6] = np.hstack([canonical_state.r_m, canonical_state.v_mps])
-trajectory_canonical[:, 6] = trajectory_si[:, 6] / system.time_scale_s
+# The selected dynamics keep the public solution in canonical units.
+trajectory_canonical = solution.traj
 
 closure_error = float(np.linalg.norm(trajectory_canonical[-1, 0:6] - trajectory_canonical[0, 0:6]))
 jacobi_values = np.asarray(
@@ -124,9 +111,10 @@ save_cr3bp_trajectory_html(
     title=mission.name,
 )
 save_trajectory_diagnostics_html(
-    trajectory_si,
+    trajectory_canonical,
     "diagnostics_canonical_L1_periodic_orbit.html",
     frame_kind="rotating",
     cr3bp_system=system,
-    title=f"{mission.name} — dimensional diagnostics",
+    cr3bp_dimensional=False,
+    title=f"{mission.name} — canonical diagnostics",
 )

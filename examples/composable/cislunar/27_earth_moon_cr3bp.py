@@ -1,7 +1,7 @@
-"""Cislunar example 22: a dimensional Earth-Moon CR3BP synodic arc.
+"""Cislunar example 27: a dimensional Earth-Moon CR3BP synodic arc.
 
 Run:
-  python examples/composable/cislunar/22_earth_moon_cr3bp.py
+  python examples/composable/cislunar/27_earth_moon_cr3bp.py
 """
 
 from __future__ import annotations

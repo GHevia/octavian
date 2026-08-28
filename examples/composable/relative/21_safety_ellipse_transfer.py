@@ -1,4 +1,4 @@
-"""Relative composable example 18: free-time transfer between ROE-authored states.
+"""Relative composable example 21: free-time transfer between ROE-authored states.
 
 The departure and arrival conditions are authored as D'Amico relative orbital
 elements (ROEs). Each set is converted to a Cartesian RIC boundary state at

@@ -1,4 +1,4 @@
-"""Relative composable example 21: propagate D'Amico ROEs with perturbations.
+"""Relative composable example 24: propagate D'Amico ROEs with perturbations.
 
 The analytical history shows native two-body ROE drift. The perturbed history
 uses the same initial ROEs, but converts them to an absolute deputy state and

@@ -93,6 +93,7 @@ _augment_guess_for_powered_phase = phase_compiler.augment_powered_guess
 _augment_guess_for_chemical_burn = phase_compiler.augment_chemical_burn_guess
 _augment_guess_for_mass_coast = phase_compiler.augment_mass_coast_guess
 _compile_phase_dimensions = phase_compiler.compile_phase_dimensions
+_cr3bp_is_dimensional = phase_compiler.cr3bp_is_dimensional
 _cwh_model = phase_compiler.cwh_model
 _cr3bp_model = phase_compiler.cr3bp_model
 _nonlinear_relative_model = phase_compiler.nonlinear_relative_model
@@ -213,8 +214,10 @@ def _validate_relative_phase_chain(phases: Sequence[Phase]) -> None:
             raise ValueError("Linked relative phases must use one chief reference state")
 
 
-def _validate_cr3bp_phase_chain(phases: Sequence[Phase]) -> CR3BPSystem:
-    """Validate that every phase uses one CR3BP physical system."""
+def _validate_cr3bp_phase_chain(
+    phases: Sequence[Phase],
+) -> tuple[CR3BPSystem, bool]:
+    """Validate that every phase uses one CR3BP system and unit convention."""
     models = [_cr3bp_model(phase) for phase in phases]
     if any(model is None for model in models):
         raise ValueError(
@@ -226,7 +229,12 @@ def _validate_cr3bp_phase_chain(phases: Sequence[Phase]) -> CR3BPSystem:
         raise RuntimeError("CR3BP chain validation received no CR3BP model")
     if any(model != system for model in models[1:]):
         raise ValueError("Linked CR3BP phases must use one primary-secondary system")
-    return system
+    dimensional_modes = [_cr3bp_is_dimensional(phase) for phase in phases]
+    if len(set(dimensional_modes)) != 1:
+        raise ValueError(
+            "Linked CR3BP phases must all use SI variables or all use canonical variables"
+        )
+    return system, dimensional_modes[0]
 
 
 def _build_guess_multi_phase_cr3bp(
@@ -236,15 +244,16 @@ def _build_guess_multi_phase_cr3bp(
     nsegs_first: int,
     nsegs_later: int,
     system: CR3BPSystem,
+    dimensional: bool,
 ) -> tuple[
     dict[int, list[np.ndarray]],
     dict[int, dict[str, float | int | bool | str]],
 ]:
-    """Build sequential dimensional synodic guesses for a CR3BP chain."""
+    """Build sequential synodic guesses in the phase's selected units."""
     guesses: dict[int, list[np.ndarray]] = {}
     info: dict[int, dict[str, float | int | bool | str]] = {}
     previous_terminal = None
-    previous_time_s = 0.0
+    previous_time = 0.0
     for index, phase in enumerate(phases):
         initial_state = (
             constraint_compiler.state_boundary_value(
@@ -263,20 +272,21 @@ def _build_guess_multi_phase_cr3bp(
         bounds = abs_bounds[index]
         if bounds is None:
             raise ValueError(f"CR3BP phase {phase.name!r} requires tof_bounds_s")
-        minimum_end_s = max(float(bounds[0]), previous_time_s + 0.1)
-        maximum_end_s = float(bounds[1])
-        if maximum_end_s <= minimum_end_s:
+        minimum_end = max(float(bounds[0]), previous_time + 0.1)
+        maximum_end = float(bounds[1])
+        if maximum_end <= minimum_end:
             raise ValueError(f"CR3BP phase {phase.name!r} has invalid time bounds")
-        end_time_s = 0.5 * (minimum_end_s + maximum_end_s)
+        end_time = 0.5 * (minimum_end + maximum_end)
         nsegs = int(nsegs_first if index == 0 else nsegs_later)
         if final_state is None:
-            times = np.linspace(previous_time_s, end_time_s, nsegs + 1)
+            times = np.linspace(previous_time, end_time, nsegs + 1)
             phase_guess = [
                 row
                 for row in propagate_cr3bp(
                     initial_state,
                     times,
                     system=system,
+                    dimensional=dimensional,
                 )
             ]
             kind = "cr3bp_propagated"
@@ -284,20 +294,22 @@ def _build_guess_multi_phase_cr3bp(
             phase_guess = cr3bp_hermite_guess(
                 initial_state,
                 final_state,
-                t0_s=previous_time_s,
-                tf_s=end_time_s,
+                t0_s=previous_time,
+                tf_s=end_time,
                 npts=nsegs + 1,
             )
             kind = "cr3bp_hermite"
         guesses[index] = phase_guess
         info[index] = {
             "guess_kind": kind,
-            "seed_tof_s": end_time_s - previous_time_s,
+            "seed_duration": end_time - previous_time,
+            "seed_time_unit": "s" if dimensional else "TU",
             "seed_samples": nsegs + 1,
+            "cr3bp_dimensional": dimensional,
         }
         terminal = np.asarray(phase_guess[-1], dtype=float)
         previous_terminal = BoundaryState(terminal[0:3], terminal[3:6])
-        previous_time_s = float(terminal[6])
+        previous_time = float(terminal[6])
     return guesses, info
 
 
@@ -1461,7 +1473,11 @@ def solve_composable_mission(
 
     relative_phases = [phase for phase in phases if phase_compiler.is_relative_phase(phase)]
     cr3bp_phases = [phase for phase in phases if _cr3bp_model(phase) is not None]
-    cr3bp_system = _validate_cr3bp_phase_chain(phases) if cr3bp_phases else None
+    if cr3bp_phases:
+        cr3bp_system, cr3bp_dimensional = _validate_cr3bp_phase_chain(phases)
+    else:
+        cr3bp_system = None
+        cr3bp_dimensional = True
     if relative_phases:
         _validate_relative_phase_chain(phases)
     if relative_phases and any(
@@ -1598,6 +1614,7 @@ def solve_composable_mission(
             nsegs_first=nsegs1,
             nsegs_later=nsegs1,
             system=cr3bp_system,
+            dimensional=cr3bp_dimensional,
         )
         guesses.update(cr3bp_guesses)
         guess_info.update(cr3bp_info)
@@ -2024,6 +2041,7 @@ def solve_composable_mission(
             phase_index=b.index,
             mu_m3ps2=mu,
             cr3bp_system=_cr3bp_model(ph),
+            cr3bp_dimensional=_cr3bp_is_dimensional(ph),
             is_relative_phase=phase_compiler.is_relative_phase(ph),
             relative_expressions=relative_expressions,
             third_body_tables=third_body_tables,
@@ -2455,6 +2473,7 @@ def solve_composable_mission(
             layout=build.layout,
             mu_m3ps2=mu,
             cr3bp_system=_cr3bp_model(constraint_phase),
+            cr3bp_dimensional=_cr3bp_is_dimensional(constraint_phase),
             solar_direction_at=solar_direction_at,
         )
         for constraint in constraint_phase.constraints:
@@ -2546,6 +2565,7 @@ def solve_composable_mission(
                     "separation_m": cr3bp_system.separation_m,
                     "mass_parameter": cr3bp_system.mass_parameter,
                     "mean_motion_radps": cr3bp_system.mean_motion_radps,
+                    "dimensional": cr3bp_dimensional,
                 }
                 if cr3bp_system is not None
                 else None

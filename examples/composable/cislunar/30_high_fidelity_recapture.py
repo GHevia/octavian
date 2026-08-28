@@ -1,4 +1,4 @@
-"""Cislunar example 26: recapture a CR3BP orbit in a perturbed inertial model.
+"""Cislunar example 30: recapture a CR3BP orbit in a perturbed inertial model.
 
 This is an explicit model handoff, not a claim that a CR3BP periodic orbit
 remains periodic in an ephemeris model. A nominal L1 Lyapunov orbit is aligned
@@ -8,7 +8,7 @@ ephemeris Moon/Sun gravity, and cannonball SRP. Boundary impulses measure the
 correction needed to recapture the nominal endpoint.
 
 Run:
-  python examples/composable/cislunar/26_high_fidelity_recapture.py
+  python examples/composable/cislunar/30_high_fidelity_recapture.py
 """
 
 from __future__ import annotations

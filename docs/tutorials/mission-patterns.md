@@ -342,7 +342,7 @@ mission = relative_transfer_chain(
 
 This example has four impulses. To optimize a three-burn topology, build three
 linked composable phases and leave the intermediate burn's velocity free while
-constraining only its RIC position waypoint, as shown in composable example 20.
+constraining only its RIC position waypoint, as shown in composable example 23.
 
 For exact two-body dynamics with native RIC decision variables, select
 `propagation_mode="nonlinear_ric"` for a circular chief or `"coupled_ric"` for

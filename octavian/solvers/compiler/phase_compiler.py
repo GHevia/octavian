@@ -181,6 +181,12 @@ def cr3bp_model(phase: Phase) -> CR3BPSystem | None:
     return model if isinstance(model, CR3BPSystem) else None
 
 
+def cr3bp_is_dimensional(phase: Phase) -> bool:
+    """Return whether a CR3BP phase uses SI rather than canonical variables."""
+    dynamics = phase.dynamics
+    return bool(dynamics.cr3bp_dimensional) if dynamics is not None else True
+
+
 def mass_state_phase_indices(phases: Sequence[Phase]) -> set[int]:
     """Return phases that carry mass across a continuous powered chain."""
     powered_indices = [idx for idx, phase in enumerate(phases) if is_powered_phase(phase)]
@@ -346,7 +352,10 @@ def ode_for_phase(
             )
         ):
             raise ValueError("CR3BP phases cannot include additional perturbations")
-        return CR3BPODE(system=three_body_model)
+        return CR3BPODE(
+            system=three_body_model,
+            dimensional=cr3bp_is_dimensional(phase),
+        )
     relative_model = cwh_model(phase)
     if relative_model is not None:
         if is_powered_phase(phase) or carries_mass:

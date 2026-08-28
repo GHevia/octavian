@@ -1,4 +1,4 @@
-"""Relative composable example 14: full nonlinear rendezvous.
+"""Relative composable example 17: full nonlinear rendezvous.
 
 CWH still supplies a fast initial guess, but the optimized phase propagates
 chief and deputy absolute states under the exact central-gravity equations.

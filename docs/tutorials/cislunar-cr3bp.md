@@ -143,10 +143,20 @@ arc = Phase(
 )
 ```
 
-The composable backend uses dimensional CR3BP equations and natural canonical
-solver scaling while keeping public inputs and results in SI. Multiple CR3BP
-coast phases can be linked when they use the same system. Impulsive links work
-through the ordinary composable phase machinery.
+The default uses dimensional CR3BP equations and natural solver scaling while
+keeping public inputs and results in SI. Set `dimensional=False` to put the
+actual phase state, time, equations, constraints, and returned trajectory in
+canonical CR3BP units:
+
+```python
+canonical_dynamics = Dynamics.cr3bp(dimensional=False)
+```
+
+In that mode, position is in DU, velocity is in VU, and values supplied through
+`tof_bounds_s` are in TU despite the compatibility suffix on that field.
+Multiple CR3BP coast phases can be linked when they use the same system and
+unit mode. Impulsive links work through the ordinary composable phase
+machinery.
 
 CR3BP phases currently support ballistic dynamics and impulsive links. Finite
 thrust and ephemeris primaries require a different dynamics model and are
@@ -164,13 +174,13 @@ arc = Phase(
     name="L1_planar_Lyapunov",
     mode="coast",
     spacecraft=probe,
-    dynamics=Dynamics.cr3bp(),
-    initial_state=initial_seed_si,
-    final_state=terminal_seed_si,
-    tof_bounds_s=(period_min_s, period_max_s),
+    dynamics=Dynamics.cr3bp(dimensional=False),
+    initial_state=initial_seed_canonical,
+    final_state=terminal_seed_canonical,
+    tof_bounds_s=(period_min_tu, period_max_tu),
     constraints=[
         constraints.periodic_state(),
-        constraints.state_component("x", x0_m, where="Front"),
+        constraints.state_component("x", x0_du, where="Front"),
         constraints.state_component("y", 0.0, where="Front"),
     ],
 )
@@ -182,9 +192,9 @@ The component constraints choose one orbit-family member and a symmetry-plane
 crossing. The `initial_state` and `final_state` values seed solver scaling and
 the collocation mesh; they are not substitutes for the periodic constraint.
 
-Canonical seeds from CR3BP references remain convenient at the user boundary:
-dimensionalize them before declaring the phase, then nondimensionalize the
-solved rows for family comparisons and canonical plotting.
+Canonical seeds from CR3BP references can therefore be used directly. Keep the
+default `dimensional=True` when a CR3BP phase must instead share SI-valued
+states, times, maneuvers, or model-handoff data with other mission tooling.
 
 To select the family member by invariant instead of initial x, use:
 
@@ -231,15 +241,15 @@ overlay reference periodic orbits, color phase segments, and mark maneuvers.
 
 Run the executable progression:
 
-- `examples/composable/cislunar/22_earth_moon_cr3bp.py` — dimensional
+- `examples/composable/cislunar/27_earth_moon_cr3bp.py` — dimensional
   propagate–target–solve–convert workflow;
-- `examples/composable/cislunar/24_canonical_periodic_orbit.py` — canonical
+- `examples/composable/cislunar/28_canonical_periodic_orbit.py` — canonical
   L1 periodic-orbit correction;
-- `examples/composable/cislunar/25_periodic_orbit_transfer.py` — L1-to-L2
+- `examples/composable/cislunar/29_periodic_orbit_transfer.py` — L1-to-L2
   coast/impulse/transfer/impulse/coast mission;
-- `examples/composable/cislunar/26_high_fidelity_recapture.py` — BSP-aligned
+- `examples/composable/cislunar/30_high_fidelity_recapture.py` — BSP-aligned
   handoff to inertial J2, Sun/Moon, and SRP dynamics.
-- `examples/composable/cislunar/27_jacobi_targeted_periodic_orbit.py` —
+- `examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py` —
   periodic-orbit correction with a canonical Jacobi family target.
 
 The [cislunar example guide](../examples/cislunar.md) explains the design

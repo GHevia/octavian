@@ -38,6 +38,7 @@ class ConstraintContext:
     phase_index: int = 0
     mu_m3ps2: float = 0.0
     cr3bp_system: Any | None = None
+    cr3bp_dimensional: bool = True
     is_relative_phase: bool = False
     relative_expressions: Any | None = None
     third_body_tables: dict[str, Any] | None = None
@@ -60,6 +61,7 @@ class ConstraintReport:
     layout: Any
     mu_m3ps2: float
     cr3bp_system: Any | None = None
+    cr3bp_dimensional: bool = True
     solar_direction_at: Callable[[np.ndarray], np.ndarray] | None = None
 
 

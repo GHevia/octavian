@@ -1,12 +1,12 @@
-"""Relative example 24: free-time targeting in classical relative elements.
+"""Relative example 26: free-time targeting in classical relative elements.
 
-This is the singular classical-difference counterpart to example 17's
+This is the singular classical-difference counterpart to example 20's
 quasi-nonsingular D'Amico formulation. The optimizer propagates
 ``[Δa, Δe, Δi, ΔΩ, Δω, ΔM]`` directly and selects the time at which a target
 relative mean anomaly is reached.
 
 Run:
-  python examples/composable/relative/24_classical_relative_elements.py
+  python examples/composable/relative/26_classical_relative_elements.py
 """
 
 from __future__ import annotations
