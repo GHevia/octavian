@@ -244,9 +244,10 @@ rotation is defined. Neither lighting constraint is an eclipse or power model.
 ### Cislunar CR3BP
 
 `Dynamics.cr3bp(...)` uses a barycentric frame that rotates with a circular
-primary-secondary pair. Public composable states remain dimensional SI values,
-while `CR3BPSystem.scaling` supplies canonical distance, velocity, and time
-units to the solver.
+primary-secondary pair. The default keeps public composable states and times
+in SI while applying natural solver scaling. Set `dimensional=False` to solve
+the actual equations with canonical distance, velocity, and time variables and
+receive the trajectory in those same units.
 
 The model is intentionally distinct from an inertial third-body perturbation.
 Both primaries define the baseline equations, and neither follows a SPICE

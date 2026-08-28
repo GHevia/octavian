@@ -106,7 +106,7 @@ history = propagate_relative_orbital_elements(
 ```
 
 See
-`examples/composable/relative/23_cannonball_drag_srp.py` for osculating D'Amico
+`examples/composable/relative/25_cannonball_drag_srp.py` for osculating D'Amico
 elements, RIC reconstruction, and plots.
 
 ## Atmosphere Model

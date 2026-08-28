@@ -95,24 +95,24 @@ def _fake_solution() -> Solution:
         ("examples/composable/earth_centered/08_chemical_burn_j2.py", 1),
         ("examples/composable/earth_centered/09_impulse_vs_chemical_burn.py", 1),
         ("examples/composable/earth_centered/10_sun_moon_perturbations.py", 1),
-        ("examples/composable/relative/11_cwh_relative_rendezvous.py", 1),
-        ("examples/composable/relative/12_cwh_safety_corridor.py", 1),
-        ("examples/composable/relative/14_nonlinear_relative_rendezvous.py", 1),
-        ("examples/composable/relative/15_perturbed_relative_solar.py", 1),
-        ("examples/composable/relative/17_damico_free_time_target.py", 1),
-        ("examples/composable/earth_centered/18_low_thrust_orbit_raise.py", 1),
-        ("examples/composable/earth_centered/19_thrust_frames_and_attitude.py", 1),
-        ("examples/composable/earth_centered/20_cannonball_drag_srp.py", 1),
-        ("examples/composable/relative/18_safety_ellipse_transfer.py", 1),
-        ("examples/composable/relative/19_relative_finite_burn_coast.py", 1),
-        ("examples/composable/relative/20_relative_three_burn_transfer.py", 1),
-        ("examples/composable/relative/21_perturbed_relative_element_propagation.py", 0),
-        ("examples/composable/cislunar/22_earth_moon_cr3bp.py", 1),
-        ("examples/composable/relative/24_classical_relative_elements.py", 1),
-        ("examples/composable/cislunar/24_canonical_periodic_orbit.py", 1),
-        ("examples/composable/cislunar/25_periodic_orbit_transfer.py", 1),
-        ("examples/composable/cislunar/26_high_fidelity_recapture.py", 1),
-        ("examples/composable/cislunar/27_jacobi_targeted_periodic_orbit.py", 1),
+        ("examples/composable/earth_centered/11_low_thrust_orbit_raise.py", 1),
+        ("examples/composable/earth_centered/12_thrust_frames_and_attitude.py", 1),
+        ("examples/composable/earth_centered/13_cannonball_drag_srp.py", 1),
+        ("examples/composable/relative/14_cwh_relative_rendezvous.py", 1),
+        ("examples/composable/relative/15_cwh_safety_corridor.py", 1),
+        ("examples/composable/relative/17_nonlinear_relative_rendezvous.py", 1),
+        ("examples/composable/relative/18_perturbed_relative_solar.py", 1),
+        ("examples/composable/relative/20_damico_free_time_target.py", 1),
+        ("examples/composable/relative/21_safety_ellipse_transfer.py", 1),
+        ("examples/composable/relative/22_relative_finite_burn_coast.py", 1),
+        ("examples/composable/relative/23_relative_three_burn_transfer.py", 1),
+        ("examples/composable/relative/24_perturbed_relative_element_propagation.py", 0),
+        ("examples/composable/relative/26_classical_relative_elements.py", 1),
+        ("examples/composable/cislunar/27_earth_moon_cr3bp.py", 1),
+        ("examples/composable/cislunar/28_canonical_periodic_orbit.py", 1),
+        ("examples/composable/cislunar/29_periodic_orbit_transfer.py", 1),
+        ("examples/composable/cislunar/30_high_fidelity_recapture.py", 1),
+        ("examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py", 1),
     ],
 )
 def test_composable_examples_run_as_scenarios(
@@ -215,7 +215,7 @@ def test_composable_examples_run_as_scenarios(
         assert perturbations.j2 is True
         assert perturbations.active_third_bodies() == ("moon", "sun")
         assert plotted == ["traj_composable_sun_moon_perturbations.html"]
-    elif script_rel.endswith("11_cwh_relative_rendezvous.py"):
+    elif script_rel.endswith("14_cwh_relative_rendezvous.py"):
         mission = missions[0]
         assert mission.phases[0].mode == "relative_coast"
         assert mission.phases[0].dynamics.frame.kind == "relative"
@@ -224,7 +224,7 @@ def test_composable_examples_run_as_scenarios(
             "traj_composable_cwh_relative_rendezvous.html",
             "diagnostics_composable_cwh_relative_rendezvous.html",
         ]
-    elif script_rel.endswith("12_cwh_safety_corridor.py"):
+    elif script_rel.endswith("15_cwh_safety_corridor.py"):
         mission = missions[0]
         kinds = [constraint.kind for constraint in mission.phases[0].constraints]
         assert "keep_out_sphere" in kinds
@@ -234,7 +234,7 @@ def test_composable_examples_run_as_scenarios(
             "traj_composable_cwh_safety_corridor.html",
             "diagnostics_composable_cwh_safety_corridor.html",
         ]
-    elif script_rel.endswith("14_nonlinear_relative_rendezvous.py"):
+    elif script_rel.endswith("17_nonlinear_relative_rendezvous.py"):
         phase = missions[0].phases[0]
         assert phase.dynamics.model.chief_initial_state_eci is not None
         assert phase.dynamics.active_perturbations().j2 is False
@@ -242,7 +242,7 @@ def test_composable_examples_run_as_scenarios(
             "traj_composable_nonlinear_relative_rendezvous.html",
             "diagnostics_composable_nonlinear_relative_rendezvous.html",
         ]
-    elif script_rel.endswith("18_low_thrust_orbit_raise.py"):
+    elif script_rel.endswith("11_low_thrust_orbit_raise.py"):
         mission = missions[0]
         phase = mission.phases[0]
         assert phase.mode == "low_thrust"
@@ -252,14 +252,14 @@ def test_composable_examples_run_as_scenarios(
             "traj_composable_low_thrust_orbit_raise.html",
             "diagnostics_composable_low_thrust_orbit_raise.html",
         ]
-    elif script_rel.endswith("19_thrust_frames_and_attitude.py"):
+    elif script_rel.endswith("12_thrust_frames_and_attitude.py"):
         mission = missions[0]
         control = mission.phases[0].thrust_control
         assert control.representation == "euler"
         assert control.frame == "ric"
         assert control.max_slew_rate_radps == pytest.approx(np.deg2rad(0.5))
         assert plotted == ["traj_composable_thrust_frames_and_attitude.html"]
-    elif script_rel.endswith("20_cannonball_drag_srp.py") and "earth_centered" in script_rel:
+    elif script_rel.endswith("13_cannonball_drag_srp.py") and "earth_centered" in script_rel:
         mission = missions[0]
         phase = mission.phases[0]
         perturbations = phase.dynamics.active_perturbations()
@@ -271,7 +271,7 @@ def test_composable_examples_run_as_scenarios(
             "traj_inertial_cannonball_drag_srp.html",
             "diagnostics_inertial_cannonball_drag_srp.html",
         ]
-    elif script_rel.endswith("18_safety_ellipse_transfer.py"):
+    elif script_rel.endswith("21_safety_ellipse_transfer.py"):
         mission = missions[0]
         initial_coast, transfer = mission.phases
         assert initial_coast.tof_is_relative is True
@@ -298,7 +298,7 @@ def test_composable_examples_run_as_scenarios(
         assert plotted_trajectories[0][0, 6] == pytest.approx(0.0)
         assert plotted_trajectories[0][-1, 6] == pytest.approx(10_200.0)
         assert plotted_trajectories[0].shape[0] > _fake_solution().traj.shape[0]
-    elif script_rel.endswith("17_damico_free_time_target.py"):
+    elif script_rel.endswith("20_damico_free_time_target.py"):
         mission = missions[0]
         phase = mission.phases[0]
         assert phase.dynamics.model.propagation_mode.value == "damico"
@@ -314,7 +314,7 @@ def test_composable_examples_run_as_scenarios(
         assert plotted_trajectories[0][0, 6] == pytest.approx(0.0)
         assert plotted_trajectories[0][-1, 6] == pytest.approx(1_400.0)
         assert plotted_trajectories[0].shape[0] > _fake_solution().traj.shape[0]
-    elif script_rel.endswith("19_relative_finite_burn_coast.py"):
+    elif script_rel.endswith("22_relative_finite_burn_coast.py"):
         mission = missions[0]
         assert [phase.mode for phase in mission.phases] == [
             "finite_thrust",
@@ -331,7 +331,7 @@ def test_composable_examples_run_as_scenarios(
             "traj_composable_relative_finite_burn_coast.html",
             "diagnostics_composable_relative_finite_burn_coast.html",
         ]
-    elif script_rel.endswith("20_relative_three_burn_transfer.py"):
+    elif script_rel.endswith("23_relative_three_burn_transfer.py"):
         mission = missions[0]
         assert [phase.name for phase in mission.phases] == [
             "initial_coast",
@@ -344,20 +344,21 @@ def test_composable_examples_run_as_scenarios(
             "traj_composable_relative_three_burn.html",
             "diagnostics_composable_relative_three_burn.html",
         ]
-    elif script_rel.endswith("21_perturbed_relative_element_propagation.py"):
+    elif script_rel.endswith("24_perturbed_relative_element_propagation.py"):
         assert missions == []
         assert plotted == [
             "traj_perturbed_relative_elements.html",
             "diagnostics_perturbed_relative_elements.html",
         ]
-    elif script_rel.endswith("22_earth_moon_cr3bp.py"):
+    elif script_rel.endswith("27_earth_moon_cr3bp.py"):
         mission = missions[0]
         model = mission.phases[0].dynamics.model
         assert model.primary.name == "earth"
         assert model.secondary.name == "moon"
+        assert mission.phases[0].dynamics.cr3bp_dimensional is True
         assert mission.phases[0].dynamics.frame.kind == "rotating"
         assert plotted == ["traj_composable_earth_moon_cr3bp.html"]
-    elif script_rel.endswith("24_classical_relative_elements.py"):
+    elif script_rel.endswith("26_classical_relative_elements.py"):
         phase = missions[0].phases[0]
         assert phase.dynamics.model.propagation_mode.value == "classical_elements"
         assert [constraint.kind for constraint in phase.constraints] == [
@@ -368,9 +369,10 @@ def test_composable_examples_run_as_scenarios(
             "traj_classical_relative_elements.html",
             "diagnostics_classical_relative_elements.html",
         ]
-    elif script_rel.endswith("24_canonical_periodic_orbit.py"):
+    elif script_rel.endswith("28_canonical_periodic_orbit.py"):
         phase = missions[0].phases[0]
         assert phase.dynamics.model == CR3BPSystem.earth_moon()
+        assert phase.dynamics.cr3bp_dimensional is False
         assert [constraint.kind for constraint in phase.constraints] == [
             "periodic_state",
             "state_component",
@@ -380,7 +382,7 @@ def test_composable_examples_run_as_scenarios(
             "traj_canonical_L1_periodic_orbit.html",
             "diagnostics_canonical_L1_periodic_orbit.html",
         ]
-    elif script_rel.endswith("25_periodic_orbit_transfer.py"):
+    elif script_rel.endswith("29_periodic_orbit_transfer.py"):
         mission = missions[0]
         assert [phase.name for phase in mission.phases] == [
             "coast_on_L1_orbit",
@@ -396,7 +398,7 @@ def test_composable_examples_run_as_scenarios(
             "traj_L1_to_L2_periodic_orbits.html",
             "diagnostics_L1_to_L2_periodic_orbits.html",
         ]
-    elif script_rel.endswith("26_high_fidelity_recapture.py"):
+    elif script_rel.endswith("30_high_fidelity_recapture.py"):
         mission = missions[0]
         perturbations = mission.phases[0].dynamics.active_perturbations()
         assert perturbations.j2 is True
@@ -406,8 +408,9 @@ def test_composable_examples_run_as_scenarios(
             "traj_high_fidelity_cislunar_recapture.html",
             "diagnostics_high_fidelity_cislunar_recapture.html",
         ]
-    elif script_rel.endswith("27_jacobi_targeted_periodic_orbit.py"):
+    elif script_rel.endswith("31_jacobi_targeted_periodic_orbit.py"):
         phase = missions[0].phases[0]
+        assert phase.dynamics.cr3bp_dimensional is False
         assert [constraint.kind for constraint in phase.constraints] == [
             "periodic_state",
             "state_component",
@@ -420,7 +423,7 @@ def test_composable_examples_run_as_scenarios(
             "traj_jacobi_targeted_L1_periodic_orbit.html",
             "diagnostics_jacobi_targeted_L1_periodic_orbit.html",
         ]
-    elif script_rel.endswith("15_perturbed_relative_solar.py"):
+    elif script_rel.endswith("18_perturbed_relative_solar.py"):
         mission = missions[0]
         phase = mission.phases[0]
         perturbations = phase.dynamics.active_perturbations()
@@ -444,7 +447,7 @@ def test_composable_examples_run_as_scenarios(
 
 def test_relative_representation_example_round_trips(capsys) -> None:
     runpy.run_path(
-        str(ROOT / "examples/composable/relative/13_relative_representations.py"),
+        str(ROOT / "examples/composable/relative/16_relative_representations.py"),
         run_name="__main__",
     )
     output = capsys.readouterr().out

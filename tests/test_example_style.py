@@ -29,6 +29,21 @@ def test_composable_examples_are_grouped_by_frame() -> None:
     assert categories == {"cislunar", "earth_centered", "relative"}
 
 
+def test_composable_example_numbers_are_unique_and_grouped() -> None:
+    """Each regime owns one contiguous range in the global progression."""
+    ordered_categories = ("earth_centered", "relative", "cislunar")
+    grouped_numbers = []
+    for category in ordered_categories:
+        numbers = sorted(
+            int(path.name.split("_", 1)[0])
+            for path in (COMPOSABLE_DIR / category).glob("*.py")
+        )
+        assert numbers == list(range(numbers[0], numbers[-1] + 1))
+        grouped_numbers.extend(numbers)
+
+    assert grouped_numbers == list(range(1, len(grouped_numbers) + 1))
+
+
 def test_python_examples_compile_and_have_module_docstrings() -> None:
     """Every executable guide should be syntactically valid and self-describing."""
     failures: list[str] = []

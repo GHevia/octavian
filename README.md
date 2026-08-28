@@ -102,14 +102,14 @@ python -c "import asset_asrl; print(asset_asrl.__file__)"
 python examples/quick/01_two_impulse_free_time.py
 python examples/quick/02_two_impulse_precoast_impulsive_link.py
 python examples/composable/earth_centered/08_chemical_burn_j2.py
-python examples/composable/earth_centered/19_thrust_frames_and_attitude.py
-python examples/composable/earth_centered/20_cannonball_drag_srp.py
+python examples/composable/earth_centered/12_thrust_frames_and_attitude.py
+python examples/composable/earth_centered/13_cannonball_drag_srp.py
 python examples/analysis/01_propagation_namespace.py
-python examples/composable/relative/23_cannonball_drag_srp.py
-python examples/composable/cislunar/24_canonical_periodic_orbit.py
-python examples/composable/cislunar/25_periodic_orbit_transfer.py
-python examples/composable/cislunar/26_high_fidelity_recapture.py
-python examples/composable/cislunar/27_jacobi_targeted_periodic_orbit.py
+python examples/composable/relative/25_cannonball_drag_srp.py
+python examples/composable/cislunar/28_canonical_periodic_orbit.py
+python examples/composable/cislunar/29_periodic_orbit_transfer.py
+python examples/composable/cislunar/30_high_fidelity_recapture.py
+python examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py
 python examples/outputs/01_ephemeris_files.py
 python -m octavian.config examples/config/01_two_impulse_transfer.json
 ```

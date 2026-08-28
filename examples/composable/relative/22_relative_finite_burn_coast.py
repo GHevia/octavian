@@ -1,4 +1,4 @@
-"""Relative composable example 19: exact finite burns separated by a coast.
+"""Relative composable example 22: exact finite burns separated by a coast.
 
 The chief remains unpowered. The deputy executes a short departure burn,
 coasts for five minutes, and executes an arrival trim burn. All public states
@@ -6,7 +6,7 @@ and plots remain in RIC even though the powered dynamics propagate both
 spacecraft in ECI.
 
 Run:
-  python examples/composable/relative/19_relative_finite_burn_coast.py
+  python examples/composable/relative/22_relative_finite_burn_coast.py
 """
 
 from __future__ import annotations

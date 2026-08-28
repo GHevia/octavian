@@ -1,4 +1,4 @@
-"""Cislunar example 27: select a periodic orbit by Jacobi constant.
+"""Cislunar example 31: select a periodic orbit by Jacobi constant.
 
 The preceding periodic-orbit example fixes the initial x coordinate to choose
 one member of the L1 planar Lyapunov family. Here the family member is selected
@@ -6,7 +6,7 @@ by its canonical Jacobi constant instead. ASSET is free to correct the initial
 position, velocity, and period while front/back equality closes the orbit.
 
 Run:
-  python examples/composable/cislunar/27_jacobi_targeted_periodic_orbit.py
+  python examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py
 """
 
 from __future__ import annotations
@@ -16,10 +16,7 @@ import numpy as np
 from octavian import Dynamics, Mission, Phase, Spacecraft, constraints, state
 from octavian.cislunar import (
     CR3BPSystem,
-    dimensionalize_state,
-    dimensionalize_time,
     jacobi_constant,
-    nondimensionalize_state,
     propagate_cr3bp,
 )
 from octavian.solvers import SolverOptions
@@ -40,27 +37,25 @@ seed_state_canonical = state(
 seed_period_tu = 2.779749966597294
 target_jacobi_canonical = 3.16
 
-seed_state_si = dimensionalize_state(seed_state_canonical, system)
-seed_period_s = float(dimensionalize_time(seed_period_tu, system))
-seed_history_si = propagate_cr3bp(
-    seed_state_si,
-    [0.0, seed_period_s],
+seed_history_canonical = propagate_cr3bp(
+    seed_state_canonical,
+    [0.0, seed_period_tu],
     system=system,
-    max_step=300.0,
+    dimensional=False,
 )
-seed_terminal_si = state(
-    seed_history_si[-1, 0:3],
-    seed_history_si[-1, 3:6],
+seed_terminal_canonical = state(
+    seed_history_canonical[-1, 0:3],
+    seed_history_canonical[-1, 3:6],
 )
 
 periodic_orbit = Phase(
     name="Jacobi_targeted_L1_Lyapunov",
     mode="coast",
     spacecraft=Spacecraft(name="Cislunar explorer", dry_mass_kg=250.0),
-    dynamics=Dynamics.cr3bp(),
-    initial_state=seed_state_si,
-    final_state=seed_terminal_si,
-    tof_bounds_s=(0.85 * seed_period_s, 1.15 * seed_period_s),
+    dynamics=Dynamics.cr3bp(dimensional=False),
+    initial_state=seed_state_canonical,
+    final_state=seed_terminal_canonical,
+    tof_bounds_s=(0.85 * seed_period_tu, 1.15 * seed_period_tu),
     constraints=[
         constraints.periodic_state(),
         # A symmetry-plane crossing removes the arbitrary phase shift around
@@ -93,16 +88,7 @@ solution = mission.solve()
 if not solution.ok or solution.result is None:
     raise RuntimeError("The Jacobi-targeted periodic-orbit solve did not converge.")
 
-trajectory_canonical = np.empty_like(solution.traj)
-for row_index, row in enumerate(solution.traj):
-    canonical_state = nondimensionalize_state(
-        state(row[0:3], row[3:6]),
-        system,
-    )
-    trajectory_canonical[row_index, 0:6] = np.hstack(
-        [canonical_state.r_m, canonical_state.v_mps]
-    )
-trajectory_canonical[:, 6] = solution.traj[:, 6] / system.time_scale_s
+trajectory_canonical = solution.traj
 
 solved_jacobi = jacobi_constant(
     trajectory_canonical[0, 0:6],
@@ -128,9 +114,10 @@ save_cr3bp_trajectory_html(
     title=mission.name,
 )
 save_trajectory_diagnostics_html(
-    solution.traj,
+    trajectory_canonical,
     "diagnostics_jacobi_targeted_L1_periodic_orbit.html",
     frame_kind="rotating",
     cr3bp_system=system,
-    title=f"{mission.name} — dimensional diagnostics",
+    cr3bp_dimensional=False,
+    title=f"{mission.name} — canonical diagnostics",
 )

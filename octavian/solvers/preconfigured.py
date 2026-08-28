@@ -70,22 +70,23 @@ class RendezvousResult:
     info: dict[str, Any] = field(default_factory=dict)
 
     def tf_s(self) -> float:
-        """Return the final time of flight in seconds.
+        """Return the final trajectory time.
 
         Returns:
-            The last trajectory time sample in seconds, or ``nan`` if the
-            trajectory is empty.
+            The last sample in seconds, or in TU for a canonical CR3BP solve.
+            The ``_s`` suffix is retained for API compatibility.
         """
         if self.traj.size == 0:
             return float("nan")
         return float(self.traj[-1, -1])
 
     def total_dv_mps(self) -> float:
-        """Return the total maneuver delta-v magnitude in meters per second.
+        """Return the total maneuver delta-v magnitude.
 
         Returns:
-            The sum of maneuver magnitudes. Returns ``0.0`` when no maneuvers
-            are stored on the result.
+            The sum in m/s, or in VU for a canonical CR3BP solve. Returns
+            ``0.0`` when no maneuvers are stored. The ``_mps`` suffix is
+            retained for API compatibility.
         """
         if not self.maneuvers:
             return 0.0
@@ -100,16 +101,26 @@ class RendezvousResult:
         """
         lines: list[str] = []
         status = "CONVERGED" if self.converged else "NOT CONVERGED"
+        cr3bp_metadata = self.info.get("cr3bp_system")
+        canonical_cr3bp = (
+            isinstance(cr3bp_metadata, dict)
+            and cr3bp_metadata.get("dimensional") is False
+        )
+        time_unit = "TU" if canonical_cr3bp else "s"
+        velocity_unit = "VU" if canonical_cr3bp else "m/s"
         lines.append(f"Octavian result: {status}")
-        lines.append(f"  tf: {self.tf_s():.3f} s")
-        lines.append(f"  total dv: {self.total_dv_mps():.6f} m/s")
+        lines.append(f"  tf: {self.tf_s():.3f} {time_unit}")
+        lines.append(f"  total dv: {self.total_dv_mps():.6f} {velocity_unit}")
         if np.isfinite(self.last_obj):
             lines.append(f"  last objective: {self.last_obj:.6g}")
         if self.maneuvers:
             lines.append("  maneuvers:")
             for m in self.maneuvers:
                 dv = float(np.linalg.norm(m.dv_mps))
-                lines.append(f"    - {m.name}: t={m.t_s:.3f} s | |dv|={dv:.6f} m/s")
+                lines.append(
+                    f"    - {m.name}: t={m.t_s:.3f} {time_unit} | "
+                    f"|dv|={dv:.6f} {velocity_unit}"
+                )
         constraint_report = self.info.get("constraint_report", [])
         if constraint_report:
             lines.append("  constraints:")
