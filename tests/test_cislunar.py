@@ -8,7 +8,6 @@ from octavian.cislunar import (
     CR3BPSystem,
     cr3bp_derivative,
     dimensionalize_state,
-    dimensionalize_time,
     inertial_to_synodic_state,
     jacobi_constant,
     nondimensionalize_state,
@@ -70,6 +69,20 @@ def test_cr3bp_scaling_and_synodic_inertial_round_trips() -> None:
     np.testing.assert_allclose(recovered_synodic.v_mps, dimensional.v_mps, atol=1.0e-12)
 
 
+def test_cr3bp_dynamics_selects_dimensional_or_canonical_solver_units() -> None:
+    dimensional = Dynamics.cr3bp()
+    canonical = Dynamics.cr3bp(dimensional=False)
+
+    assert dimensional.scaling is not None
+    assert canonical.scaling is not None
+    assert dimensional.scaling.length_m == pytest.approx(384_400_000.0)
+    assert canonical.scaling.length_m == pytest.approx(1.0)
+    assert canonical.scaling.velocity_mps == pytest.approx(1.0)
+    assert canonical.scaling.time_s == pytest.approx(1.0)
+    assert canonical.model == CR3BPSystem.earth_moon()
+    assert canonical.cr3bp_dimensional is False
+
+
 def test_cr3bp_propagation_preserves_jacobi_constant() -> None:
     system = CR3BPSystem.earth_moon()
     initial_position = system.lagrange_points(dimensional=False)["L4"].copy()
@@ -117,6 +130,18 @@ def test_cr3bp_plot_contains_trajectory_primaries_and_lagrange_points() -> None:
         "Primary geometry",
         "CR3BP invariant",
     ]
+
+    canonical_trajectory = np.zeros((2, 7), dtype=float)
+    canonical_trajectory[:, 0] = system.lagrange_points(dimensional=False)["L1"][0]
+    canonical_trajectory[:, 6] = [0.0, 1.0]
+    canonical_panels = cr3bp_diagnostic_panels(
+        canonical_trajectory,
+        system=system,
+        dimensional=False,
+    )
+    assert canonical_panels[0].series[0].unit == "DU"
+    assert canonical_panels[1].series[0].unit == "VU"
+    assert canonical_panels[3].series[0].unit == "canonical"
 
 
 def test_cr3bp_plot_can_overlay_references_phases_and_maneuvers() -> None:
@@ -192,23 +217,22 @@ def test_composable_cr3bp_jacobi_targeted_periodic_state_solves() -> None:
     )
     period_tu = 2.779749966597294
     target_jacobi = 3.16
-    initial = dimensionalize_state(canonical_initial, system)
-    period_s = float(dimensionalize_time(period_tu, system))
     propagated = propagate_cr3bp(
-        initial,
-        [0.0, period_s],
+        canonical_initial,
+        [0.0, period_tu],
         system=system,
-        max_step=300.0,
+        dimensional=False,
+        max_step=0.0025,
     )
     terminal_seed = state(propagated[-1, 0:3], propagated[-1, 3:6])
     phase = Phase(
         name="L1_planar_periodic",
         mode="coast",
         spacecraft=Spacecraft(name="probe", dry_mass_kg=1.0),
-        dynamics=Dynamics.cr3bp(),
-        initial_state=initial,
+        dynamics=Dynamics.cr3bp(dimensional=False),
+        initial_state=canonical_initial,
         final_state=terminal_seed,
-        tof_bounds_s=(0.85 * period_s, 1.15 * period_s),
+        tof_bounds_s=(0.85 * period_tu, 1.15 * period_tu),
         constraints=[
             constraints.periodic_state(),
             constraints.state_component("y", 0.0, where="Front"),
@@ -232,23 +256,28 @@ def test_composable_cr3bp_jacobi_targeted_periodic_state_solves() -> None:
     ).solve()
 
     assert solution.ok
-    closure_canonical = (solution.traj[-1, 0:6] - solution.traj[0, 0:6]) / np.hstack(
-        [
-            np.full(3, system.separation_m),
-            np.full(3, system.velocity_scale_mps),
-        ]
-    )
+    closure_canonical = solution.traj[-1, 0:6] - solution.traj[0, 0:6]
     assert np.linalg.norm(closure_canonical) < 1.0e-7
     solved_jacobi = jacobi_constant(
         solution.traj[0, 0:6],
         system=system,
-        dimensional=True,
-    ) / system.velocity_scale_mps**2
+        dimensional=False,
+    )
     assert solved_jacobi == pytest.approx(target_jacobi, abs=1.0e-8)
-    assert solution.traj[-1, 6] / system.time_scale_s == pytest.approx(
+    assert solution.traj[-1, 6] == pytest.approx(
         2.801037769641,
         rel=1.0e-4,
     )
+    assert solution.cr3bp_dimensional is False
+    assert solution.result.info["scaling"] == {
+        "length_m": 1.0,
+        "velocity_mps": 1.0,
+        "time_s": 1.0,
+        "mass_kg": 1.0,
+    }
+    assert solution.result.info["cr3bp_system"]["dimensional"] is False
+    assert "tf:" in solution.summary()
+    assert "TU" in solution.summary()
     report = solution.result.info["constraint_report"]
     assert len(report) == 1
     assert report[0]["constraint"] == "jacobi_constant"

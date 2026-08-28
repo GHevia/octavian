@@ -1,4 +1,4 @@
-"""Earth-centered example 20: inertial cannonball drag and SRP recapture.
+"""Earth-centered example 13: inertial cannonball drag and SRP recapture.
 
 The nominal endpoint comes from a two-body coast. The composable solve then
 uses Earth J2, a co-rotating exponential atmosphere, and BSP-driven solar
@@ -6,7 +6,7 @@ radiation pressure. Boundary impulses expose the correction needed to recover
 the nominal orbit after one quarter revolution.
 
 Run:
-  python examples/composable/earth_centered/20_cannonball_drag_srp.py
+  python examples/composable/earth_centered/13_cannonball_drag_srp.py
 """
 
 from __future__ import annotations

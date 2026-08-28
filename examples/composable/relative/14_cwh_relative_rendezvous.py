@@ -1,4 +1,4 @@
-"""Relative composable example 11: impulsive rendezvous in chief-centered LVLH.
+"""Relative composable example 14: impulsive rendezvous in chief-centered LVLH.
 
 The deputy begins one kilometer behind a chief in a 400 km circular Earth
 orbit. CWH dynamics optimize departure and arrival impulses while the solver

@@ -10,8 +10,8 @@ mission:
 - `cislunar/` contains rotating-frame CR3BP propagation and optimization
   examples.
 
-The numeric prefixes preserve the tutorial build-up order documented in
-`docs/examples/composable.md`.
+The numeric prefixes are globally unique and contiguous within each regime,
+matching the grouped tutorial order in `docs/examples/composable.md`.
 
 For a task-oriented map of every script, use `docs/examples/index.md`.
 
@@ -19,9 +19,9 @@ For a task-oriented map of every script, use `docs/examples/index.md`.
 
 | Regime | Progression |
 | --- | --- |
-| Earth-centered | Transfer basics (01–07), finite burns and perturbations (08–10), low thrust and attitude (18–19), cannonball drag/SRP (20). |
-| Relative | CWH and geometry (11–12), representations and exact dynamics (13–16), ROE targeting and multiphase missions (17–21), differential forces and classical ROEs (23–24). |
-| Cislunar | Dimensional CR3BP fundamentals (22), canonical periodic-orbit correction (24), L1-to-L2 transfer (25), perturbed inertial recapture (26), Jacobi-targeted family selection (27). |
+| Earth-centered | Transfer basics (01–07), finite burns and perturbations (08–10), low thrust, attitude, and cannonball forces (11–13). |
+| Relative | CWH and geometry (14–15), representations and exact dynamics (16–19), ROE targeting and multiphase missions (20–24), differential forces and classical ROEs (25–26). |
+| Cislunar | Dimensional CR3BP fundamentals (27), canonical periodic-orbit correction (28), L1-to-L2 transfer (29), perturbed inertial recapture (30), Jacobi-targeted family selection (31). |
 
 The cislunar sequence is explained in detail in
 `docs/examples/cislunar.md`, including the canonical/SI boundary and current

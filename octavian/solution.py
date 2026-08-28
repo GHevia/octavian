@@ -178,6 +178,16 @@ class Solution:
         )
 
     @property
+    def cr3bp_dimensional(self) -> bool | None:
+        """Return the solved CR3BP unit mode, or ``None`` for other dynamics."""
+        if self.result is None:
+            return None
+        value = self.result.info.get("cr3bp_system")
+        if not isinstance(value, dict):
+            return None
+        return bool(value.get("dimensional", True))
+
+    @property
     def phase_control_trajectories(self) -> tuple[np.ndarray, ...]:
         """Return ``[time, controls...]`` arrays for every compiled phase.
 
@@ -261,6 +271,11 @@ class Solution:
             )
         if selected not in {"solved", "chief", "deputy"}:
             raise ValueError("trajectory must be one of: auto, solved, chief, deputy")
+        if selected == "solved" and self.cr3bp_dimensional is False:
+            raise ValueError(
+                "Canonical CR3BP trajectories cannot be exported as SI ephemerides. "
+                "Dimensionalize the state and time history first."
+            )
 
         if selected == "chief":
             rows = self.chief_trajectory_eci
@@ -390,6 +405,7 @@ class Solution:
                         self_outer.result.traj,
                         out_html,
                         system=system,
+                        dimensional=self_outer.cr3bp_dimensional is not False,
                         title=title,
                     )
                     return
@@ -437,6 +453,7 @@ class Solution:
                     mu_m3ps2=self_outer.result.info.get("mu_m3ps2"),
                     solar_directions_ric=self_outer.result.info.get("solar_directions_ric"),
                     cr3bp_system=self_outer.cr3bp_system,
+                    cr3bp_dimensional=self_outer.cr3bp_dimensional is not False,
                     title=title,
                 )
 

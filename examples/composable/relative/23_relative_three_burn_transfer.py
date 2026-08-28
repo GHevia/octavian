@@ -1,4 +1,4 @@
-"""Relative composable example 20: CWH three-burn initial design.
+"""Relative composable example 23: CWH three-burn initial design.
 
 The first phase is a natural coast. Transfer 1 begins with the departure
 impulse, transfer 2 begins with an optimized intermediate impulse, and the

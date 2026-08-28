@@ -160,50 +160,72 @@ def cr3bp_diagnostic_panels(
     traj: ArrayLike,
     *,
     system: CR3BPSystem,
+    dimensional: bool = True,
 ) -> tuple[DiagnosticPanel, ...]:
-    """Build synodic state, distance, speed, and Jacobi time series."""
+    """Build dimensional or canonical CR3BP state and invariant time series."""
     trajectory = _trajectory(traj)
     positions = trajectory[:, 0:3]
     velocities = trajectory[:, 3:6]
+    primary_position = (
+        system.primary_position_m
+        if dimensional
+        else system.primary_position_nondimensional
+    )
+    secondary_position = (
+        system.secondary_position_m
+        if dimensional
+        else system.secondary_position_nondimensional
+    )
     primary_ranges = np.linalg.norm(
-        positions - system.primary_position_m,
+        positions - primary_position,
         axis=1,
     )
     secondary_ranges = np.linalg.norm(
-        positions - system.secondary_position_m,
+        positions - secondary_position,
         axis=1,
     )
     jacobi_values = np.asarray(
         [
-            jacobi_constant(row[0:6], system=system)
+            jacobi_constant(row[0:6], system=system, dimensional=dimensional)
             for row in trajectory
         ],
         dtype=float,
     )
+    position_unit = "m" if dimensional else "DU"
+    velocity_unit = "m/s" if dimensional else "VU"
+    jacobi_unit = "m²/s²" if dimensional else "canonical"
     return (
         DiagnosticPanel(
             title="Synodic position",
-            series=_component_series(positions, ("x", "y", "z"), "m"),
-            y_axis_title="Position (m)",
+            series=_component_series(positions, ("x", "y", "z"), position_unit),
+            y_axis_title=f"Position ({position_unit})",
         ),
         DiagnosticPanel(
             title="Synodic velocity",
-            series=_component_series(velocities, ("xdot", "ydot", "zdot"), "m/s"),
-            y_axis_title="Velocity (m/s)",
+            series=_component_series(
+                velocities,
+                ("xdot", "ydot", "zdot"),
+                velocity_unit,
+            ),
+            y_axis_title=f"Velocity ({velocity_unit})",
         ),
         DiagnosticPanel(
             title="Primary geometry",
             series=(
-                DiagnosticSeries("Primary range", primary_ranges, "m"),
-                DiagnosticSeries("Secondary range", secondary_ranges, "m"),
-                DiagnosticSeries("Synodic speed", np.linalg.norm(velocities, axis=1), "m/s"),
+                DiagnosticSeries("Primary range", primary_ranges, position_unit),
+                DiagnosticSeries("Secondary range", secondary_ranges, position_unit),
+                DiagnosticSeries(
+                    "Synodic speed",
+                    np.linalg.norm(velocities, axis=1),
+                    velocity_unit,
+                ),
             ),
             y_axis_title="Range / speed",
         ),
         DiagnosticPanel(
             title="CR3BP invariant",
-            series=(DiagnosticSeries("Jacobi constant", jacobi_values, "m²/s²"),),
-            y_axis_title="Jacobi constant (m²/s²)",
+            series=(DiagnosticSeries("Jacobi constant", jacobi_values, jacobi_unit),),
+            y_axis_title=f"Jacobi constant ({jacobi_unit})",
         ),
     )
 

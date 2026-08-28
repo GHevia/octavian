@@ -758,6 +758,7 @@ def trajectory_diagnostics_figure(
     mu_m3ps2: float | None = None,
     solar_directions_ric: np.ndarray | None = None,
     cr3bp_system: CR3BPSystem | None = None,
+    cr3bp_dimensional: bool = True,
     title: str = "octavian trajectory diagnostics",
 ) -> Any:
     """Build stacked, shared-time plots appropriate to the trajectory frame."""
@@ -783,6 +784,7 @@ def trajectory_diagnostics_figure(
         panels = cr3bp_diagnostic_panels(
             trajectory,
             system=cr3bp_system,
+            dimensional=cr3bp_dimensional,
         )
     else:
         if mu_m3ps2 is None or float(mu_m3ps2) <= 0.0:
@@ -801,7 +803,7 @@ def trajectory_diagnostics_figure(
         vertical_spacing=min(0.08, 0.25 / len(panels)),
         subplot_titles=[panel.title for panel in panels],
     )
-    time_s = trajectory[:, 6]
+    time_values = trajectory[:, 6]
     for row, panel in enumerate(panels, start=1):
         for series in panel.series:
             label = (
@@ -809,7 +811,7 @@ def trajectory_diagnostics_figure(
             )
             figure.add_trace(
                 go.Scatter(
-                    x=time_s,
+                    x=time_values,
                     y=series.values,
                     mode="lines",
                     name=label,
@@ -818,7 +820,16 @@ def trajectory_diagnostics_figure(
                 col=1,
             )
         figure.update_yaxes(title_text=panel.y_axis_title, row=row, col=1)
-    figure.update_xaxes(title_text="Time (s)", row=len(panels), col=1)
+    time_unit = (
+        "TU"
+        if normalized_frame == "rotating" and not cr3bp_dimensional
+        else "s"
+    )
+    figure.update_xaxes(
+        title_text=f"Time ({time_unit})",
+        row=len(panels),
+        col=1,
+    )
     figure.update_layout(
         title=dict(text=title, x=0.5),
         template="plotly_dark",
@@ -838,6 +849,7 @@ def save_trajectory_diagnostics_html(
     mu_m3ps2: float | None = None,
     solar_directions_ric: np.ndarray | None = None,
     cr3bp_system: CR3BPSystem | None = None,
+    cr3bp_dimensional: bool = True,
     title: str = "octavian trajectory diagnostics",
 ) -> None:
     """Save frame-aware trajectory time histories as interactive HTML."""
@@ -847,6 +859,7 @@ def save_trajectory_diagnostics_html(
         mu_m3ps2=mu_m3ps2,
         solar_directions_ric=solar_directions_ric,
         cr3bp_system=cr3bp_system,
+        cr3bp_dimensional=cr3bp_dimensional,
         title=title,
     )
     figure.write_html(out_html, include_plotlyjs="cdn")

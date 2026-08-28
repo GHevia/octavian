@@ -4,11 +4,11 @@ The cislunar examples form one continuous design progression:
 
 | Step | Design model | Purpose |
 | --- | --- | --- |
-| 22 | Dimensional CR3BP | Learn the system, propagation, transforms, invariant, and composable phase. |
-| 24 | Canonical CR3BP at the user boundary | Correct a planar L1 Lyapunov orbit with direct front/back periodicity. |
-| 25 | Dimensional CR3BP inside ASSET | Coast on L1, transfer impulsively, insert at L2, and coast on L2. |
-| 26 | Earth-centered ephemeris perturbation model | Re-target the nominal CR3BP endpoints under J2, Sun/Moon gravity, and SRP. |
-| 27 | Canonical CR3BP target | Select a different L1 family member by Jacobi constant instead of initial x. |
+| 27 | Dimensional CR3BP | Learn the system, propagation, transforms, invariant, and composable phase. |
+| 28 | Canonical CR3BP inside ASSET | Correct a planar L1 Lyapunov orbit with direct front/back periodicity. |
+| 29 | Dimensional CR3BP inside ASSET | Coast on L1, transfer impulsively, insert at L2, and coast on L2. |
+| 30 | Earth-centered ephemeris perturbation model | Re-target the nominal CR3BP endpoints under J2, Sun/Moon gravity, and SRP. |
+| 31 | Canonical CR3BP target | Select a different L1 family member by Jacobi constant instead of initial x. |
 
 This separation is intentional. Canonical CR3BP units make orbit families
 easy to compare with published initial conditions; SI units keep Octavian's
@@ -33,19 +33,27 @@ period_s = dimensionalize_time(period_tu, system)
 recovered_canonical = nondimensionalize_state(initial_si, system)
 ```
 
-`Phase`, `Mission`, and `Solution` continue to use meters, meters per second,
-and seconds. Example 24 performs the conversion immediately before the phase
-declaration and converts the solved rows back before reporting and plotting.
+By default, `Phase`, `Mission`, and `Solution` use meters, meters per second,
+and seconds. Example 28 instead selects canonical equations explicitly:
+
+```python
+dynamics = Dynamics.cr3bp(dimensional=False)
+```
+
+Its phase states and returned trajectory are in DU and VU, and its
+`tof_bounds_s` values are in TU. The field suffix remains for compatibility
+with the shared `Phase` API. This is an actual canonical solve, not an SI solve
+whose inputs and outputs are merely converted.
 
 ## Correct A Periodic Orbit
 
-Example 24 starts from a published-style canonical L1 seed. Its essential
+Example 28 starts from a published-style canonical L1 seed. Its essential
 ASSET declarations are:
 
 ```python
 constraints=[
     constraints.periodic_state(),
-    constraints.state_component("x", x0_m, where="Front"),
+    constraints.state_component("x", x0_du, where="Front"),
     constraints.state_component("y", 0.0, where="Front"),
 ]
 ```
@@ -71,7 +79,7 @@ separately fixed.
 
 ## Select The Orbit By Jacobi Constant
 
-Example 27 replaces example 24's fixed initial x coordinate with a target
+Example 31 replaces example 28's fixed initial x coordinate with a target
 invariant:
 
 ```python
@@ -99,7 +107,7 @@ the target is an equality.
 
 ## Transfer Between Periodic Orbits
 
-Example 25 expresses the trajectory architecture directly as three ASSET
+Example 29 expresses the trajectory architecture directly as three ASSET
 phases:
 
 ```text
@@ -123,7 +131,7 @@ and `link` pattern.
 
 ## Hand Off To A Perturbed Model
 
-Example 26 demonstrates a model transition without pretending the circular
+Example 30 demonstrates a model transition without pretending the circular
 model and ephemeris model are the same system:
 
 1. Propagate one nominal L1 orbit in the CR3BP synodic frame.
@@ -148,7 +156,7 @@ problem.
 - Finite-thrust CR3BP phases are not yet compiled.
 - J2, third-body gravity, drag, and SRP belong to the inertial force model,
   not to the canonical CR3BP equations.
-- Synodic/inertial transforms implement circular CR3BP geometry. Example 26
+- Synodic/inertial transforms implement circular CR3BP geometry. Example 30
   explicitly aligns that geometry to the BSP Moon at the handoff epoch.
 - Two-body osculating-element constraints are not meaningful as direct
   rotating-frame CR3BP constraints; use Cartesian synodic components.
@@ -159,12 +167,12 @@ clearly instead of appearing to provide a fidelity it does not have.
 ## Run The Progression
 
 ```bash
-python examples/composable/cislunar/22_earth_moon_cr3bp.py
-python examples/composable/cislunar/24_canonical_periodic_orbit.py
-python examples/composable/cislunar/25_periodic_orbit_transfer.py
-python examples/composable/cislunar/26_high_fidelity_recapture.py
-python examples/composable/cislunar/27_jacobi_targeted_periodic_orbit.py
+python examples/composable/cislunar/27_earth_moon_cr3bp.py
+python examples/composable/cislunar/28_canonical_periodic_orbit.py
+python examples/composable/cislunar/29_periodic_orbit_transfer.py
+python examples/composable/cislunar/30_high_fidelity_recapture.py
+python examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py
 ```
 
 Each script prints solver and model diagnostics and writes an interactive
-trajectory plot. Examples 24–27 also write time-history diagnostics.
+trajectory plot. Examples 28–31 also write time-history diagnostics.

@@ -1,4 +1,4 @@
-"""Cislunar example 25: coast-burn-transfer-burn-coast from L1 to L2.
+"""Cislunar example 29: coast-burn-transfer-burn-coast from L1 to L2.
 
 The departure and arrival states are corrected planar Lyapunov-orbit crossings
 in canonical units. The composable mission propagates along the L1 orbit,
@@ -6,7 +6,7 @@ chooses an impulsive departure into a free-time CR3BP transfer, inserts a
 second impulse onto the L2 orbit, and then propagates an arrival coast.
 
 Run:
-  python examples/composable/cislunar/25_periodic_orbit_transfer.py
+  python examples/composable/cislunar/29_periodic_orbit_transfer.py
 """
 
 from __future__ import annotations

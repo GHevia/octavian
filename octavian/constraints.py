@@ -30,6 +30,7 @@ class ConstraintApplicationContext(Protocol):
     phase_index: int
     mu_m3ps2: float
     cr3bp_system: Any | None
+    cr3bp_dimensional: bool
     is_relative_phase: bool
     relative_expressions: Any | None
     third_body_tables: dict[str, Any]
@@ -47,6 +48,7 @@ class ConstraintReportContext(Protocol):
     layout: Any
     mu_m3ps2: float
     cr3bp_system: Any | None
+    cr3bp_dimensional: bool
     solar_direction_at: Callable[[np.ndarray], np.ndarray] | None
 
 _CARTESIAN_COMPONENT_ALIASES = {
@@ -1130,9 +1132,13 @@ class JacobiConstant(Constraint):
             raise ValueError("Jacobi-constant constraints require Dynamics.cr3bp().")
         vf = context.vector_functions
         arguments = vf.Arguments(6)
-        position_m, velocity_mps = arguments.tolist([(0, 3), (3, 3)])
-        position = position_m / float(system.separation_m)
-        velocity = velocity_mps / float(system.velocity_scale_mps)
+        phase_position, phase_velocity = arguments.tolist([(0, 3), (3, 3)])
+        if context.cr3bp_dimensional:
+            position = phase_position / float(system.separation_m)
+            velocity = phase_velocity / float(system.velocity_scale_mps)
+        else:
+            position = phase_position
+            velocity = phase_velocity
         mass_parameter = float(system.mass_parameter)
         x = position[0]
         y = position[1]
@@ -1176,12 +1182,18 @@ class JacobiConstant(Constraint):
 
         values = np.asarray(
             [
-                evaluate_jacobi_constant(row[0:6], system=system, dimensional=True)
+                evaluate_jacobi_constant(
+                    row[0:6],
+                    system=system,
+                    dimensional=context.cr3bp_dimensional,
+                )
                 for row in np.asarray(context.phase_trajectory, dtype=float)
             ],
             dtype=float,
         )
-        if not self.dimensional:
+        if self.dimensional and not context.cr3bp_dimensional:
+            values *= float(system.velocity_scale_mps**2)
+        elif not self.dimensional and context.cr3bp_dimensional:
             values /= float(system.velocity_scale_mps**2)
         selected = _values_at_location(values, self.where)
         errors = np.abs(selected - self.target)
