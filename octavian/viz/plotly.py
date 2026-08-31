@@ -305,6 +305,10 @@ def cr3bp_trajectory_figure(
     *,
     system: CR3BPSystem,
     dimensional: bool = True,
+    lagrange_point_names: Sequence[str] | None = None,
+    maneuvers: Sequence[Maneuver] | None = None,
+    phase_segments: Sequence[dict[str, object]] | None = None,
+    reference_trajectories: Sequence[dict[str, object]] | None = None,
     title: str = "octavian CR3BP trajectory",
 ) -> Any:
     """Build an interactive barycentric-synodic CR3BP trajectory figure.
@@ -314,10 +318,20 @@ def cr3bp_trajectory_figure(
         system: Primary-secondary CR3BP system.
         dimensional: Interpret positions as meters when true or canonical
             distance units otherwise.
+        lagrange_point_names: Lagrange points to include. The default includes
+            all five; pass an empty sequence to omit them.
+        maneuvers: Optional maneuver markers in the trajectory's units.
+        phase_segments: Optional phase interval dictionaries with ``name``,
+            ``t_start_s``, ``t_end_s``, and optional ``color`` keys.
+        reference_trajectories: Optional dictionaries with ``name`` and
+            ``traj`` keys plus an optional Plotly ``color``. These are useful
+            for plotting departure and arrival periodic orbits around a
+            solved transfer.
         title: Figure title.
 
     Returns:
-        A Plotly 3D figure with both bodies and all five Lagrange points.
+        A Plotly 3D figure with independently selectable body and Lagrange-point
+        traces.
     """
     try:
         import plotly.graph_objects as go
@@ -343,7 +357,21 @@ def cr3bp_trajectory_figure(
     secondary_position = (
         system.secondary_position_m if dimensional else system.secondary_position_nondimensional
     )
-    lagrange_points = system.lagrange_points(dimensional=dimensional)
+    all_lagrange_points = system.lagrange_points(dimensional=dimensional)
+    if lagrange_point_names is None:
+        selected_lagrange_names = tuple(all_lagrange_points)
+    else:
+        selected_lagrange_names = tuple(str(name).strip().upper() for name in lagrange_point_names)
+        unknown_names = [
+            name for name in selected_lagrange_names if name not in all_lagrange_points
+        ]
+        if unknown_names:
+            raise ValueError(
+                "lagrange_point_names entries must be L1, L2, L3, L4, or L5; "
+                f"received {unknown_names!r}"
+            )
+        if len(set(selected_lagrange_names)) != len(selected_lagrange_names):
+            raise ValueError("lagrange_point_names entries must be unique")
     positions = scale * trajectory[:, 0:3]
     hover_text = [
         (
@@ -366,30 +394,104 @@ def cr3bp_trajectory_figure(
             hovertemplate="%{text}<extra></extra>",
         )
     )
-    figure.add_trace(
-        go.Scatter3d(
-            x=[scale * primary_position[0], scale * secondary_position[0]],
-            y=[0.0, 0.0],
-            z=[0.0, 0.0],
-            mode="markers+text",
-            name="Primaries",
-            text=[system.primary.name.title(), system.secondary.name.title()],
-            textposition="top center",
-            marker=dict(size=[16, 9], color=["#636EFA", "#AB63FA"]),
+    for reference_index, reference in enumerate(reference_trajectories or (), start=1):
+        reference_rows = np.asarray(reference["traj"], dtype=float)
+        if (
+            reference_rows.ndim != 2
+            or reference_rows.shape[0] < 1
+            or reference_rows.shape[1] < 3
+            or not np.all(np.isfinite(reference_rows[:, 0:3]))
+        ):
+            raise ValueError("Each CR3BP reference trajectory must contain finite position rows")
+        reference_positions = scale * reference_rows[:, 0:3]
+        figure.add_trace(
+            go.Scatter3d(
+                x=reference_positions[:, 0],
+                y=reference_positions[:, 1],
+                z=reference_positions[:, 2],
+                mode="lines",
+                name=str(reference.get("name", f"Reference {reference_index}")),
+                line=dict(
+                    width=3,
+                    color=str(reference.get("color", "#A0AEC0")),
+                    dash="dash",
+                ),
+                opacity=0.75,
+            )
         )
-    )
-    figure.add_trace(
-        go.Scatter3d(
-            x=[scale * point[0] for point in lagrange_points.values()],
-            y=[scale * point[1] for point in lagrange_points.values()],
-            z=[scale * point[2] for point in lagrange_points.values()],
-            mode="markers+text",
-            name="Lagrange points",
-            text=list(lagrange_points),
-            textposition="top center",
-            marker=dict(size=5, color="#EF553B", symbol="diamond"),
+    for phase_index, segment in enumerate(phase_segments or (), start=1):
+        start_time = float(segment["t_start_s"])
+        end_time = float(segment["t_end_s"])
+        phase_mask = (trajectory[:, 6] >= start_time - 1.0e-9) & (
+            trajectory[:, 6] <= end_time + 1.0e-9
         )
-    )
+        if int(np.count_nonzero(phase_mask)) < 2:
+            continue
+        phase_positions = positions[phase_mask]
+        figure.add_trace(
+            go.Scatter3d(
+                x=phase_positions[:, 0],
+                y=phase_positions[:, 1],
+                z=phase_positions[:, 2],
+                mode="lines",
+                name=str(segment.get("name", f"Phase {phase_index}")),
+                line=dict(
+                    width=8,
+                    color=str(segment.get("color", "#00CC96")),
+                ),
+            )
+        )
+    for maneuver_index, maneuver in enumerate(maneuvers or (), start=1):
+        maneuver_position = scale * np.asarray(maneuver.r_m, dtype=float).reshape(3)
+        delta_v = np.asarray(maneuver.dv_mps, dtype=float).reshape(3)
+        figure.add_trace(
+            go.Scatter3d(
+                x=[maneuver_position[0]],
+                y=[maneuver_position[1]],
+                z=[maneuver_position[2]],
+                mode="markers",
+                name=f"M{maneuver_index}: {maneuver.name}",
+                marker=dict(size=7, color="#FFA15A", symbol="diamond"),
+                text=[
+                    (
+                        f"<b>{maneuver.name}</b><br>"
+                        f"t = {float(maneuver.t_s):.3f}<br>"
+                        f"|Δv| = {float(np.linalg.norm(delta_v)):.6f}"
+                    )
+                ],
+                hovertemplate="%{text}<extra></extra>",
+            )
+        )
+    for body_name, body_position, marker_size, marker_color in (
+        (system.primary.name.title(), primary_position, 16, "#3B82F6"),
+        (system.secondary.name.title(), secondary_position, 9, "#9CA3AF"),
+    ):
+        figure.add_trace(
+            go.Scatter3d(
+                x=[scale * body_position[0]],
+                y=[scale * body_position[1]],
+                z=[scale * body_position[2]],
+                mode="markers+text",
+                name=body_name,
+                text=[body_name],
+                textposition="top center",
+                marker=dict(size=marker_size, color=marker_color),
+            )
+        )
+    for point_name in selected_lagrange_names:
+        point = all_lagrange_points[point_name]
+        figure.add_trace(
+            go.Scatter3d(
+                x=[scale * point[0]],
+                y=[scale * point[1]],
+                z=[scale * point[2]],
+                mode="markers+text",
+                name=point_name,
+                text=[point_name],
+                textposition="top center",
+                marker=dict(size=5, color="#EF553B", symbol="diamond"),
+            )
+        )
     axis_style = dict(
         backgroundcolor="black",
         gridcolor="rgba(255,255,255,0.12)",
@@ -415,13 +517,37 @@ def save_cr3bp_trajectory_html(
     *,
     system: CR3BPSystem,
     dimensional: bool = True,
+    lagrange_point_names: Sequence[str] | None = None,
+    maneuvers: Sequence[Maneuver] | None = None,
+    phase_segments: Sequence[dict[str, object]] | None = None,
+    reference_trajectories: Sequence[dict[str, object]] | None = None,
     title: str = "octavian CR3BP trajectory",
 ) -> None:
-    """Save a barycentric-synodic CR3BP trajectory as interactive HTML."""
+    """Save a barycentric-synodic CR3BP trajectory as interactive HTML.
+
+    Args:
+        traj: Rows ``[x, y, z, xdot, ydot, zdot, time]``.
+        out_html: Destination HTML path.
+        system: Primary-secondary CR3BP system.
+        dimensional: Interpret trajectory and marker positions as meters when
+            true or canonical distance units otherwise.
+        lagrange_point_names: Lagrange points to include. The default includes
+            all five; pass an empty sequence to omit them.
+        maneuvers: Optional maneuver markers in the trajectory's units.
+        phase_segments: Optional phase interval dictionaries with ``name``,
+            ``t_start_s``, ``t_end_s``, and optional ``color`` keys.
+        reference_trajectories: Optional named trajectory dictionaries to
+            overlay, such as departure and arrival periodic orbits.
+        title: Figure title.
+    """
     figure = cr3bp_trajectory_figure(
         traj,
         system=system,
         dimensional=dimensional,
+        lagrange_point_names=lagrange_point_names,
+        maneuvers=maneuvers,
+        phase_segments=phase_segments,
+        reference_trajectories=reference_trajectories,
         title=title,
     )
     figure.write_html(out_html, include_plotlyjs="cdn")
@@ -660,6 +786,7 @@ def trajectory_diagnostics_figure(
     mu_m3ps2: float | None = None,
     solar_directions_ric: np.ndarray | None = None,
     cr3bp_system: CR3BPSystem | None = None,
+    cr3bp_dimensional: bool = True,
     title: str = "octavian trajectory diagnostics",
 ) -> Any:
     """Build stacked, shared-time plots appropriate to the trajectory frame."""
@@ -685,6 +812,7 @@ def trajectory_diagnostics_figure(
         panels = cr3bp_diagnostic_panels(
             trajectory,
             system=cr3bp_system,
+            dimensional=cr3bp_dimensional,
         )
     else:
         if mu_m3ps2 is None or float(mu_m3ps2) <= 0.0:
@@ -703,7 +831,7 @@ def trajectory_diagnostics_figure(
         vertical_spacing=min(0.08, 0.25 / len(panels)),
         subplot_titles=[panel.title for panel in panels],
     )
-    time_s = trajectory[:, 6]
+    time_values = trajectory[:, 6]
     for row, panel in enumerate(panels, start=1):
         for series in panel.series:
             label = (
@@ -711,7 +839,7 @@ def trajectory_diagnostics_figure(
             )
             figure.add_trace(
                 go.Scatter(
-                    x=time_s,
+                    x=time_values,
                     y=series.values,
                     mode="lines",
                     name=label,
@@ -720,7 +848,16 @@ def trajectory_diagnostics_figure(
                 col=1,
             )
         figure.update_yaxes(title_text=panel.y_axis_title, row=row, col=1)
-    figure.update_xaxes(title_text="Time (s)", row=len(panels), col=1)
+    time_unit = (
+        "TU"
+        if normalized_frame == "rotating" and not cr3bp_dimensional
+        else "s"
+    )
+    figure.update_xaxes(
+        title_text=f"Time ({time_unit})",
+        row=len(panels),
+        col=1,
+    )
     figure.update_layout(
         title=dict(text=title, x=0.5),
         template="plotly_dark",
@@ -740,6 +877,7 @@ def save_trajectory_diagnostics_html(
     mu_m3ps2: float | None = None,
     solar_directions_ric: np.ndarray | None = None,
     cr3bp_system: CR3BPSystem | None = None,
+    cr3bp_dimensional: bool = True,
     title: str = "octavian trajectory diagnostics",
 ) -> None:
     """Save frame-aware trajectory time histories as interactive HTML."""
@@ -749,6 +887,7 @@ def save_trajectory_diagnostics_html(
         mu_m3ps2=mu_m3ps2,
         solar_directions_ric=solar_directions_ric,
         cr3bp_system=cr3bp_system,
+        cr3bp_dimensional=cr3bp_dimensional,
         title=title,
     )
     figure.write_html(out_html, include_plotlyjs="cdn")

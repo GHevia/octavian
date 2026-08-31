@@ -17,6 +17,11 @@ optimization solve.
 
 ## Suggested Learning Path
 
+The task-oriented
+[`docs/examples/index.md`](../docs/examples/index.md) maps every user-facing
+capability to an executable script. Use it when you know the design task but
+not the API name.
+
 Start with the quick API when a standard transfer helper already describes the
 mission:
 
@@ -25,6 +30,9 @@ mission:
 - `quick/03_time_tradeoff.py` — compare objective choices;
 - `quick/04_batch_targets.py` — use ordinary Python to sweep configurations;
 - `quick/05_sun_centered_transfer.py` — change the central body and scale.
+- `quick/06_relative_hop.py` — compose a relative coast-burn-coast-burn hop;
+- `quick/07_relative_transfer_chain.py` — string multiple relative transfers
+  together with intermediate coasts.
 
 Move to the composable API when the mission needs explicit phases and
 constraints:
@@ -33,26 +41,27 @@ constraints:
   expressed as vehicle, dynamics, phase, constraints, variables, and objective;
 - examples 02–07 — phase links, path constraints, and orbital targeting;
 - examples 08–10 — finite burns and perturbations;
-- examples 11–12 — CWH relative motion, RIC plotting, and operational geometry;
-- examples 13–17 — relative representations, exact dynamics formulations,
+- earth-centered examples 11–13 — low-thrust orbit raising, thrust-attitude
+  representations, and cannonball drag/SRP;
+- relative examples 14–15 — CWH relative motion, RIC plotting, and operational geometry;
+- relative examples 16–20 — relative representations, exact dynamics formulations,
   perturbations, SPICE solar geometry, and native D'Amico targeting;
-- example 18 — low-thrust orbit raising with a dedicated initial guess;
-- example 19 — an exact relative finite burn–coast–burn chain with continuous
-  deputy mass.
-- earth-centered example 19 — RIC-referenced thrust and bounded kinematic
-  attitude states.
-- cislunar example 22 — dimensional Earth–Moon CR3BP propagation, a
-  composable synodic solve, Jacobi diagnostics, and inertial conversion.
-
-After either API path, run `outputs/01_ephemeris_files.py` to see the common
-ephemeris export interface.
+- relative examples 21–24 — a solved safety-ellipse transfer, finite
+  burn–coast–burn chain, three-burn topology, and perturbed ROE propagation;
+- relative example 25 — differential cannonball drag/SRP;
+- relative example 26 — native classical relative-element propagation and
+  targeting;
+- cislunar examples 27–31 — dimensional CR3BP fundamentals,
+  nondimensional periodic-orbit correction, an impulsive L1-to-L2 transfer,
+  perturbed inertial recapture, and Jacobi-targeted family selection.
 
 For analysis without a solve, run
 `analysis/01_propagation_namespace.py` to compare the two-body, CWH, nonlinear
 RIC, coupled relative, relative-element, and CR3BP entry points.
 
-All mission inputs use SI units unless a parameter name explicitly says
-otherwise. Generated Plotly HTML files are written to the current directory.
+Mission inputs use SI units unless an API explicitly selects another
+convention, such as `Dynamics.cr3bp(dimensional=False)`. Generated Plotly HTML
+files are written to the current directory.
 
 ## Literal Config Files
 

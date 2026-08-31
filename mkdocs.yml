@@ -35,7 +35,9 @@ nav:
   - Developer Architecture: developer-architecture.md
   - Project Principles: project-principles.md
   - Examples:
+      - Capability Index: examples/index.md
       - Quick API: examples/quick.md
       - Composable API: examples/composable.md
+      - Cislunar Design Guide: examples/cislunar.md
   - GitHub Pages: publishing.md
   - API Reference: api.md

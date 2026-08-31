@@ -147,5 +147,5 @@ For powered Euler phases, `phase_control_trajectories` contains
 powered phase for reproducible output.
 
 See
-`examples/composable/earth_centered/19_thrust_frames_and_attitude.py`
+`examples/composable/earth_centered/12_thrust_frames_and_attitude.py`
 for a complete executable mission.

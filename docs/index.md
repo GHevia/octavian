@@ -17,16 +17,19 @@ optimization, then inspect summaries and Plotly trajectory views.
 - Optional precoast phases before impulsive transfers.
 - Composable coast phases with continuous or impulsive links.
 - Terminal state, terminal delta-v, minimum-radius, absolute/relative
-  orbital-element, safety, and solar-geometry constraints.
-- Finite burns with mass depletion, frame-aware direction, and kinematic
-  attitude controls.
-- J2, Sun/Moon gravity, cannonball drag, and cannonball SRP in inertial and
+  orbital-element, RIC-component, safety, solar-geometry, and periodic-state
+  constraints.
+- Finite chemical and low-thrust phases with mass depletion, frame-aware
+  thrust directions, and kinematic Euler-angle controls.
+- J2, Sun/Moon gravity, exponential drag, and cannonball SRP in inertial and
   exact relative dynamics.
 - CWH, nonlinear RIC, coupled chief/deputy, relative-element, and CR3BP
   propagation through one analysis namespace.
-- STK, CCSDS OEM, SPICE BSP, and CSV ephemeris output.
+- Canonical/dimensional CR3BP propagation, periodic-orbit correction,
+  impulsive inter-orbit transfers, and inertial perturbed-model handoff.
 - Plotly HTML trajectory and frame-aware time-series diagnostics with maneuver
   markers.
+- STK, CCSDS OEM, SPICE BSP/SPK, and CSV trajectory output.
 
 ## Documentation Map
 
@@ -41,6 +44,8 @@ optimization, then inspect summaries and Plotly trajectory views.
 - [Project Principles](project-principles.md) explains the design philosophy behind the API.
 - [Quick API Examples](examples/quick.md) documents the high-level helper scripts.
 - [Composable API Examples](examples/composable.md) documents each lower-level mission-building example.
+- [Example Capability Index](examples/index.md) maps design tasks across every regime to executable scripts.
+- [Cislunar Design Guide](examples/cislunar.md) builds from CR3BP propagation through periodic orbits, transfers, and perturbed-model recapture.
 - [GitHub Pages](publishing.md) explains how this site is deployed.
 - [API Reference](api.md) is generated from numpy-style docstrings with mkdocstrings.
 

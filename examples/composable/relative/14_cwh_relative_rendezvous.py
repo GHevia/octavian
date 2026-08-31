@@ -1,4 +1,4 @@
-"""Relative composable example 11: impulsive rendezvous in chief-centered LVLH.
+"""Relative composable example 14: impulsive rendezvous in chief-centered LVLH.
 
 The deputy begins one kilometer behind a chief in a 400 km circular Earth
 orbit. CWH dynamics optimize departure and arrival impulses while the solver
@@ -6,6 +6,8 @@ chooses a rendezvous time inside the requested window.
 """
 
 from __future__ import annotations
+
+import numpy as np
 
 from octavian import (
     EARTH,
@@ -18,6 +20,7 @@ from octavian import (
     state,
     variables,
 )
+from octavian.relative import cwh_rendezvous_velocity, propagate_cwh
 from octavian.solvers import SolverOptions
 from octavian.viz.plotly import save_relative_trajectory_html
 
@@ -38,6 +41,21 @@ initial_relative_state = state(
 final_relative_state = state(
     r_m=[0.0, 0.0, 0.0],
     v_mps=[0.0, 0.0, 0.0],
+)
+
+# The same analytical CWH tools used by Octavian's seed search are available
+# for quick feasibility checks and custom initial guesses.
+nominal_time_s = 1_800.0
+analytic_departure_velocity = cwh_rendezvous_velocity(
+    initial_relative_state.r_m,
+    final_relative_state.r_m,
+    nominal_time_s,
+    dynamics.model.mean_motion_radps,
+)
+analytic_arrival = propagate_cwh(
+    np.hstack([initial_relative_state.r_m, analytic_departure_velocity]),
+    nominal_time_s,
+    dynamics.model.mean_motion_radps,
 )
 
 rendezvous = Phase(
@@ -71,6 +89,8 @@ solution = mission.solve()
 print(solution.summary())
 print(f"Frame: {solution.frame}")
 print(f"Dynamics model: {solution.result.info['dynamics_model']}")
+print(f"Analytical CWH departure velocity: {analytic_departure_velocity} m/s")
+print(f"Analytical CWH terminal position error: {np.linalg.norm(analytic_arrival[0:3]):.3e} m")
 
 save_relative_trajectory_html(
     solution.traj,

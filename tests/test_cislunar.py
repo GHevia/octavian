@@ -15,6 +15,7 @@ from octavian.cislunar import (
     synodic_to_inertial_state,
 )
 from octavian.solvers import SolverOptions
+from octavian.types import Maneuver
 from octavian.viz.diagnostics import cr3bp_diagnostic_panels
 from octavian.viz.plotly import cr3bp_trajectory_figure
 
@@ -67,6 +68,52 @@ def test_cr3bp_scaling_and_synodic_inertial_round_trips() -> None:
     np.testing.assert_allclose(recovered_synodic.r_m, dimensional.r_m, atol=1.0e-7)
     np.testing.assert_allclose(recovered_synodic.v_mps, dimensional.v_mps, atol=1.0e-12)
 
+    inclined_basis = np.asarray(
+        [
+            [0.0, -1.0, 0.0],
+            [0.0, 0.0, -1.0],
+            [1.0, 0.0, 0.0],
+        ]
+    )
+    inclined_inertial = synodic_to_inertial_state(
+        dimensional,
+        time_s=123_456.0,
+        system=system,
+        origin="earth",
+        inertial_basis_at_epoch=inclined_basis,
+    )
+    recovered_from_inclined = inertial_to_synodic_state(
+        inclined_inertial,
+        time_s=123_456.0,
+        system=system,
+        origin="earth",
+        inertial_basis_at_epoch=inclined_basis,
+    )
+    np.testing.assert_allclose(recovered_from_inclined.r_m, dimensional.r_m, atol=1.0e-7)
+    np.testing.assert_allclose(recovered_from_inclined.v_mps, dimensional.v_mps, atol=1.0e-12)
+
+    with pytest.raises(ValueError, match="orthonormal"):
+        synodic_to_inertial_state(
+            dimensional,
+            time_s=0.0,
+            system=system,
+            inertial_basis_at_epoch=np.ones((3, 3)),
+        )
+
+
+def test_cr3bp_dynamics_selects_dimensional_or_canonical_solver_units() -> None:
+    dimensional = Dynamics.cr3bp()
+    canonical = Dynamics.cr3bp(dimensional=False)
+
+    assert dimensional.scaling is not None
+    assert canonical.scaling is not None
+    assert dimensional.scaling.length_m == pytest.approx(384_400_000.0)
+    assert canonical.scaling.length_m == pytest.approx(1.0)
+    assert canonical.scaling.velocity_mps == pytest.approx(1.0)
+    assert canonical.scaling.time_s == pytest.approx(1.0)
+    assert canonical.model == CR3BPSystem.earth_moon()
+    assert canonical.cr3bp_dimensional is False
+
 
 def test_cr3bp_propagation_preserves_jacobi_constant() -> None:
     system = CR3BPSystem.earth_moon()
@@ -104,10 +151,16 @@ def test_cr3bp_plot_contains_trajectory_primaries_and_lagrange_points() -> None:
 
     assert [trace.name for trace in figure.data] == [
         "Trajectory",
-        "Primaries",
-        "Lagrange points",
+        "Earth",
+        "Moon",
+        "L1",
+        "L2",
+        "L3",
+        "L4",
+        "L5",
     ]
-    assert list(figure.data[2].text) == ["L1", "L2", "L3", "L4", "L5"]
+    assert figure.data[1].marker.color == "#3B82F6"
+    assert figure.data[2].marker.color == "#9CA3AF"
     panels = cr3bp_diagnostic_panels(trajectory, system=system)
     assert [panel.title for panel in panels] == [
         "Synodic position",
@@ -115,6 +168,192 @@ def test_cr3bp_plot_contains_trajectory_primaries_and_lagrange_points() -> None:
         "Primary geometry",
         "CR3BP invariant",
     ]
+
+    canonical_trajectory = np.zeros((2, 7), dtype=float)
+    canonical_trajectory[:, 0] = system.lagrange_points(dimensional=False)["L1"][0]
+    canonical_trajectory[:, 6] = [0.0, 1.0]
+    canonical_panels = cr3bp_diagnostic_panels(
+        canonical_trajectory,
+        system=system,
+        dimensional=False,
+    )
+    assert canonical_panels[0].series[0].unit == "DU"
+    assert canonical_panels[1].series[0].unit == "VU"
+    assert canonical_panels[3].series[0].unit == "canonical"
+
+
+def test_cr3bp_plot_can_overlay_references_phases_and_maneuvers() -> None:
+    pytest.importorskip("plotly")
+    system = CR3BPSystem.earth_moon()
+    trajectory = np.zeros((4, 7), dtype=float)
+    trajectory[:, 0] = [0.82, 0.83, 0.84, 0.85]
+    trajectory[:, 6] = [0.0, 1.0, 2.0, 3.0]
+    reference = trajectory.copy()
+    reference[:, 1] = 0.01
+    maneuver = Maneuver(
+        r_m=trajectory[1, 0:3],
+        t_s=1.0,
+        dv_mps=[0.0, 0.01, 0.0],
+        name="departure",
+    )
+
+    figure = cr3bp_trajectory_figure(
+        trajectory,
+        system=system,
+        dimensional=False,
+        maneuvers=[maneuver],
+        phase_segments=[
+            {
+                "name": "transfer",
+                "t_start_s": 0.0,
+                "t_end_s": 3.0,
+                "color": "gold",
+            }
+        ],
+        reference_trajectories=[
+            {
+                "name": "L1 reference",
+                "traj": reference,
+                "color": "green",
+            }
+        ],
+    )
+
+    assert [trace.name for trace in figure.data] == [
+        "Trajectory",
+        "L1 reference",
+        "transfer",
+        "M1: departure",
+        "Earth",
+        "Moon",
+        "L1",
+        "L2",
+        "L3",
+        "L4",
+        "L5",
+    ]
+
+
+def test_cr3bp_plot_can_select_individual_lagrange_points() -> None:
+    pytest.importorskip("plotly")
+    system = CR3BPSystem.earth_moon()
+    trajectory = np.zeros((2, 7), dtype=float)
+    trajectory[:, 6] = [0.0, 1.0]
+
+    figure = cr3bp_trajectory_figure(
+        trajectory,
+        system=system,
+        dimensional=False,
+        lagrange_point_names=("l1", "L2"),
+    )
+
+    assert [trace.name for trace in figure.data] == [
+        "Trajectory",
+        "Earth",
+        "Moon",
+        "L1",
+        "L2",
+    ]
+    with pytest.raises(ValueError, match="must be L1"):
+        cr3bp_trajectory_figure(
+            trajectory,
+            system=system,
+            lagrange_point_names=("L6",),
+        )
+
+
+def test_jacobi_constraint_validates_units_and_tolerance() -> None:
+    constraint = constraints.jacobi_constant(
+        3.16,
+        where="start",
+        tolerance=1.0e-5,
+        dimensional=False,
+    )
+
+    assert constraint.target == pytest.approx(3.16)
+    assert constraint.where == "Front"
+    assert constraint.tolerance == pytest.approx(1.0e-5)
+    assert constraint.dimensional is False
+    with pytest.raises(ValueError, match="target must be finite"):
+        constraints.jacobi_constant(np.nan)
+    with pytest.raises(ValueError, match="tolerance must be >= 0"):
+        constraints.jacobi_constant(3.16, tolerance=-1.0)
+
+
+def test_composable_cr3bp_jacobi_targeted_periodic_state_solves() -> None:
+    system = CR3BPSystem.earth_moon()
+    canonical_initial = state(
+        [0.82, 0.0, 0.0],
+        [0.0, 0.16221305707437475, 0.0],
+    )
+    period_tu = 2.779749966597294
+    target_jacobi = 3.16
+    propagated = propagate_cr3bp(
+        canonical_initial,
+        [0.0, period_tu],
+        system=system,
+        dimensional=False,
+        max_step=0.0025,
+    )
+    terminal_seed = state(propagated[-1, 0:3], propagated[-1, 3:6])
+    phase = Phase(
+        name="L1_planar_periodic",
+        mode="coast",
+        spacecraft=Spacecraft(name="probe", dry_mass_kg=1.0),
+        dynamics=Dynamics.cr3bp(dimensional=False),
+        initial_state=canonical_initial,
+        final_state=terminal_seed,
+        tof_bounds_s=(0.85 * period_tu, 1.15 * period_tu),
+        constraints=[
+            constraints.periodic_state(),
+            constraints.state_component("y", 0.0, where="Front"),
+            constraints.jacobi_constant(
+                target_jacobi,
+                where="Front",
+                dimensional=False,
+            ),
+        ],
+    )
+
+    solution = Mission(
+        phases=[phase],
+        mesh_nsegs_transfer=40,
+        solver_options=SolverOptions(
+            print_level=0,
+            max_ls_iters=3,
+            enable_adaptive_mesh=False,
+            asset_threads=(1, 1),
+        ),
+    ).solve()
+
+    assert solution.ok
+    closure_canonical = solution.traj[-1, 0:6] - solution.traj[0, 0:6]
+    assert np.linalg.norm(closure_canonical) < 1.0e-7
+    solved_jacobi = jacobi_constant(
+        solution.traj[0, 0:6],
+        system=system,
+        dimensional=False,
+    )
+    assert solved_jacobi == pytest.approx(target_jacobi, abs=1.0e-8)
+    assert solution.traj[-1, 6] == pytest.approx(
+        2.801037769641,
+        rel=1.0e-4,
+    )
+    assert solution.cr3bp_dimensional is False
+    assert solution.result.info["scaling"] == {
+        "length_m": 1.0,
+        "velocity_mps": 1.0,
+        "time_s": 1.0,
+        "mass_kg": 1.0,
+    }
+    assert solution.result.info["cr3bp_system"]["dimensional"] is False
+    assert "tf:" in solution.summary()
+    assert "TU" in solution.summary()
+    report = solution.result.info["constraint_report"]
+    assert len(report) == 1
+    assert report[0]["constraint"] == "jacobi_constant"
+    assert report[0]["actual"] == pytest.approx(target_jacobi, abs=1.0e-8)
+    assert report[0]["satisfied"] is True
 
 
 def test_composable_cr3bp_arc_compiles_and_solves() -> None:

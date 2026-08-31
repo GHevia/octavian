@@ -1,0 +1,189 @@
+# Designing In The Cislunar Regime
+
+The cislunar examples form one continuous design progression:
+
+| Step | Design model | Purpose |
+| --- | --- | --- |
+| 27 | Dimensional CR3BP | Learn the system, propagation, transforms, invariant, and plotting. |
+| 28 | Canonical CR3BP inside ASSET | Correct a planar L1 Lyapunov orbit with direct front/back periodicity. |
+| 29 | Dimensional CR3BP inside ASSET | Coast on L1, transfer impulsively, insert at L2, and coast on L2. |
+| 30 | Earth-centered ephemeris perturbation model | Re-target the nominal CR3BP endpoints under J2, Sun/Moon gravity, and SRP. |
+| 31 | Canonical CR3BP target | Select a different L1 family member by Jacobi constant instead of initial x. |
+| 32 | Canonical CR3BP continuation | Trace neighboring L1 family members while retaining the family and phase conditions. |
+
+This separation is intentional. Canonical CR3BP units make orbit families
+easy to compare with published initial conditions; SI units keep Octavian's
+mission, spacecraft, maneuver, and ephemeris interfaces consistent.
+
+## Units At The Solver Boundary
+
+Let one distance unit be the primary-secondary separation and one time unit be
+the inverse system mean motion. A canonical state is converted explicitly:
+
+```python
+from octavian.cislunar import (
+    CR3BPSystem,
+    dimensionalize_state,
+    dimensionalize_time,
+    nondimensionalize_state,
+)
+
+system = CR3BPSystem.earth_moon()
+initial_si = dimensionalize_state(initial_canonical, system)
+period_s = dimensionalize_time(period_tu, system)
+recovered_canonical = nondimensionalize_state(initial_si, system)
+```
+
+By default, `Phase`, `Mission`, and `Solution` use meters, meters per second,
+and seconds. Example 28 instead selects canonical equations explicitly:
+
+```python
+dynamics = Dynamics.cr3bp(dimensional=False)
+```
+
+Its phase states and returned trajectory are in DU and VU, and its
+`tof_bounds_s` values are in TU. The field suffix remains for compatibility
+with the shared `Phase` API. This is an actual canonical solve, not an SI solve
+whose inputs and outputs are merely converted.
+
+## Correct A Periodic Orbit
+
+Example 28 starts from a published-style canonical L1 seed. Its essential
+ASSET declarations are:
+
+```python
+constraints=[
+    constraints.periodic_state(),
+    constraints.state_component("x", x0_du, where="Front"),
+    constraints.state_component("y", 0.0, where="Front"),
+]
+```
+
+`periodic_state()` equates the selected Cartesian components at the front and
+back of the phase in the phase's native synodic frame. It does not constrain
+time, so the period remains a decision variable within `tof_bounds_s`.
+
+An autonomous periodic orbit also has an arbitrary phase shift. Fixing the
+front `x` coordinate selects a family member, and the front `y=0` condition
+selects a symmetry-plane crossing. The phase still has `initial_state` and
+`final_state` seeds; those initialize scaling and the collocation mesh and do
+not replace the periodic equality.
+
+Use a component subset when appropriate:
+
+```python
+constraints.periodic_state(("x", "y", "vx", "vy"))
+```
+
+That is useful for a planar formulation when out-of-plane components are
+separately fixed.
+
+## Select The Orbit By Jacobi Constant
+
+Example 31 replaces example 28's fixed initial x coordinate with a target
+invariant:
+
+```python
+constraints=[
+    constraints.periodic_state(),
+    constraints.state_component("y", 0.0, where="Front"),
+    constraints.jacobi_constant(
+        3.16,
+        where="Front",
+        dimensional=False,
+    ),
+]
+```
+
+The front/back equality closes the physical state, `y=0` supplies the phase
+condition, and the Jacobi target selects the orbit-family member. Initial
+position, velocity, and period remain free for ASSET to correct.
+
+`dimensional=False` accepts the order-one canonical values commonly tabulated
+with nondimensional CR3BP states. The default `dimensional=True` accepts
+`m²/s²`, consistent with `octavian.cislunar.jacobi_constant`. Internally the
+compiler evaluates the constraint in canonical units for conditioning. An
+optional `tolerance` produces symmetric upper and lower bounds; without one,
+the target is an equality.
+
+Example 32 applies that target repeatedly. Each member uses the preceding
+solved trajectory through `guesses.trajectory(...)`, retains the front `y=0`
+phase condition, and restricts the next period to a narrow neighborhood of the
+last one. Those three continuation choices prevent a locally successful solve
+from jumping to another periodic family or an integer multiple of the orbit.
+
+## Transfer Between Periodic Orbits
+
+Example 29 expresses the trajectory architecture directly as three ASSET
+phases:
+
+```text
+L1 orbit coast -> impulsive departure -> CR3BP transfer
+              -> impulsive insertion -> L2 orbit coast
+```
+
+The two links use `links.impulsive()`. The transfer phase exposes its front
+velocity jump with `ImpulsiveDeltaV(where="Front")`; the arrival coast does
+the same for L2 insertion. `tof_is_relative=True` gives each phase its own
+duration bounds, and `minimize_total_delta_v()` charges both maneuvers.
+
+The plot overlays propagated L1 and L2 reference orbits, colors each solved
+phase, and marks both impulses. These reference curves help interpret the
+solution but do not add hidden constraints.
+
+The supplied transfer is a deliberately compact starting problem. For
+production work, replace the family seeds, add geometric path constraints,
+or introduce intermediate coast/transfer phases using the same `previous`
+and `link` pattern.
+
+## Hand Off To A Perturbed Model
+
+Example 30 demonstrates a model transition without pretending the circular
+model and ephemeris model are the same system:
+
+1. Propagate one nominal L1 orbit in the CR3BP synodic frame.
+2. Sample the BSP Moon throughout the arc and embed the canonical solution in
+   its instantaneous three-dimensional rotating/pulsating geometry.
+3. Use that complete inertial history as the collocation seed and its endpoints
+   as the recapture targets.
+4. Solve a second ASSET mission with Earth J2, ephemeris Moon/Sun gravity, and
+   cannonball solar radiation pressure.
+5. Report the boundary correction required to recapture the nominal endpoint.
+
+The second trajectory is not mathematically periodic in an ephemeris model.
+Its correction is a useful model-mismatch diagnostic and an initial guess for
+a later high-fidelity design. A true ephemeris-periodic or quasi-periodic
+design needs a precisely defined epoch-to-epoch boundary map, often with
+additional targeting variables; Octavian does not silently substitute that
+problem.
+
+## Current Model Boundaries
+
+- CR3BP composable phases are ballistic and use a rotating barycentric frame.
+- Impulsive links between compatible CR3BP phases are supported.
+- Finite-thrust CR3BP phases are not yet compiled.
+- J2, third-body gravity, drag, and SRP belong to the inertial force model,
+  not to the canonical CR3BP equations.
+- Synodic/inertial transforms implement circular CR3BP geometry and accept an
+  optional inclined epoch basis. Example 30 goes further by explicitly using
+  the BSP Moon's time-varying direction, distance, and angular rate for its
+  model-handoff seed.
+- Two-body osculating-element constraints are not meaningful as direct
+  rotating-frame CR3BP constraints; use Cartesian synodic components.
+
+These boundaries are surfaced in the examples so a design script fails
+clearly instead of appearing to provide a fidelity it does not have.
+
+## Run The Progression
+
+```bash
+python examples/composable/cislunar/27_earth_moon_cr3bp.py
+python examples/composable/cislunar/28_canonical_periodic_orbit.py
+python examples/composable/cislunar/29_periodic_orbit_transfer.py
+python examples/composable/cislunar/30_high_fidelity_recapture.py
+python examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py
+python examples/composable/cislunar/32_jacobi_targeted_periodic_orbit_family.py
+```
+
+Each script prints solver and model diagnostics and writes an interactive
+trajectory plot. Examples 28–31 also write time-history diagnostics.

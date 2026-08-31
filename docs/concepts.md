@@ -244,9 +244,10 @@ rotation is defined. Neither lighting constraint is an eclipse or power model.
 ### Cislunar CR3BP
 
 `Dynamics.cr3bp(...)` uses a barycentric frame that rotates with a circular
-primary-secondary pair. Public composable states remain dimensional SI values,
-while `CR3BPSystem.scaling` supplies canonical distance, velocity, and time
-units to the solver.
+primary-secondary pair. The default keeps public composable states and times
+in SI while applying natural solver scaling. Set `dimensional=False` to solve
+the actual equations with canonical distance, velocity, and time variables and
+receive the trajectory in those same units.
 
 The model is intentionally distinct from an inertial third-body perturbation.
 Both primaries define the baseline equations, and neither follows a SPICE
@@ -257,15 +258,17 @@ rejected in this initial implementation.
 
 - dimensional/canonical state and time conversion;
 - barycentric synodic conversion to and from barycenter-, primary-, or
-  secondary-centered inertial states;
+  secondary-centered inertial states, including an optional inclined epoch
+  basis;
 - all five Lagrange points;
 - deterministic forward or backward RK4 propagation;
 - dimensional or canonical Jacobi constants;
+- direct front, back, or path constraints on the Jacobi constant;
 - a cubic Hermite seed used by composable CR3BP collocation phases.
 
-The rotating-frame trajectory plot shows both primaries and the Lagrange
-points. Diagnostics report synodic state, range to each primary, speed, and
-Jacobi conservation.
+The rotating-frame trajectory plot gives each primary and requested Lagrange
+point its own legend item. Diagnostics report synodic state, range to each
+primary, speed, and Jacobi conservation.
 
 ## Frames, Layouts, And Scaling
 
@@ -308,6 +311,11 @@ report:
 - constraint reports.
 - reference-frame and solver-scaling metadata.
 - dynamics-model metadata for relative trajectories.
+
+Composable results are marked converged only when the optimizer succeeds and
+every generated constraint-report row is satisfied. If the backend terminates
+successfully with an errant reported constraint, the summary says
+`NOT CONVERGED` and identifies the failed row.
 
 Plotly helpers turn the trajectory and maneuvers into inspectable HTML files.
 `save_relative_trajectory_html(...)` labels R, I, and C explicitly, places the

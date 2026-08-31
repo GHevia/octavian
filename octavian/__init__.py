@@ -41,7 +41,7 @@ from .forces import (
     cannonball_drag_acceleration,
     cannonball_srp_acceleration,
 )
-from .guesses import LowThrustSpiralGuess
+from .guesses import LowThrustSpiralGuess, TrajectoryGuess
 from .links import Link
 from .mission import Mission
 from .models import Dynamics, Perturbations, RetryPolicy, RunPlan, SolveConfig
@@ -102,6 +102,7 @@ __all__ = [
     "RelativePropagationMode",
     "RelativeElementPropagationResult",
     "LowThrustSpiralGuess",
+    "TrajectoryGuess",
     "MissionConfigError",
     "EARTH",
     "MOON",

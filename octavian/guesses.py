@@ -5,6 +5,34 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import isfinite
 
+import numpy as np
+from numpy.typing import ArrayLike, NDArray
+
+
+@dataclass(frozen=True, slots=True)
+class TrajectoryGuess:
+    """Provide an explicit dense state/time history to seed a phase.
+
+    Rows contain at least ``[x, y, z, vx, vy, vz, time]``. Extra columns are
+    retained for phase formulations that carry additional states or controls.
+    Times must be strictly increasing.
+    """
+
+    rows: NDArray[np.float64]
+
+    def __init__(self, rows: ArrayLike) -> None:
+        trajectory = np.asarray(rows, dtype=float)
+        if trajectory.ndim != 2 or trajectory.shape[0] < 2 or trajectory.shape[1] < 7:
+            raise ValueError(
+                "TrajectoryGuess rows must contain at least two "
+                "[x, y, z, vx, vy, vz, time] samples."
+            )
+        if not np.all(np.isfinite(trajectory)):
+            raise ValueError("TrajectoryGuess rows must be finite.")
+        if not np.all(np.diff(trajectory[:, 6]) > 0.0):
+            raise ValueError("TrajectoryGuess times must be strictly increasing.")
+        object.__setattr__(self, "rows", trajectory.copy())
+
 
 @dataclass(frozen=True, slots=True)
 class LowThrustSpiralGuess:
@@ -59,3 +87,8 @@ def low_thrust_spiral(
         steps_per_orbit=int(steps_per_orbit),
         time_scale=float(time_scale),
     )
+
+
+def trajectory(rows: ArrayLike) -> TrajectoryGuess:
+    """Create an explicit dense trajectory seed declaration."""
+    return TrajectoryGuess(rows)

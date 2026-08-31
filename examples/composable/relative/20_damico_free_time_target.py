@@ -1,4 +1,4 @@
-"""Relative composable example 17: target a D'Amico ROE at free arrival time.
+"""Relative composable example 20: target a D'Amico ROE at free arrival time.
 
 The Cartesian RIC states are guess anchors only. The optimizer propagates
 D'Amico elements directly, fixes all six initial ROEs, and selects the arrival

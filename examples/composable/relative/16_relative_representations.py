@@ -1,4 +1,4 @@
-"""Relative composable example 13: absolute, RIC, and element conversions.
+"""Relative composable example 16: absolute, RIC, and element conversions.
 
 This example has no optimizer. It demonstrates the representation layer used
 at the boundary of both CWH and full nonlinear relative missions.
@@ -71,14 +71,27 @@ classical_to_damico = classical_to_damico_relative_orbital_elements(
     classical_differences,
     mu_m3ps2=EARTH.mu_m3ps2,
 )
-chief_history = np.asarray([np.hstack([chief_eci.r_m, chief_eci.v_mps, 0.0])])
-deputy_history = np.asarray([np.hstack([deputy_eci.r_m, deputy_eci.v_mps, 0.0])])
+ric_angular_velocity = chief_ric_angular_velocity(chief_eci)
+
+# History converters accept the same seven-column state-and-time convention
+# used by solver results. They vectorize the per-state transforms above.
+chief_history = np.vstack(
+    [
+        np.hstack([chief_eci.r_m, chief_eci.v_mps, 0.0]),
+        np.hstack([chief_eci.r_m, chief_eci.v_mps, 10.0]),
+    ]
+)
+deputy_history = np.vstack(
+    [
+        np.hstack([deputy_eci.r_m, deputy_eci.v_mps, 0.0]),
+        np.hstack([deputy_eci.r_m, deputy_eci.v_mps, 10.0]),
+    ]
+)
 relative_history = absolute_to_relative_history(chief_history, deputy_history)
 recovered_deputy_history = relative_to_absolute_history(
     chief_history,
     relative_history,
 )
-ric_angular_velocity = chief_ric_angular_velocity(chief_eci)
 
 np.testing.assert_allclose(recovered_ric.r_m, deputy_ric.r_m, atol=1.0e-8)
 np.testing.assert_allclose(recovered_ric.v_mps, deputy_ric.v_mps, atol=1.0e-10)

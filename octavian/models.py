@@ -96,6 +96,8 @@ class Dynamics:
     records the meaning of Cartesian states throughout compilation and
     reporting. ``scaling`` optionally overrides the solver's automatic
     characteristic units while preserving SI inputs and outputs.
+    ``cr3bp_dimensional`` records whether a CR3BP phase uses SI or canonical
+    variables and is set by :meth:`Dynamics.cr3bp`.
     ``third_body_table_margin_s`` extends Sun/Moon and solar-geometry tables
     beyond the mission's cumulative absolute upper time bound.
     """
@@ -116,6 +118,7 @@ class Dynamics:
     model: TranslationalModel | None = None
     frame: CoordinateFrame = EARTH_INERTIAL
     scaling: SolverScaling | None = None
+    cr3bp_dimensional: bool = True
     info: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -233,19 +236,22 @@ class Dynamics:
         primary: CelestialBody | str = "earth",
         secondary: CelestialBody | str = "moon",
         separation_m: float = 384_400_000.0,
+        dimensional: bool = True,
         **kwargs: Any,
     ) -> Dynamics:
-        """Create dimensional barycentric-synodic CR3BP dynamics.
+        """Create barycentric-synodic CR3BP dynamics.
 
         Args:
             primary: More massive body or catalog name.
             secondary: Less massive body or catalog name.
             separation_m: Constant circular body separation.
+            dimensional: Use SI states and seconds when true. Set false to
+                solve directly with canonical CR3BP states and time units.
             **kwargs: Additional :class:`Dynamics` metadata. Perturbations are
                 not supported by this first-order CR3BP model.
 
         Returns:
-            Dynamics configured with natural CR3BP scaling and a synodic frame.
+            Dynamics configured for the selected CR3BP units and a synodic frame.
         """
         from .cislunar import CR3BPSystem
 
@@ -254,7 +260,17 @@ class Dynamics:
             secondary=secondary,
             separation_m=separation_m,
         )
-        dynamics = cls(model=model, **kwargs)
+        if not dimensional and "scaling" not in kwargs:
+            kwargs["scaling"] = SolverScaling(
+                length_m=1.0,
+                velocity_mps=1.0,
+                time_s=1.0,
+            )
+        dynamics = cls(
+            model=model,
+            cr3bp_dimensional=bool(dimensional),
+            **kwargs,
+        )
         perturbations = dynamics.active_perturbations()
         if any(
             (

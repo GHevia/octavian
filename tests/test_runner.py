@@ -8,7 +8,7 @@ from octavian.models import Dynamics, RetryPolicy, RunPlan, SolveConfig, Stage
 from octavian.phase import Phase, state
 from octavian.runner import MissionRunner
 from octavian.solution import Solution
-from octavian.solvers import SolverOptions
+from octavian.solvers import SolverOptions, composable
 from octavian.solvers.preconfigured import RendezvousResult
 from octavian.solvers.rendezvous import RendezvousResult as LegacyRendezvousResult
 from octavian.spacecraft import Spacecraft
@@ -71,6 +71,31 @@ def test_legacy_rendezvous_import_path_still_exports_result_type() -> None:
     assert LegacyRendezvousResult is RendezvousResult
 
 
+def test_reported_constraint_failure_overrides_optimizer_convergence() -> None:
+    report = [
+        {
+            "constraint": "jacobi_constant",
+            "target": 3.16,
+            "actual": 3.15,
+            "satisfied": False,
+        }
+    ]
+
+    assert composable._validated_convergence(True, report) is False
+    result = RendezvousResult(
+        converged=False,
+        traj=np.zeros((2, 7)),
+        info={
+            "optimizer_converged": True,
+            "constraint_report": report,
+        },
+    )
+    summary = result.summary()
+    assert "Octavian result: NOT CONVERGED" in summary
+    assert "reported constraint validation: FAILED" in summary
+    assert "ok=False" in summary
+
+
 def test_runner_retries_failed_rendezvous_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
     seen_grid_sizes: list[int] = []
 
@@ -109,6 +134,25 @@ def test_runner_dispatches_composable_missions(monkeypatch: pytest.MonkeyPatch) 
     assert isinstance(solution, Solution)
     assert solution.ok is True
     assert called == [mission]
+
+
+def test_runner_marks_returned_nonconverged_attempt_as_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "octavian.runner.solve_preconfigured",
+        lambda spec, *, options=None: _result(converged=False),
+    )
+
+    solution = MissionRunner(
+        solve_options=SolverOptions(),
+        solve_config=SolveConfig(max_attempts=1, raise_on_fail=False),
+    ).solve(_single_phase_mission())
+
+    assert solution.ok is False
+    assert solution.result is not None
+    assert [attempt.status for attempt in solution.attempts] == ["fail"]
+    assert "Octavian result: NOT CONVERGED" in solution.summary()
 
 
 def test_retry_policy_limits_attempt_count(monkeypatch: pytest.MonkeyPatch) -> None:

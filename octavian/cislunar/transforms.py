@@ -52,6 +52,7 @@ def synodic_to_inertial_state(
     system: CR3BPSystem,
     origin: str = "primary",
     phase_at_epoch_rad: float = 0.0,
+    inertial_basis_at_epoch: Sequence[Sequence[float]] | None = None,
 ) -> BoundaryState:
     """Rotate a dimensional barycentric synodic state into inertial axes.
 
@@ -61,6 +62,10 @@ def synodic_to_inertial_state(
         system: CR3BP system.
         origin: ``"barycenter"``, ``"primary"``, or ``"secondary"``.
         phase_at_epoch_rad: Inertial angle of synodic +X at time zero.
+        inertial_basis_at_epoch: Optional right-handed orthonormal matrix whose
+            columns are the synodic X, Y, and Z axes expressed in inertial
+            coordinates at time zero. This supports inclined primary-secondary
+            planes; the default is the inertial XYZ basis.
 
     Returns:
         State in inertial axes relative to the selected origin.
@@ -68,7 +73,10 @@ def synodic_to_inertial_state(
     _validate_rotation_inputs(time_s, phase_at_epoch_rad)
     origin_position = _origin_position_synodic(system, origin)
     relative_position = state_synodic.r_m - origin_position
-    rotation = _rotation_z(float(phase_at_epoch_rad) + system.mean_motion_radps * float(time_s))
+    epoch_basis = _validate_inertial_basis(inertial_basis_at_epoch)
+    rotation = epoch_basis @ _rotation_z(
+        float(phase_at_epoch_rad) + system.mean_motion_radps * float(time_s)
+    )
     omega_cross_r = np.cross(
         [0.0, 0.0, system.mean_motion_radps],
         relative_position,
@@ -86,10 +94,19 @@ def inertial_to_synodic_state(
     system: CR3BPSystem,
     origin: str = "primary",
     phase_at_epoch_rad: float = 0.0,
+    inertial_basis_at_epoch: Sequence[Sequence[float]] | None = None,
 ) -> BoundaryState:
-    """Rotate an origin-centered inertial state into barycentric synodic axes."""
+    """Rotate an origin-centered inertial state into barycentric synodic axes.
+
+    ``inertial_basis_at_epoch`` has the same convention as
+    :func:`synodic_to_inertial_state`.
+    """
     _validate_rotation_inputs(time_s, phase_at_epoch_rad)
-    rotation = _rotation_z(-(float(phase_at_epoch_rad) + system.mean_motion_radps * float(time_s)))
+    epoch_basis = _validate_inertial_basis(inertial_basis_at_epoch)
+    rotation = (
+        _rotation_z(-(float(phase_at_epoch_rad) + system.mean_motion_radps * float(time_s)))
+        @ epoch_basis.T
+    )
     relative_position = rotation @ state_inertial.r_m
     rotating_velocity = rotation @ state_inertial.v_mps - np.cross(
         [0.0, 0.0, system.mean_motion_radps],
@@ -133,3 +150,19 @@ def _validate_rotation_inputs(time_s: float, phase_at_epoch_rad: float) -> None:
         raise ValueError("time_s must be finite")
     if not math.isfinite(float(phase_at_epoch_rad)):
         raise ValueError("phase_at_epoch_rad must be finite")
+
+
+def _validate_inertial_basis(
+    inertial_basis_at_epoch: Sequence[Sequence[float]] | None,
+) -> np.ndarray:
+    """Return a validated inertial basis or the identity matrix."""
+    if inertial_basis_at_epoch is None:
+        return np.eye(3, dtype=float)
+    basis = np.asarray(inertial_basis_at_epoch, dtype=float)
+    if basis.shape != (3, 3) or not np.all(np.isfinite(basis)):
+        raise ValueError("inertial_basis_at_epoch must be a finite 3x3 matrix")
+    if not np.allclose(basis.T @ basis, np.eye(3), atol=1.0e-10, rtol=0.0):
+        raise ValueError("inertial_basis_at_epoch must be orthonormal")
+    if not math.isclose(float(np.linalg.det(basis)), 1.0, abs_tol=1.0e-10):
+        raise ValueError("inertial_basis_at_epoch must be right-handed")
+    return basis

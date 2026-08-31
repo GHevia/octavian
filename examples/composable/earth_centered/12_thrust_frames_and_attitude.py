@@ -1,7 +1,7 @@
-"""Earth-centered example 19: RIC-referenced kinematic thrust attitude.
+"""Earth-centered example 12: RIC-referenced kinematic thrust attitude.
 
 Run:
-  python examples/composable/earth_centered/19_thrust_frames_and_attitude.py
+  python examples/composable/earth_centered/12_thrust_frames_and_attitude.py
 """
 
 from __future__ import annotations
@@ -60,6 +60,12 @@ spacecraft = Spacecraft(
     ],
 )
 
+# These are the three supported control representations. A mission can swap
+# them without changing its dynamics or phase topology. This example solves
+# the Euler representation so its angle and slew-rate states are visible.
+free_vector_control = ThrustControl.vector(frame="ric")
+constant_in_track_control = ThrustControl.fixed([0.0, 1.0, 0.0], frame="ric")
+
 # Yaw=90 degrees points body +X along +I in the RIC frame. The optimizer may
 # slew this attitude while respecting both path-angle and total-rate bounds.
 attitude_control = ThrustControl.euler(
@@ -104,6 +110,8 @@ if solution.result is None:
     raise RuntimeError("The attitude-controlled mission did not return a result.")
 
 print(solution.result.summary())
+print(f"Alternative free-vector control: {free_vector_control.to_dict()}")
+print(f"Alternative fixed-direction control: {constant_in_track_control.to_dict()}")
 if solution.attitude_phase_trajectories:
     attitude_history = solution.attitude_phase_trajectories[0]
     max_slew_degps = float(np.rad2deg(np.max(np.linalg.norm(attitude_history[:, 4:7], axis=1))))

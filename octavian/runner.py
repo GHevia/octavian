@@ -9,6 +9,7 @@ from .models import RetryPolicy, RunPlan, SolveConfig
 from .solution import AttemptLog, Solution
 from .solvers import SolverOptions
 from .solvers.composable import solve_composable_mission
+from .solvers.preconfigured import RendezvousResult
 from .solvers.preconfigured import solve as solve_preconfigured
 from .specs import TwoImpulseFreeTimeSpec, TwoImpulsePreCoastSpec
 
@@ -46,6 +47,7 @@ class MissionRunner:
         backend = _select_backend(mission)
         attempt_logs: list[AttemptLog] = []
         last_error: str | None = None
+        last_result: RendezvousResult | None = None
 
         for stage_index, stage in enumerate(_runner_stages(self.plan)):
             stage_label = _stage_label(stage)
@@ -56,6 +58,7 @@ class MissionRunner:
                 try:
                     result = _solve_stage_problem(stage_problem, self.solve_options)
                 except Exception as exc:  # noqa: BLE001
+                    last_result = None
                     last_error = str(exc)
                     attempt_logs.append(
                         AttemptLog(
@@ -74,7 +77,21 @@ class MissionRunner:
                     )
                     continue
 
-                attempt_logs.append(AttemptLog(stage=stage_label, attempt=attempt_index, status="ok"))
+                last_result = result
+                if result.converged:
+                    attempt_logs.append(
+                        AttemptLog(stage=stage_label, attempt=attempt_index, status="ok")
+                    )
+                else:
+                    last_error = "Solver did not converge"
+                    attempt_logs.append(
+                        AttemptLog(
+                            stage=stage_label,
+                            attempt=attempt_index,
+                            status="fail",
+                            message=last_error,
+                        )
+                    )
                 solution = Solution(ok=bool(result.converged), result=result, attempts=attempt_logs)
                 solution.info.update(
                     {
@@ -86,22 +103,13 @@ class MissionRunner:
                 )
                 if result.converged or not self.solve_config.raise_on_fail:
                     return solution
-                last_error = "Solver did not converge"
-                attempt_logs.append(
-                    AttemptLog(
-                        stage=stage_label,
-                        attempt=attempt_index,
-                        status="fail",
-                        message=last_error,
-                    )
-                )
                 if not self._should_retry(attempt_index):
                     break
                 stage_problem = _retry_stage_problem(stage_problem, attempt_index, last_error)
 
         solution = Solution(
             ok=False,
-            result=None,
+            result=last_result,
             attempts=attempt_logs,
             last_error=last_error,
         )
