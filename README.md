@@ -77,7 +77,7 @@ python -m pip install --no-user -e ".[dev]"
 python -m octavian.diagnostics
 ```
 
-For a standard installed package with the Plotly examples:
+For a standard installed package with the Plotly and Matplotlib backends:
 
 ```bash
 pip install "octavian[viz]"
@@ -112,6 +112,7 @@ python examples/composable/cislunar/29_periodic_orbit_transfer.py
 python examples/composable/cislunar/30_high_fidelity_recapture.py
 python examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py
 python examples/outputs/01_ephemeris_files.py
+python examples/outputs/02_matplotlib_plots.py
 python -m octavian.config examples/config/01_two_impulse_transfer.json
 ```
 

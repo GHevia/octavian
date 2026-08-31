@@ -370,6 +370,7 @@ class Solution:
 
     def viz(self):
         """Namespace-style access to visualization helpers."""
+        from .viz import matplotlib as _matplotlib
         from .viz import plotly as _plotly
 
         self_outer = self
@@ -417,6 +418,56 @@ class Solution:
                     title=title,
                 )
 
+            def figure(self, *, title: str = "trajectory"):
+                """Return a frame-aware Matplotlib trajectory figure."""
+                if self_outer.result is None:
+                    raise RuntimeError("No result to visualize")
+                frame = self_outer.frame
+                phase_segments = self_outer.result.info.get("phase_segments")
+                if frame is not None and frame.kind == "relative":
+                    return _matplotlib.relative_trajectory_figure(
+                        self_outer.result.traj,
+                        maneuvers=self_outer.result.maneuvers,
+                        phase_segments=phase_segments,
+                        title=title,
+                    )
+                if frame is not None and frame.kind == "rotating":
+                    system = self_outer.cr3bp_system
+                    if system is None:
+                        raise RuntimeError(
+                            "Rotating-frame visualization requires CR3BP system metadata"
+                        )
+                    return _matplotlib.cr3bp_trajectory_figure(
+                        self_outer.result.traj,
+                        system=system,
+                        dimensional=self_outer.cr3bp_dimensional is not False,
+                        title=title,
+                    )
+                return _matplotlib.trajectory_figure(
+                    self_outer.result.traj,
+                    maneuvers=self_outer.result.maneuvers,
+                    phase_segments=phase_segments,
+                    title=title,
+                )
+
+            def save_image(
+                self,
+                out_image: str | Path,
+                *,
+                title: str = "trajectory",
+                dpi: int = 160,
+            ) -> None:
+                """Save a frame-aware Matplotlib trajectory as PNG or JPEG."""
+                _matplotlib.save_figure_image(
+                    self.figure(title=title),
+                    out_image,
+                    dpi=dpi,
+                )
+
+            def show(self, *, title: str = "trajectory"):
+                """Open a frame-aware trajectory using the Matplotlib GUI backend."""
+                return _matplotlib.show_figure(self.figure(title=title))
+
             def save_relative_html(
                 self,
                 out_html: str,
@@ -456,6 +507,47 @@ class Solution:
                     cr3bp_dimensional=self_outer.cr3bp_dimensional is not False,
                     title=title,
                 )
+
+            def diagnostics_figure(
+                self,
+                *,
+                title: str = "trajectory diagnostics",
+            ):
+                """Return frame-aware Matplotlib state and geometry panels."""
+                if self_outer.result is None:
+                    raise RuntimeError("No result to visualize")
+                frame = self_outer.frame
+                return _matplotlib.trajectory_diagnostics_figure(
+                    self_outer.result.traj,
+                    frame_kind=(frame.kind if frame is not None else "inertial"),
+                    mu_m3ps2=self_outer.result.info.get("mu_m3ps2"),
+                    solar_directions_ric=self_outer.result.info.get("solar_directions_ric"),
+                    cr3bp_system=self_outer.cr3bp_system,
+                    cr3bp_dimensional=self_outer.cr3bp_dimensional is not False,
+                    title=title,
+                )
+
+            def save_diagnostics_image(
+                self,
+                out_image: str | Path,
+                *,
+                title: str = "trajectory diagnostics",
+                dpi: int = 160,
+            ) -> None:
+                """Save frame-aware Matplotlib diagnostics as PNG or JPEG."""
+                _matplotlib.save_figure_image(
+                    self.diagnostics_figure(title=title),
+                    out_image,
+                    dpi=dpi,
+                )
+
+            def show_diagnostics(
+                self,
+                *,
+                title: str = "trajectory diagnostics",
+            ):
+                """Open frame-aware diagnostics using the Matplotlib GUI backend."""
+                return _matplotlib.show_figure(self.diagnostics_figure(title=title))
 
         return _Viz()
 

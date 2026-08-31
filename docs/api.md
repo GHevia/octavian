@@ -100,4 +100,6 @@ The API reference is generated from source docstrings with `mkdocstrings`.
 
 ::: octavian.viz.plotly
 
+::: octavian.viz.matplotlib
+
 ::: octavian.study

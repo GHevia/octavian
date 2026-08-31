@@ -21,10 +21,11 @@ user scripts.
 | Cannonball drag and SRP | `Cannonball`, `Perturbations` | Cannonball Drag And SRP | `examples/composable/relative/25_cannonball_drag_srp.py` |
 | Solar-phase constraints | `constraints.solar_phase_angle` | Mission Patterns | `examples/composable/relative/18_perturbed_relative_solar.py` |
 | RIC trajectory and time histories | `solution.viz()` | Concepts | `examples/composable/relative/17_nonlinear_relative_rendezvous.py` |
+| Static PNG/JPEG plots or GUI windows | `solution.viz().save_image`, `octavian.viz.matplotlib` | Output And Visualization | `examples/outputs/02_matplotlib_plots.py` |
 | Earth–Moon/general CR3BP | `CR3BPSystem`, `Dynamics.cr3bp` | Cislunar CR3BP | `examples/composable/cislunar/27_earth_moon_cr3bp.py` |
 | Periodic orbits at a Jacobi value | `constraints.periodic_state`, `constraints.jacobi_constant` | Cislunar Design Guide | `examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py` |
 | Periodic-orbit family continuation | `guesses.trajectory`, Jacobi targeting | Cislunar Design Guide | `examples/composable/cislunar/32_jacobi_targeted_periodic_orbit_family.py` |
-| STK/OEM/BSP/CSV output | `solution.export_ephemeris` | Output Files | `examples/outputs/01_ephemeris_files.py` |
+| STK/OEM/BSP/CSV output | `solution.export_ephemeris` | Output And Visualization | `examples/outputs/01_ephemeris_files.py` |
 | JSON/YAML missions | `load_mission(...)` | JSON And YAML Missions | `examples/config/01_two_impulse_transfer.json` |
 
 Lower-level helpers and complete signatures are listed in the API Reference.
