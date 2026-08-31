@@ -63,7 +63,8 @@ conda run --name octavian-dev python -m pip install --no-user -e ".[dev]"
 conda run --name octavian-dev python -m octavian.diagnostics
 ```
 
-See [Development Environment](docs/tutorials/development-environment.md) for
+See the hosted [Development Environment](https://ghevia.github.io/octavian/tutorials/development-environment/)
+guide for
 the platform support boundary, daily commands, dependency tiers, and the
 recommended environment pattern for other projects. Windows also supports a
 repository-local `pip + venv` setup:
@@ -118,13 +119,15 @@ JSON works without another dependency. Install `octavian[yaml]` to load YAML
 mission files. Both formats construct the same Python mission objects and use
 the same solvers as ordinary mission scripts.
 
-See the MkDocs
-[example capability index](docs/examples/index.md) for a task-oriented map of
+See the hosted
+[example capability index](https://ghevia.github.io/octavian/examples/) for a task-oriented map of
 every executable example and mission pattern.
 
 ## Documentation
 
 The docs are built with MkDocs and publish through GitHub Pages.
+Browse the public documentation at
+[ghevia.github.io/octavian](https://ghevia.github.io/octavian/).
 
 ```bash
 pip install -e ".[dev]"
@@ -152,4 +155,5 @@ disk.
 ## Releasing
 
 Release versions are published from Git tags such as `v0.1.5` by GitHub Actions.
-Maintainer steps are documented in [RELEASING.md](RELEASING.md).
+Maintainer steps are documented in
+[RELEASING.md](https://github.com/GHevia/octavian/blob/dev/RELEASING.md).
