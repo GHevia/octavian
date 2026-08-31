@@ -4,10 +4,10 @@
 
 # Octavian
 
-Octavian is a Python-first astrodynamics / trajectory-optimization toolkit built
-on **ASSET (asset_asrl)**.
+[Octavian](https://ghevia.github.io/octavian/) is a Python-first astrodynamics / trajectory-optimization toolkit built
+on **ASSET (asset_asrl)**. 
 
-This MVP includes:
+This package includes:
 
 - Two-impulse rendezvous with bounded free final time.
 - Two-impulse rendezvous with bounded variable pre-coast.
