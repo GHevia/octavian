@@ -129,6 +129,17 @@ save_trajectory_html(
 )
 ```
 
+For a static image instead, the solution selects the same frame-aware view
+through Matplotlib:
+
+```python
+sol.viz().save_image("traj_quick_hohmann_transfer.png")
+```
+
+Use `sol.viz().show()` to open a desktop window, or see [Output Files And
+Static Plots](output-files.md) for figure customization, JPEG output, and
+diagnostic panels.
+
 ## Prefer A Literal Config File?
 
 The same mission is available as a schema-versioned JSON example:

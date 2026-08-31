@@ -327,6 +327,13 @@ range, speed, and solar phase angle when ephemeris geometry is present;
 inertial diagnostics include Cartesian state, radius, speed, and osculating
 elements.
 
+The Matplotlib backend provides the same inertial, relative, CR3BP, and
+diagnostic views as ordinary figures. `solution.viz().save_image(...)` and
+`save_diagnostics_image(...)` write PNG or JPEG files, while `show()` and
+`show_diagnostics()` open the active GUI backend. Use `figure()` or
+`diagnostics_figure()` when a script needs to customize labels, camera angles,
+or styling before export.
+
 ## Documentation Contract
 
 Octavian treats docs and examples as part of the product surface. If a new

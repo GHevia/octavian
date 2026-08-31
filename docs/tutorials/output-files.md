@@ -1,4 +1,47 @@
-# Ephemeris Output Files
+# Output Files And Static Plots
+
+## Matplotlib Images And Windows
+
+Install the visualization extra to use either the Matplotlib or Plotly
+backend:
+
+```bash
+python -m pip install "octavian[viz]"
+```
+
+A solved mission selects the correct inertial, relative RIC, or rotating
+CR3BP view automatically. The output suffix chooses PNG or JPEG:
+
+```python
+solution.viz().save_image("trajectory.png")
+solution.viz().save_diagnostics_image("diagnostics.jpg", dpi=180)
+```
+
+For a desktop pop-up using the active Matplotlib GUI backend:
+
+```python
+solution.viz().show()
+solution.viz().show_diagnostics()
+```
+
+Figure builders return ordinary Matplotlib figures for customization before
+display or export:
+
+```python
+from octavian.viz.matplotlib import trajectory_figure
+
+figure = trajectory_figure(solution.traj, title="Transfer trajectory")
+figure.axes[0].view_init(elev=25, azim=35)
+figure.savefig("custom-transfer.png", dpi=200)
+```
+
+Frame-specific functions follow the Plotly naming pattern:
+`trajectory_figure`, `relative_trajectory_figure`,
+`cr3bp_trajectory_figure`, and `trajectory_diagnostics_figure`, with matching
+`save_*_image` and `show_*` helpers. The complete standalone workflow is
+`examples/outputs/02_matplotlib_plots.py`.
+
+## Ephemeris Output Files
 
 Octavian keeps optimization and file formatting separate. A successful
 `Solution` can first produce one validated, SI-unit `Ephemeris`, then write

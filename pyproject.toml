@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "octavian"
-version = "0.4.9"
+version = "0.4.10"
 description = "Trajectory optimization and astrodynamics in Python using ASSET, with mission-script APIs."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -37,6 +37,7 @@ Issues = "https://github.com/GHevia/octavian/issues"
 
 [project.optional-dependencies]
 viz = [
+  "matplotlib>=3.7",
   "plotly>=5.18.0",
   "Pillow>=9.0",
 ]
@@ -45,6 +46,7 @@ yaml = [
 ]
 dev = [
   "build>=1.2",
+  "matplotlib>=3.7",
   "Pillow>=9.0",
   "plotly>=5.18.0",
   "pytest>=7.4",
