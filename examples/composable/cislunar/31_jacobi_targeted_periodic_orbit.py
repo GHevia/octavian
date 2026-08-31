@@ -111,6 +111,7 @@ save_cr3bp_trajectory_html(
     "traj_jacobi_targeted_L1_periodic_orbit.html",
     system=system,
     dimensional=False,
+    lagrange_point_names=("L1",),
     title=mission.name,
 )
 save_trajectory_diagnostics_html(

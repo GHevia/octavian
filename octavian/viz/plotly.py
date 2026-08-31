@@ -305,6 +305,7 @@ def cr3bp_trajectory_figure(
     *,
     system: CR3BPSystem,
     dimensional: bool = True,
+    lagrange_point_names: Sequence[str] | None = None,
     maneuvers: Sequence[Maneuver] | None = None,
     phase_segments: Sequence[dict[str, object]] | None = None,
     reference_trajectories: Sequence[dict[str, object]] | None = None,
@@ -317,6 +318,8 @@ def cr3bp_trajectory_figure(
         system: Primary-secondary CR3BP system.
         dimensional: Interpret positions as meters when true or canonical
             distance units otherwise.
+        lagrange_point_names: Lagrange points to include. The default includes
+            all five; pass an empty sequence to omit them.
         maneuvers: Optional maneuver markers in the trajectory's units.
         phase_segments: Optional phase interval dictionaries with ``name``,
             ``t_start_s``, ``t_end_s``, and optional ``color`` keys.
@@ -327,7 +330,8 @@ def cr3bp_trajectory_figure(
         title: Figure title.
 
     Returns:
-        A Plotly 3D figure with both bodies and all five Lagrange points.
+        A Plotly 3D figure with independently selectable body and Lagrange-point
+        traces.
     """
     try:
         import plotly.graph_objects as go
@@ -353,7 +357,21 @@ def cr3bp_trajectory_figure(
     secondary_position = (
         system.secondary_position_m if dimensional else system.secondary_position_nondimensional
     )
-    lagrange_points = system.lagrange_points(dimensional=dimensional)
+    all_lagrange_points = system.lagrange_points(dimensional=dimensional)
+    if lagrange_point_names is None:
+        selected_lagrange_names = tuple(all_lagrange_points)
+    else:
+        selected_lagrange_names = tuple(str(name).strip().upper() for name in lagrange_point_names)
+        unknown_names = [
+            name for name in selected_lagrange_names if name not in all_lagrange_points
+        ]
+        if unknown_names:
+            raise ValueError(
+                "lagrange_point_names entries must be L1, L2, L3, L4, or L5; "
+                f"received {unknown_names!r}"
+            )
+        if len(set(selected_lagrange_names)) != len(selected_lagrange_names):
+            raise ValueError("lagrange_point_names entries must be unique")
     positions = scale * trajectory[:, 0:3]
     hover_text = [
         (
@@ -444,30 +462,36 @@ def cr3bp_trajectory_figure(
                 hovertemplate="%{text}<extra></extra>",
             )
         )
-    figure.add_trace(
-        go.Scatter3d(
-            x=[scale * primary_position[0], scale * secondary_position[0]],
-            y=[0.0, 0.0],
-            z=[0.0, 0.0],
-            mode="markers+text",
-            name="Primaries",
-            text=[system.primary.name.title(), system.secondary.name.title()],
-            textposition="top center",
-            marker=dict(size=[16, 9], color=["#636EFA", "#AB63FA"]),
+    for body_name, body_position, marker_size, marker_color in (
+        (system.primary.name.title(), primary_position, 16, "#3B82F6"),
+        (system.secondary.name.title(), secondary_position, 9, "#9CA3AF"),
+    ):
+        figure.add_trace(
+            go.Scatter3d(
+                x=[scale * body_position[0]],
+                y=[scale * body_position[1]],
+                z=[scale * body_position[2]],
+                mode="markers+text",
+                name=body_name,
+                text=[body_name],
+                textposition="top center",
+                marker=dict(size=marker_size, color=marker_color),
+            )
         )
-    )
-    figure.add_trace(
-        go.Scatter3d(
-            x=[scale * point[0] for point in lagrange_points.values()],
-            y=[scale * point[1] for point in lagrange_points.values()],
-            z=[scale * point[2] for point in lagrange_points.values()],
-            mode="markers+text",
-            name="Lagrange points",
-            text=list(lagrange_points),
-            textposition="top center",
-            marker=dict(size=5, color="#EF553B", symbol="diamond"),
+    for point_name in selected_lagrange_names:
+        point = all_lagrange_points[point_name]
+        figure.add_trace(
+            go.Scatter3d(
+                x=[scale * point[0]],
+                y=[scale * point[1]],
+                z=[scale * point[2]],
+                mode="markers+text",
+                name=point_name,
+                text=[point_name],
+                textposition="top center",
+                marker=dict(size=5, color="#EF553B", symbol="diamond"),
+            )
         )
-    )
     axis_style = dict(
         backgroundcolor="black",
         gridcolor="rgba(255,255,255,0.12)",
@@ -493,6 +517,7 @@ def save_cr3bp_trajectory_html(
     *,
     system: CR3BPSystem,
     dimensional: bool = True,
+    lagrange_point_names: Sequence[str] | None = None,
     maneuvers: Sequence[Maneuver] | None = None,
     phase_segments: Sequence[dict[str, object]] | None = None,
     reference_trajectories: Sequence[dict[str, object]] | None = None,
@@ -506,6 +531,8 @@ def save_cr3bp_trajectory_html(
         system: Primary-secondary CR3BP system.
         dimensional: Interpret trajectory and marker positions as meters when
             true or canonical distance units otherwise.
+        lagrange_point_names: Lagrange points to include. The default includes
+            all five; pass an empty sequence to omit them.
         maneuvers: Optional maneuver markers in the trajectory's units.
         phase_segments: Optional phase interval dictionaries with ``name``,
             ``t_start_s``, ``t_end_s``, and optional ``color`` keys.
@@ -517,6 +544,7 @@ def save_cr3bp_trajectory_html(
         traj,
         system=system,
         dimensional=dimensional,
+        lagrange_point_names=lagrange_point_names,
         maneuvers=maneuvers,
         phase_segments=phase_segments,
         reference_trajectories=reference_trajectories,

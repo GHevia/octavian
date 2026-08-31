@@ -36,7 +36,8 @@ class Phase:
         final_state: Optional Cartesian state used to seed the phase.
         constraints: Boundary, path, geometry, and element constraints.
         tof_bounds_s: Lower and upper phase-end time or duration.
-        initial_guess: Optional specialized guess configuration.
+        initial_guess: Optional specialized guess configuration, including an
+            explicit dense history from ``guesses.trajectory(...)``.
         thrust_control: Optional finite-thrust direction or kinematic-attitude
             representation. Linked phases inherit the previous declaration.
     """

@@ -233,16 +233,19 @@ save_cr3bp_trajectory_html(
     solution.traj,
     "earth_moon_cr3bp.html",
     system=system,
+    lagrange_point_names=("L1",),
 )
 ```
 
-The plot includes both primaries and all five Lagrange points. It can also
-overlay reference periodic orbits, color phase segments, and mark maneuvers.
+The Earth, Moon, and each requested Lagrange point have separate legend items,
+so they can be hidden independently. Omit `lagrange_point_names` to show all
+five points or pass an empty tuple to omit them. The plot can also overlay
+reference periodic orbits, color phase segments, and mark maneuvers.
 
 Run the executable progression:
 
 - `examples/composable/cislunar/27_earth_moon_cr3bp.py` — dimensional
-  propagate–target–solve–convert workflow;
+  propagation, invariant check, frame conversion, and focused plotting;
 - `examples/composable/cislunar/28_canonical_periodic_orbit.py` — canonical
   L1 periodic-orbit correction;
 - `examples/composable/cislunar/29_periodic_orbit_transfer.py` — L1-to-L2
@@ -251,6 +254,8 @@ Run the executable progression:
   handoff to inertial J2, Sun/Moon, and SRP dynamics.
 - `examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py` —
   periodic-orbit correction with a canonical Jacobi family target.
+- `examples/composable/cislunar/32_jacobi_targeted_periodic_orbit_family.py` —
+  robust Jacobi continuation across neighboring L1 Lyapunov members.
 
 The [cislunar example guide](../examples/cislunar.md) explains the design
 choices and current fidelity boundaries in detail.

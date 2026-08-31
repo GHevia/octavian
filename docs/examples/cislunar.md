@@ -4,11 +4,12 @@ The cislunar examples form one continuous design progression:
 
 | Step | Design model | Purpose |
 | --- | --- | --- |
-| 27 | Dimensional CR3BP | Learn the system, propagation, transforms, invariant, and composable phase. |
+| 27 | Dimensional CR3BP | Learn the system, propagation, transforms, invariant, and plotting. |
 | 28 | Canonical CR3BP inside ASSET | Correct a planar L1 Lyapunov orbit with direct front/back periodicity. |
 | 29 | Dimensional CR3BP inside ASSET | Coast on L1, transfer impulsively, insert at L2, and coast on L2. |
 | 30 | Earth-centered ephemeris perturbation model | Re-target the nominal CR3BP endpoints under J2, Sun/Moon gravity, and SRP. |
 | 31 | Canonical CR3BP target | Select a different L1 family member by Jacobi constant instead of initial x. |
+| 32 | Canonical CR3BP continuation | Trace neighboring L1 family members while retaining the family and phase conditions. |
 
 This separation is intentional. Canonical CR3BP units make orbit families
 easy to compare with published initial conditions; SI units keep Octavian's
@@ -105,6 +106,12 @@ compiler evaluates the constraint in canonical units for conditioning. An
 optional `tolerance` produces symmetric upper and lower bounds; without one,
 the target is an equality.
 
+Example 32 applies that target repeatedly. Each member uses the preceding
+solved trajectory through `guesses.trajectory(...)`, retains the front `y=0`
+phase condition, and restricts the next period to a narrow neighborhood of the
+last one. Those three continuation choices prevent a locally successful solve
+from jumping to another periodic family or an integer multiple of the orbit.
+
 ## Transfer Between Periodic Orbits
 
 Example 29 expresses the trajectory architecture directly as three ASSET
@@ -135,9 +142,10 @@ Example 30 demonstrates a model transition without pretending the circular
 model and ephemeris model are the same system:
 
 1. Propagate one nominal L1 orbit in the CR3BP synodic frame.
-2. Sample the BSP Moon at the mission epoch and align synodic +X with the
-   Earth-to-Moon direction.
-3. Convert the nominal endpoints to Earth-centered inertial states.
+2. Sample the BSP Moon throughout the arc and embed the canonical solution in
+   its instantaneous three-dimensional rotating/pulsating geometry.
+3. Use that complete inertial history as the collocation seed and its endpoints
+   as the recapture targets.
 4. Solve a second ASSET mission with Earth J2, ephemeris Moon/Sun gravity, and
    cannonball solar radiation pressure.
 5. Report the boundary correction required to recapture the nominal endpoint.
@@ -156,8 +164,10 @@ problem.
 - Finite-thrust CR3BP phases are not yet compiled.
 - J2, third-body gravity, drag, and SRP belong to the inertial force model,
   not to the canonical CR3BP equations.
-- Synodic/inertial transforms implement circular CR3BP geometry. Example 30
-  explicitly aligns that geometry to the BSP Moon at the handoff epoch.
+- Synodic/inertial transforms implement circular CR3BP geometry and accept an
+  optional inclined epoch basis. Example 30 goes further by explicitly using
+  the BSP Moon's time-varying direction, distance, and angular rate for its
+  model-handoff seed.
 - Two-body osculating-element constraints are not meaningful as direct
   rotating-frame CR3BP constraints; use Cartesian synodic components.
 
@@ -172,6 +182,7 @@ python examples/composable/cislunar/28_canonical_periodic_orbit.py
 python examples/composable/cislunar/29_periodic_orbit_transfer.py
 python examples/composable/cislunar/30_high_fidelity_recapture.py
 python examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py
+python examples/composable/cislunar/32_jacobi_targeted_periodic_orbit_family.py
 ```
 
 Each script prints solver and model diagnostics and writes an interactive

@@ -108,7 +108,7 @@ mission = Mission(
     solver_options=SolverOptions(
         print_level=0,
         max_ls_iters=5,
-        enable_adaptive_mesh=False,
+        enable_adaptive_mesh=True,
         asset_threads=(1, 1),
     ),
 )
@@ -153,6 +153,7 @@ save_cr3bp_trajectory_html(
     solution.traj,
     "traj_L1_to_L2_periodic_orbits.html",
     system=system,
+    lagrange_point_names=("L1", "L2"),
     maneuvers=solution.result.maneuvers,
     phase_segments=segments,
     reference_trajectories=[

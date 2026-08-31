@@ -13,8 +13,6 @@ Run:
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 
 from octavian import (
@@ -26,6 +24,7 @@ from octavian import (
     Phase,
     Spacecraft,
     constraints,
+    guesses,
     objectives,
     state,
     variables,
@@ -35,7 +34,6 @@ from octavian.cislunar import (
     dimensionalize_state,
     dimensionalize_time,
     propagate_cr3bp,
-    synodic_to_inertial_state,
 )
 from octavian.data.ephemeris import sample_sun_moon_positions_eci_tod
 from octavian.solvers import SolverOptions
@@ -57,35 +55,67 @@ synodic_history = propagate_cr3bp(
     system=system,
     max_step=300.0,
 )
-synodic_terminal = state(
-    synodic_history[-1, 0:3],
-    synodic_history[-1, 3:6],
-)
-
-# Align synodic +X with the actual Earth-to-Moon direction at the handoff
-# epoch. This makes the circular CR3BP frame and the ECI_TOD perturbation
-# tables geometrically consistent at t=0.
-_, ephemeris_positions = sample_sun_moon_positions_eci_tod(
+# Sample the same BSP geometry used by the perturbed dynamics. The handoff
+# below embeds the circular solution in an ephemeris-aligned rotating/pulsating
+# frame, avoiding an artificial correction caused by the Moon's inclination
+# and roughly 12% peak-to-peak distance variation over this arc.
+ephemeris_times_s, ephemeris_positions = sample_sun_moon_positions_eci_tod(
     initial_epoch=INITIAL_EPOCH,
     duration_s=period_s,
-    step_s=6.0 * 3_600.0,
+    step_s=3_600.0,
 )
-moon_at_epoch_m = ephemeris_positions["moon"][0]
-phase_at_epoch_rad = math.atan2(moon_at_epoch_m[1], moon_at_epoch_m[0])
+moon_positions_m = ephemeris_positions["moon"]
+moon_velocities_mps = np.gradient(
+    moon_positions_m,
+    ephemeris_times_s,
+    axis=0,
+    edge_order=2,
+)
 
-inertial_initial = synodic_to_inertial_state(
-    synodic_initial,
-    time_s=0.0,
-    system=system,
-    origin="earth",
-    phase_at_epoch_rad=phase_at_epoch_rad,
+
+def interpolate_ephemeris(samples: np.ndarray, time_s: float) -> np.ndarray:
+    """Interpolate a three-component BSP history at mission-relative time."""
+    return np.asarray(
+        [np.interp(time_s, ephemeris_times_s, samples[:, component]) for component in range(3)]
+    )
+
+
+def nominal_inertial_row(synodic_row: np.ndarray) -> np.ndarray:
+    """Embed one CR3BP sample in the instantaneous Earth-Moon geometry."""
+    time_s = float(synodic_row[6])
+    moon_position_m = interpolate_ephemeris(moon_positions_m, time_s)
+    moon_velocity_mps = interpolate_ephemeris(moon_velocities_mps, time_s)
+    moon_distance_m = float(np.linalg.norm(moon_position_m))
+
+    x_axis = moon_position_m / moon_distance_m
+    angular_velocity = np.cross(moon_position_m, moon_velocity_mps) / moon_distance_m**2
+    z_axis = angular_velocity / np.linalg.norm(angular_velocity)
+    y_axis = np.cross(z_axis, x_axis)
+    rotating_basis = np.column_stack([x_axis, y_axis, z_axis])
+
+    relative_position_canonical = (
+        synodic_row[0:3] - system.primary_position_m
+    ) / system.separation_m
+    relative_velocity_canonical_per_s = synodic_row[3:6] / system.separation_m
+    moon_radial_speed_mps = float(np.dot(x_axis, moon_velocity_mps))
+
+    inertial_position_m = rotating_basis @ (moon_distance_m * relative_position_canonical)
+    inertial_velocity_mps = np.cross(angular_velocity, inertial_position_m) + rotating_basis @ (
+        moon_radial_speed_mps * relative_position_canonical
+        + moon_distance_m * relative_velocity_canonical_per_s
+    )
+    return np.hstack([inertial_position_m, inertial_velocity_mps, time_s])
+
+
+nominal_inertial_history = np.asarray([nominal_inertial_row(row) for row in synodic_history])
+
+inertial_initial = state(
+    nominal_inertial_history[0, 0:3],
+    nominal_inertial_history[0, 3:6],
 )
-inertial_target = synodic_to_inertial_state(
-    synodic_terminal,
-    time_s=period_s,
-    system=system,
-    origin="earth",
-    phase_at_epoch_rad=phase_at_epoch_rad,
+inertial_target = state(
+    nominal_inertial_history[-1, 0:3],
+    nominal_inertial_history[-1, 3:6],
 )
 
 spacecraft = Spacecraft(
@@ -104,7 +134,7 @@ perturbed_dynamics = Dynamics.for_body(
         sun=True,
         srp=True,
     ),
-    third_body_table_step_s=6.0 * 3_600.0,
+    third_body_table_step_s=3_600.0,
 )
 
 recapture = Phase(
@@ -115,6 +145,7 @@ recapture = Phase(
     initial_state=inertial_initial,
     final_state=inertial_target,
     tof_bounds_s=(period_s - 3_600.0, period_s + 3_600.0),
+    initial_guess=guesses.trajectory(nominal_inertial_history[::4]),
     constraints=[
         constraints.state(inertial_initial, where="Front"),
         constraints.state(inertial_target, where="Back"),
@@ -136,7 +167,7 @@ mission = Mission(
     solver_options=SolverOptions(
         print_level=0,
         max_ls_iters=5,
-        enable_adaptive_mesh=False,
+        enable_adaptive_mesh=True,
         asset_threads=(1, 1),
     ),
 )

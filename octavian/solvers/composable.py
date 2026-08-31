@@ -53,7 +53,7 @@ from ..astro.types import as_vec3
 from ..astro.units import default_scaling
 from ..cislunar import CR3BPSystem, cr3bp_hermite_guess, propagate_cr3bp
 from ..coordinates import StateLayout
-from ..guesses import LowThrustSpiralGuess
+from ..guesses import LowThrustSpiralGuess, TrajectoryGuess
 from ..phase import Phase
 from ..relative import (
     CWHRendezvousSeed,
@@ -311,6 +311,44 @@ def _build_guess_multi_phase_cr3bp(
         previous_terminal = BoundaryState(terminal[0:3], terminal[3:6])
         previous_time = float(terminal[6])
     return guesses, info
+
+
+def _explicit_trajectory_guesses(
+    phases: Sequence[Phase],
+) -> tuple[
+    dict[int, list[np.ndarray]],
+    dict[int, dict[str, float | int | bool | str]],
+]:
+    """Return validated user-supplied dense phase guesses."""
+    guesses: dict[int, list[np.ndarray]] = {}
+    info: dict[int, dict[str, float | int | bool | str]] = {}
+    for index, phase in enumerate(phases):
+        config = phase.initial_guess
+        if config is None or isinstance(config, LowThrustSpiralGuess):
+            continue
+        if not isinstance(config, TrajectoryGuess):
+            raise TypeError(
+                "Phase.initial_guess must be created with "
+                "guesses.trajectory(...) or guesses.low_thrust_spiral(...)."
+            )
+        rows = np.asarray(config.rows, dtype=float)
+        guesses[index] = [row.copy() for row in rows]
+        info[index] = {
+            "guess_kind": "explicit_trajectory",
+            "seed_duration": float(rows[-1, 6] - rows[0, 6]),
+            "seed_samples": int(len(rows)),
+        }
+    return guesses, info
+
+
+def _validated_convergence(
+    optimizer_converged: bool,
+    constraint_report: Sequence[dict[str, object]],
+) -> bool:
+    """Require both backend convergence and satisfied reported constraints."""
+    return bool(optimizer_converged) and all(
+        bool(row.get("satisfied", False)) for row in constraint_report
+    )
 
 
 def _layout_has_state_group(layout: StateLayout, group: str) -> bool:
@@ -1630,7 +1668,11 @@ def solve_composable_mission(
         guesses.update(relative_guesses)
         guess_info.update(relative_info)
 
-    elif len(phases) == 1 and _powered_phase_kind(phases[0]) == "low_thrust":
+    elif (
+        len(phases) == 1
+        and _powered_phase_kind(phases[0]) == "low_thrust"
+        and not isinstance(phases[0].initial_guess, TrajectoryGuess)
+    ):
         p0 = phases[0]
         tf_bounds = abs_bounds[0] or (86_400.0, 30.0 * 86_400.0)
         ig0, info0 = _build_guess_single_phase_low_thrust(
@@ -1696,6 +1738,10 @@ def solve_composable_mission(
         )
         guesses[0] = ig0
         guesses[1] = ig1
+
+    explicit_guesses, explicit_guess_info = _explicit_trajectory_guesses(phases)
+    guesses.update(explicit_guesses)
+    guess_info.update(explicit_guess_info)
 
     front_impulse_v_targets = _build_front_impulse_velocity_targets(phases)
     terminal_shell = constraint_compiler.make_terminal_shell(phases[-1])
@@ -2528,13 +2574,20 @@ def solve_composable_mission(
         if build.is_chemical_burn:
             chemical_burns.append(dict(summary))
 
+    reported_constraints_satisfied = all(
+        bool(row.get("satisfied", False)) for row in constraint_report
+    )
+    validated_convergence = _validated_convergence(converged, constraint_report)
+
     return RendezvousResult(
-        converged=bool(converged),
+        converged=validated_convergence,
         traj=np.asarray(traj, dtype=np.float64),
         maneuvers=maneuvers,
         last_obj=float(getattr(ocp.optimizer, "LastObjVal", np.nan)),
         info={
             "backend": "asset_composable",
+            "optimizer_converged": bool(converged),
+            "reported_constraints_satisfied": reported_constraints_satisfied,
             "nphases": len(built),
             "r_unit_m": r_unit,
             "v_unit_mps": v_unit,

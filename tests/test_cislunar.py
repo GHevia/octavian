@@ -68,6 +68,38 @@ def test_cr3bp_scaling_and_synodic_inertial_round_trips() -> None:
     np.testing.assert_allclose(recovered_synodic.r_m, dimensional.r_m, atol=1.0e-7)
     np.testing.assert_allclose(recovered_synodic.v_mps, dimensional.v_mps, atol=1.0e-12)
 
+    inclined_basis = np.asarray(
+        [
+            [0.0, -1.0, 0.0],
+            [0.0, 0.0, -1.0],
+            [1.0, 0.0, 0.0],
+        ]
+    )
+    inclined_inertial = synodic_to_inertial_state(
+        dimensional,
+        time_s=123_456.0,
+        system=system,
+        origin="earth",
+        inertial_basis_at_epoch=inclined_basis,
+    )
+    recovered_from_inclined = inertial_to_synodic_state(
+        inclined_inertial,
+        time_s=123_456.0,
+        system=system,
+        origin="earth",
+        inertial_basis_at_epoch=inclined_basis,
+    )
+    np.testing.assert_allclose(recovered_from_inclined.r_m, dimensional.r_m, atol=1.0e-7)
+    np.testing.assert_allclose(recovered_from_inclined.v_mps, dimensional.v_mps, atol=1.0e-12)
+
+    with pytest.raises(ValueError, match="orthonormal"):
+        synodic_to_inertial_state(
+            dimensional,
+            time_s=0.0,
+            system=system,
+            inertial_basis_at_epoch=np.ones((3, 3)),
+        )
+
 
 def test_cr3bp_dynamics_selects_dimensional_or_canonical_solver_units() -> None:
     dimensional = Dynamics.cr3bp()
@@ -119,10 +151,16 @@ def test_cr3bp_plot_contains_trajectory_primaries_and_lagrange_points() -> None:
 
     assert [trace.name for trace in figure.data] == [
         "Trajectory",
-        "Primaries",
-        "Lagrange points",
+        "Earth",
+        "Moon",
+        "L1",
+        "L2",
+        "L3",
+        "L4",
+        "L5",
     ]
-    assert list(figure.data[2].text) == ["L1", "L2", "L3", "L4", "L5"]
+    assert figure.data[1].marker.color == "#3B82F6"
+    assert figure.data[2].marker.color == "#9CA3AF"
     panels = cr3bp_diagnostic_panels(trajectory, system=system)
     assert [panel.title for panel in panels] == [
         "Synodic position",
@@ -186,9 +224,42 @@ def test_cr3bp_plot_can_overlay_references_phases_and_maneuvers() -> None:
         "L1 reference",
         "transfer",
         "M1: departure",
-        "Primaries",
-        "Lagrange points",
+        "Earth",
+        "Moon",
+        "L1",
+        "L2",
+        "L3",
+        "L4",
+        "L5",
     ]
+
+
+def test_cr3bp_plot_can_select_individual_lagrange_points() -> None:
+    pytest.importorskip("plotly")
+    system = CR3BPSystem.earth_moon()
+    trajectory = np.zeros((2, 7), dtype=float)
+    trajectory[:, 6] = [0.0, 1.0]
+
+    figure = cr3bp_trajectory_figure(
+        trajectory,
+        system=system,
+        dimensional=False,
+        lagrange_point_names=("l1", "L2"),
+    )
+
+    assert [trace.name for trace in figure.data] == [
+        "Trajectory",
+        "Earth",
+        "Moon",
+        "L1",
+        "L2",
+    ]
+    with pytest.raises(ValueError, match="must be L1"):
+        cr3bp_trajectory_figure(
+            trajectory,
+            system=system,
+            lagrange_point_names=("L6",),
+        )
 
 
 def test_jacobi_constraint_validates_units_and_tolerance() -> None:

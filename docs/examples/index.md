@@ -71,11 +71,12 @@ trajectory stay in CR3BP distance, velocity, and time units.
 
 | Task | Example | Capabilities |
 | --- | --- | --- |
-| Learn the dimensional CR3BP API | `examples/composable/cislunar/27_earth_moon_cr3bp.py` | Lagrange points, propagation, Jacobi constant, synodic solve and plotting. |
+| Learn the dimensional CR3BP API | `examples/composable/cislunar/27_earth_moon_cr3bp.py` | Lagrange points, propagation, Jacobi constant, transforms, and plotting. |
 | Solve a nondimensional periodic orbit | `examples/composable/cislunar/28_canonical_periodic_orbit.py` | Canonical L1 seed, ASSET front/back periodicity, phase condition, canonical diagnostics. |
 | Transfer between periodic-orbit families | `examples/composable/cislunar/29_periodic_orbit_transfer.py` | L1 coast, departure impulse, free-time CR3BP transfer, L2 insertion and coast. |
 | Re-target in a perturbed model | `examples/composable/cislunar/30_high_fidelity_recapture.py` | BSP Moon alignment, synodic/inertial conversion, J2, Sun/Moon gravity, SRP. |
 | Select a periodic orbit by invariant | `examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py` | Canonical Jacobi target, ASSET front/back periodicity, free initial state and period. |
+| Continue a periodic-orbit family | `examples/composable/cislunar/32_jacobi_targeted_periodic_orbit_family.py` | Dense solved-trajectory seeds, retained phase condition, narrow period continuation. |
 
 Read [Designing In The Cislunar Regime](cislunar.md) before adapting the last
 three examples. It explains where canonical and SI units meet, what

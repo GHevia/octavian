@@ -634,11 +634,10 @@ Expected outputs:
 
 Path: `examples/composable/cislunar/27_earth_moon_cr3bp.py`
 
-This example builds the dimensional Earth–Moon CR3BP system, finds L4,
-propagates a nearby reference arc, and targets that state with a composable
-synodic coast phase. It reports Jacobi drift, converts the terminal state to
-Earth-centered inertial axes, and uses the CR3BP-specific plot with both
-primaries and all five equilibrium points.
+This example builds the dimensional Earth–Moon CR3BP system, propagates near
+L1, reports Jacobi drift, converts the terminal state to Earth-centered
+inertial axes, and uses a CR3BP-specific plot focused on L1. The Earth, Moon,
+and L1 remain independently selectable legend items.
 
 Expected output:
 
@@ -679,12 +678,12 @@ Expected outputs:
 
 Path: `examples/composable/cislunar/30_high_fidelity_recapture.py`
 
-This example samples the BSP Moon at the mission epoch, aligns the circular
-synodic frame, converts nominal CR3BP endpoints to Earth-centered inertial
-states, and solves a second mission under Earth J2, ephemeris Moon/Sun
-gravity, and cannonball SRP. The correction is reported as model mismatch; the
-example does not claim that the ephemeris trajectory is mathematically
-periodic.
+This example samples the BSP Moon throughout the nominal arc and embeds the
+CR3BP solution in its three-dimensional rotating/pulsating geometry. The
+resulting inertial history seeds a second mission under Earth J2, ephemeris
+Moon/Sun gravity, and cannonball SRP. The correction is reported as model
+mismatch; the example does not claim that the ephemeris trajectory is
+mathematically periodic.
 
 Expected outputs:
 
@@ -705,6 +704,20 @@ Expected outputs:
 
 - `traj_jacobi_targeted_L1_periodic_orbit.html`
 - `diagnostics_jacobi_targeted_L1_periodic_orbit.html`
+
+## 32: Jacobi-Targeted L1 Family
+
+Path: `examples/composable/cislunar/32_jacobi_targeted_periodic_orbit_family.py`
+
+This continuation example traces neighboring planar L1 Lyapunov orbits. Each
+target uses the preceding solved history through `guesses.trajectory(...)`,
+retains the `y=0` phase condition, and keeps the period in a narrow local
+interval. This combination avoids the failed-target and family-switching modes
+that arise from a broad-period solve with only endpoint seed states.
+
+Expected output:
+
+- `traj_L1_periodic_orbit_family.html`
 
 For the canonical/SI boundary, periodicity formulation, transfer topology,
 and current model limits, read

@@ -108,7 +108,7 @@ def _fake_solution() -> Solution:
         ("examples/composable/relative/23_relative_three_burn_transfer.py", 1),
         ("examples/composable/relative/24_perturbed_relative_element_propagation.py", 0),
         ("examples/composable/relative/26_classical_relative_elements.py", 1),
-        ("examples/composable/cislunar/27_earth_moon_cr3bp.py", 1),
+        ("examples/composable/cislunar/27_earth_moon_cr3bp.py", 0),
         ("examples/composable/cislunar/28_canonical_periodic_orbit.py", 1),
         ("examples/composable/cislunar/29_periodic_orbit_transfer.py", 1),
         ("examples/composable/cislunar/30_high_fidelity_recapture.py", 1),
@@ -351,12 +351,7 @@ def test_composable_examples_run_as_scenarios(
             "diagnostics_perturbed_relative_elements.html",
         ]
     elif script_rel.endswith("27_earth_moon_cr3bp.py"):
-        mission = missions[0]
-        model = mission.phases[0].dynamics.model
-        assert model.primary.name == "earth"
-        assert model.secondary.name == "moon"
-        assert mission.phases[0].dynamics.cr3bp_dimensional is True
-        assert mission.phases[0].dynamics.frame.kind == "rotating"
+        assert missions == []
         assert plotted == ["traj_composable_earth_moon_cr3bp.html"]
     elif script_rel.endswith("26_classical_relative_elements.py"):
         phase = missions[0].phases[0]
