@@ -1,6 +1,9 @@
 *__pycache__*
 *.html
 *.npz
+examples/**/*.jpeg
+examples/**/*.jpg
+examples/**/*.png
 dist/
 site/
 .venv/

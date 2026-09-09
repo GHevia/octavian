@@ -22,6 +22,7 @@ from octavian.cislunar import (
 from octavian.solvers import SolverOptions
 from octavian.viz import (
     save_cr3bp_trajectory_html,
+    save_cr3bp_trajectory_image,
     save_trajectory_diagnostics_html,
 )
 
@@ -110,6 +111,15 @@ save_cr3bp_trajectory_html(
     dimensional=False,
     lagrange_point_names=("L1",),
     title=mission.name,
+)
+save_cr3bp_trajectory_image(
+    trajectory_canonical,
+    "traj_canonical_L1_periodic_orbit.png",
+    system=system,
+    dimensional=False,
+    lagrange_point_names=("L1",),
+    projection="xy",
+    title=f"{mission.name} — XY plane",
 )
 save_trajectory_diagnostics_html(
     trajectory_canonical,

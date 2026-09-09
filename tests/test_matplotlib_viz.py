@@ -56,6 +56,34 @@ def test_inertial_figure_labels_axes_and_earth() -> None:
 
 
 @pytest.mark.parametrize(
+    ("projection", "x_label", "y_label"),
+    [
+        ("xy", "ECI X (km)", "ECI Y (km)"),
+        ("xz", "ECI X (km)", "ECI Z (km)"),
+        ("yz", "ECI Y (km)", "ECI Z (km)"),
+    ],
+)
+def test_inertial_2d_projections_select_axes(
+    projection: str,
+    x_label: str,
+    y_label: str,
+) -> None:
+    figure = trajectory_figure(_inertial_trajectory(), projection=projection)
+    axes = figure.axes[0]
+
+    assert axes.name == "rectilinear"
+    assert axes.get_xlabel() == x_label
+    assert axes.get_ylabel() == y_label
+    assert axes.get_aspect() == 1.0
+    assert "Earth" in axes.get_legend_handles_labels()[1]
+
+
+def test_trajectory_figure_rejects_unknown_projection() -> None:
+    with pytest.raises(ValueError, match="projection must be one of"):
+        trajectory_figure(_inertial_trajectory(), projection="perspective")
+
+
+@pytest.mark.parametrize(
     ("suffix", "expected_format"),
     [(".png", "PNG"), (".jpg", "JPEG")],
 )
@@ -95,6 +123,11 @@ def test_relative_figure_labels_ric_axes_and_chief() -> None:
     assert axes.get_zlabel() == "Cross-track, C (m)"
     assert "Chief" in axes.get_legend_handles_labels()[1]
 
+    planar_figure = relative_trajectory_figure(trajectory, projection="xz")
+    planar_axes = planar_figure.axes[0]
+    assert planar_axes.get_xlabel() == "Radial, R (m)"
+    assert planar_axes.get_ylabel() == "Cross-track, C (m)"
+
 
 def test_cr3bp_figure_selects_lagrange_points_and_labels_bodies() -> None:
     system = CR3BPSystem.earth_moon()
@@ -107,9 +140,24 @@ def test_cr3bp_figure_selects_lagrange_points_and_labels_bodies() -> None:
         dimensional=False,
         lagrange_point_names=("l1", "L2"),
     )
-    labels = figure.axes[0].get_legend_handles_labels()[1]
+    axes = figure.axes[0]
+    labels = axes.get_legend_handles_labels()[1]
 
     assert labels == ["Trajectory", "Earth", "Moon", "L1", "L2"]
+    assert axes.get_zlabel() == "Synodic Z (DU)"
+
+    planar_figure = cr3bp_trajectory_figure(
+        trajectory,
+        system=system,
+        dimensional=False,
+        lagrange_point_names=("L1",),
+        projection="xy",
+        reference_trajectories=[{"name": "Family member", "traj": trajectory}],
+    )
+    planar_axes = planar_figure.axes[0]
+    assert planar_axes.get_xlabel() == "Synodic X (DU)"
+    assert planar_axes.get_ylabel() == "Synodic Y (DU)"
+    assert "Family member" in planar_axes.get_legend_handles_labels()[1]
     with pytest.raises(ValueError, match="must be L1"):
         cr3bp_trajectory_figure(
             trajectory,
@@ -155,8 +203,10 @@ def test_solution_viz_saves_frame_aware_image(tmp_path: Path) -> None:
     solution = Solution(ok=True, result=result)
     output = tmp_path / "solution.png"
 
-    solution.viz().save_image(output, dpi=72)
+    solution.viz().save_image(output, projection="xy", dpi=72)
 
     assert output.is_file()
-    assert solution.viz().figure().axes[0].get_xlabel() == "ECI X (km)"
+    planar_axes = solution.viz().figure(projection="yz").axes[0]
+    assert planar_axes.get_xlabel() == "ECI Y (km)"
+    assert planar_axes.get_ylabel() == "ECI Z (km)"
     assert len(solution.viz().diagnostics_figure().axes) == 4

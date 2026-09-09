@@ -332,7 +332,9 @@ diagnostic views as ordinary figures. `solution.viz().save_image(...)` and
 `save_diagnostics_image(...)` write PNG or JPEG files, while `show()` and
 `show_diagnostics()` open the active GUI backend. Use `figure()` or
 `diagnostics_figure()` when a script needs to customize labels, camera angles,
-or styling before export.
+or styling before export. Spatial figures default to 3D; pass
+`projection="xy"`, `"xz"`, or `"yz"` to render an equal-scale 2D plane with
+labels appropriate to the solution frame.
 
 ## Documentation Contract
 

@@ -10,17 +10,25 @@ python -m pip install "octavian[viz]"
 ```
 
 A solved mission selects the correct inertial, relative RIC, or rotating
-CR3BP view automatically. The output suffix chooses PNG or JPEG:
+CR3BP view automatically. Trajectory views are 3D by default; set
+`projection` to `"xy"`, `"xz"`, or `"yz"` for a 2D plane. The output suffix
+chooses PNG or JPEG:
 
 ```python
 solution.viz().save_image("trajectory.png")
+solution.viz().save_image("trajectory-xy.png", projection="xy")
 solution.viz().save_diagnostics_image("diagnostics.jpg", dpi=180)
 ```
+
+The axis labels remain frame-aware. For example, `projection="xy"` means ECI
+X/Y for an inertial result, radial/in-track for a relative result, and
+synodic X/Y for a CR3BP result. All spatial projections use equal axis scales.
 
 For a desktop pop-up using the active Matplotlib GUI backend:
 
 ```python
 solution.viz().show()
+solution.viz().show(projection="xz")
 solution.viz().show_diagnostics()
 ```
 
@@ -30,16 +38,25 @@ display or export:
 ```python
 from octavian.viz.matplotlib import trajectory_figure
 
-figure = trajectory_figure(solution.traj, title="Transfer trajectory")
-figure.axes[0].view_init(elev=25, azim=35)
-figure.savefig("custom-transfer.png", dpi=200)
+figure = trajectory_figure(
+    solution.traj,
+    projection="xy",
+    title="Transfer trajectory",
+)
+figure.savefig("custom-transfer-xy.png", dpi=200)
+
+figure_3d = trajectory_figure(solution.traj, title="Transfer trajectory")
+figure_3d.axes[0].view_init(elev=25, azim=35)
+figure_3d.savefig("custom-transfer-3d.png", dpi=200)
 ```
 
 Frame-specific functions follow the Plotly naming pattern:
 `trajectory_figure`, `relative_trajectory_figure`,
 `cr3bp_trajectory_figure`, and `trajectory_diagnostics_figure`, with matching
 `save_*_image` and `show_*` helpers. The complete standalone workflow is
-`examples/outputs/02_matplotlib_plots.py`.
+`examples/outputs/02_matplotlib_plots.py`. Planar image output also appears in
+the Hohmann transfer, CWH rendezvous, canonical L1 orbit, and L1 orbit-family
+composable examples.
 
 ## Ephemeris Output Files
 

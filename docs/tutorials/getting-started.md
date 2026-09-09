@@ -133,12 +133,16 @@ For a static image instead, the solution selects the same frame-aware view
 through Matplotlib:
 
 ```python
-sol.viz().save_image("traj_quick_hohmann_transfer.png")
+sol.viz().save_image(
+    "traj_quick_hohmann_transfer.png",
+    projection="xy",
+)
 ```
 
-Use `sol.viz().show()` to open a desktop window, or see [Output Files And
-Static Plots](output-files.md) for figure customization, JPEG output, and
-diagnostic panels.
+Omit `projection` for the default 3D view, choose `"xz"` or `"yz"` for another
+2D plane, or use `sol.viz().show(projection="xy")` to open a desktop window.
+See [Output Files And Static Plots](output-files.md) for figure customization,
+JPEG output, and diagnostic panels.
 
 ## Prefer A Literal Config File?
 

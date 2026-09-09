@@ -418,8 +418,17 @@ class Solution:
                     title=title,
                 )
 
-            def figure(self, *, title: str = "trajectory"):
-                """Return a frame-aware Matplotlib trajectory figure."""
+            def figure(
+                self,
+                *,
+                title: str = "trajectory",
+                projection: str = "3d",
+            ):
+                """Return a frame-aware Matplotlib trajectory figure.
+
+                Use ``projection="xy"``, ``"xz"``, or ``"yz"`` for a 2D
+                view; the default ``"3d"`` retains all position axes.
+                """
                 if self_outer.result is None:
                     raise RuntimeError("No result to visualize")
                 frame = self_outer.frame
@@ -430,6 +439,7 @@ class Solution:
                         maneuvers=self_outer.result.maneuvers,
                         phase_segments=phase_segments,
                         title=title,
+                        projection=projection,
                     )
                 if frame is not None and frame.kind == "rotating":
                     system = self_outer.cr3bp_system
@@ -442,12 +452,14 @@ class Solution:
                         system=system,
                         dimensional=self_outer.cr3bp_dimensional is not False,
                         title=title,
+                        projection=projection,
                     )
                 return _matplotlib.trajectory_figure(
                     self_outer.result.traj,
                     maneuvers=self_outer.result.maneuvers,
                     phase_segments=phase_segments,
                     title=title,
+                    projection=projection,
                 )
 
             def save_image(
@@ -455,18 +467,24 @@ class Solution:
                 out_image: str | Path,
                 *,
                 title: str = "trajectory",
+                projection: str = "3d",
                 dpi: int = 160,
             ) -> None:
                 """Save a frame-aware Matplotlib trajectory as PNG or JPEG."""
                 _matplotlib.save_figure_image(
-                    self.figure(title=title),
+                    self.figure(title=title, projection=projection),
                     out_image,
                     dpi=dpi,
                 )
 
-            def show(self, *, title: str = "trajectory"):
+            def show(
+                self,
+                *,
+                title: str = "trajectory",
+                projection: str = "3d",
+            ):
                 """Open a frame-aware trajectory using the Matplotlib GUI backend."""
-                return _matplotlib.show_figure(self.figure(title=title))
+                return _matplotlib.show_figure(self.figure(title=title, projection=projection))
 
             def save_relative_html(
                 self,

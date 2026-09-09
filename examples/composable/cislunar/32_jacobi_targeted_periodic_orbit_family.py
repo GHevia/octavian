@@ -24,7 +24,7 @@ from octavian import (
 )
 from octavian.cislunar import CR3BPSystem, jacobi_constant, propagate_cr3bp
 from octavian.solvers import SolverOptions
-from octavian.viz import save_cr3bp_trajectory_html
+from octavian.viz import save_cr3bp_trajectory_html, save_cr3bp_trajectory_image
 
 system = CR3BPSystem.earth_moon()
 spacecraft = Spacecraft(name="Cislunar explorer", dry_mass_kg=250.0)
@@ -134,6 +134,16 @@ save_cr3bp_trajectory_html(
     system=system,
     dimensional=False,
     lagrange_point_names=("L1",),
+    title=last_mission.name if last_mission is not None else "L1 Lyapunov family",
+    reference_trajectories=family[1:],
+)
+save_cr3bp_trajectory_image(
+    np.asarray(family[0]["traj"]),
+    "traj_L1_periodic_orbit_family.png",
+    system=system,
+    dimensional=False,
+    lagrange_point_names=("L1",),
+    projection="xy",
     title=last_mission.name if last_mission is not None else "L1 Lyapunov family",
     reference_trajectories=family[1:],
 )

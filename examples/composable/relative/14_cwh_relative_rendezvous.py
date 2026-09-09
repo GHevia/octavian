@@ -103,3 +103,8 @@ solution.viz().save_diagnostics_html(
     "diagnostics_composable_cwh_relative_rendezvous.html",
     title="CWH relative state over time",
 )
+solution.viz().save_image(
+    "traj_composable_cwh_relative_rendezvous.png",
+    projection="xy",
+    title="CWH rendezvous — radial/in-track plane",
+)

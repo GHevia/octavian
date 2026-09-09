@@ -90,7 +90,7 @@ handoff rather than a perturbed CR3BP periodic orbit.
 | Compare propagation entry points | `examples/analysis/01_propagation_namespace.py` | Two-body, CWH, exact RIC, coupled relative, ROE, and CR3BP analysis histories. |
 | Load a declarative mission | `examples/config/01_two_impulse_transfer.json` | Versioned config schema and the same public mission objects. |
 | Export a solved trajectory | `examples/outputs/01_ephemeris_files.py` | STK `.e`, CCSDS OEM, SPICE BSP/SPK, and CSV. |
-| Save or display static plots | `examples/outputs/02_matplotlib_plots.py` | Matplotlib figures, PNG/JPEG output, diagnostics, and GUI display. |
+| Save or display static plots | `examples/outputs/02_matplotlib_plots.py` | 2D/3D Matplotlib figures, PNG/JPEG output, diagnostics, and GUI display. |
 
 The focused [Quick API](quick.md) and [Composable API](composable.md) pages
 explain the declarations used by each family. The

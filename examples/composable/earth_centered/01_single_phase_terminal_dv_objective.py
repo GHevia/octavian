@@ -87,3 +87,11 @@ save_trajectory_html(
     title=mission.name,
 )
 print(f"Wrote: {output_path}")
+
+image_path = "traj_composable_hohmann_terminal_dv_objective.png"
+solution.viz().save_image(
+    image_path,
+    projection="xy",
+    title=f"{mission.name} — XY plane",
+)
+print(f"Wrote: {image_path}")

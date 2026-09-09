@@ -1,4 +1,4 @@
-"""Output example 02: save or display Matplotlib trajectory views.
+"""Output example 02: save or display 2D and 3D Matplotlib trajectory views.
 
 The default run writes PNG files without opening a window, which also works in
 notebooks and headless automation. Pass ``--show`` to open the trajectory with
@@ -34,8 +34,14 @@ trajectory[:, 6] = np.linspace(0.0, 4_200.0, angles.size)
 
 save_trajectory_image(
     trajectory,
-    "matplotlib_trajectory.png",
+    "matplotlib_trajectory_3d.png",
     title="500 km circular orbit",
+)
+save_trajectory_image(
+    trajectory,
+    "matplotlib_trajectory_xy.png",
+    projection="xy",
+    title="500 km circular orbit — XY plane",
 )
 save_trajectory_diagnostics_image(
     trajectory,
@@ -44,7 +50,14 @@ save_trajectory_diagnostics_image(
     mu_m3ps2=EARTH.mu_m3ps2,
     title="500 km circular orbit diagnostics",
 )
-print("Wrote matplotlib_trajectory.png and matplotlib_diagnostics.png")
+print(
+    "Wrote matplotlib_trajectory_3d.png, matplotlib_trajectory_xy.png, "
+    "and matplotlib_diagnostics.png"
+)
 
 if "--show" in sys.argv:
-    show_trajectory(trajectory, title="500 km circular orbit")
+    show_trajectory(
+        trajectory,
+        projection="xy",
+        title="500 km circular orbit — XY plane",
+    )

@@ -36,9 +36,10 @@ def trajectory_figure(
     phase_segments: Sequence[dict[str, object]] | None = None,
     title: str = "octavian trajectory",
     earth_radius_m: float = EARTH_RADIUS_M,
+    projection: str = "3d",
     figsize: tuple[float, float] = (9.0, 7.0),
 ) -> Any:
-    """Build a static 3D Earth-centered inertial trajectory figure.
+    """Build a static Earth-centered inertial trajectory figure.
 
     Args:
         traj: Rows ``[rx, ry, rz, vx, vy, vz, time]`` in SI units.
@@ -47,6 +48,8 @@ def trajectory_figure(
             ``t_start_s``, ``t_end_s``, and optional ``color`` keys.
         title: Figure title.
         earth_radius_m: Earth radius in meters.
+        projection: ``"3d"`` or a 2D ``"xy"``, ``"xz"``, or ``"yz"``
+            projection.
         figsize: Matplotlib figure size in inches.
 
     Returns:
@@ -58,64 +61,68 @@ def trajectory_figure(
     if not np.isfinite(earth_radius) or earth_radius <= 0.0:
         raise ValueError("earth_radius_m must be finite and positive")
 
+    position_indices = _projection_indices(projection)
     positions_km = trajectory[:, 0:3] / 1_000.0
     time_s = trajectory[:, 6]
-    figure = plt.figure(figsize=figsize)
-    axes = figure.add_subplot(111, projection="3d")
-    _style_3d_axes(figure, axes, title)
-
-    longitude = np.linspace(0.0, 2.0 * np.pi, 64)
-    colatitude = np.linspace(0.0, np.pi, 32)
-    longitude_grid, colatitude_grid = np.meshgrid(longitude, colatitude)
+    figure, axes = _trajectory_axes(plt, figsize, title, position_indices)
     earth_radius_km = earth_radius / 1_000.0
-    axes.plot_surface(
-        earth_radius_km * np.cos(longitude_grid) * np.sin(colatitude_grid),
-        earth_radius_km * np.sin(longitude_grid) * np.sin(colatitude_grid),
-        earth_radius_km * np.cos(colatitude_grid),
+    _plot_spherical_body(
+        plt,
+        axes,
+        np.zeros(3),
+        earth_radius_km,
+        position_indices,
         color="#3B82F6",
         alpha=0.7,
-        linewidth=0.0,
-        shade=True,
+        label="Earth",
     )
-    axes.scatter([], [], [], color="#3B82F6", s=70, label="Earth")
     axes.plot(
-        positions_km[:, 0],
-        positions_km[:, 1],
-        positions_km[:, 2],
+        *(positions_km[:, index] for index in position_indices),
         color=_TRAJECTORY_COLOR,
         linewidth=2.2,
         label="Trajectory",
     )
-    _plot_phase_segments(axes, positions_km, time_s, phase_segments)
-    axes.scatter(
-        *positions_km[0],
+    _plot_phase_segments(
+        axes,
+        positions_km,
+        time_s,
+        phase_segments,
+        position_indices,
+    )
+    _scatter_position(
+        axes,
+        positions_km[0],
+        position_indices,
         color="#69DB7C",
         s=40,
         label="Start",
-        depthshade=False,
     )
-    axes.scatter(
-        *positions_km[-1],
+    _scatter_position(
+        axes,
+        positions_km[-1],
+        position_indices,
         color="#FFD43B",
         s=40,
         label="End",
-        depthshade=False,
     )
     for index, maneuver in enumerate(maneuvers or (), start=1):
         position_km = np.asarray(maneuver.r_m, dtype=float).reshape(3) / 1_000.0
-        axes.scatter(
-            *position_km,
+        _scatter_position(
+            axes,
+            position_km,
+            position_indices,
             color="#FF6B6B",
             marker="D",
             s=48,
             label=f"M{index}: {maneuver.name}",
-            depthshade=False,
         )
 
-    axes.set_xlabel("ECI X (km)")
-    axes.set_ylabel("ECI Y (km)")
-    axes.set_zlabel("ECI Z (km)")
-    _finish_3d_figure(figure, axes)
+    _set_position_axis_labels(
+        axes,
+        ("ECI X (km)", "ECI Y (km)", "ECI Z (km)"),
+        position_indices,
+    )
+    _finish_trajectory_figure(figure, axes, position_indices)
     return figure
 
 
@@ -126,80 +133,90 @@ def relative_trajectory_figure(
     phase_segments: Sequence[dict[str, object]] | None = None,
     title: str = "octavian relative trajectory",
     chief_radius_m: float = 0.0,
+    projection: str = "3d",
     figsize: tuple[float, float] = (9.0, 7.0),
 ) -> Any:
-    """Build a static 3D chief-centered RIC trajectory figure."""
+    """Build a static chief-centered RIC trajectory figure.
+
+    ``projection`` accepts ``"3d"``, ``"xy"`` (radial/in-track), ``"xz"``
+    (radial/cross-track), or ``"yz"`` (in-track/cross-track).
+    """
     plt = _pyplot()
     trajectory = _trajectory(traj)
     chief_radius = float(chief_radius_m)
     if not np.isfinite(chief_radius) or chief_radius < 0.0:
         raise ValueError("chief_radius_m must be finite and non-negative")
 
+    position_indices = _projection_indices(projection)
     positions = trajectory[:, 0:3]
     time_s = trajectory[:, 6]
-    figure = plt.figure(figsize=figsize)
-    axes = figure.add_subplot(111, projection="3d")
-    _style_3d_axes(figure, axes, title)
+    figure, axes = _trajectory_axes(plt, figsize, title, position_indices)
     axes.plot(
-        positions[:, 0],
-        positions[:, 1],
-        positions[:, 2],
+        *(positions[:, index] for index in position_indices),
         color="#3BA3FF",
         linewidth=2.2,
         label="Relative trajectory",
     )
-    _plot_phase_segments(axes, positions, time_s, phase_segments)
-    axes.scatter(
-        *positions[0],
+    _plot_phase_segments(
+        axes,
+        positions,
+        time_s,
+        phase_segments,
+        position_indices,
+    )
+    _scatter_position(
+        axes,
+        positions[0],
+        position_indices,
         color="#69DB7C",
         s=40,
         label="Start",
-        depthshade=False,
     )
-    axes.scatter(
-        *positions[-1],
+    _scatter_position(
+        axes,
+        positions[-1],
+        position_indices,
         color="#FFD43B",
         s=40,
         label="End",
-        depthshade=False,
     )
-    axes.scatter(
-        0.0,
-        0.0,
-        0.0,
+    if chief_radius > 0.0:
+        _plot_spherical_body(
+            plt,
+            axes,
+            np.zeros(3),
+            chief_radius,
+            position_indices,
+            color="#868E96",
+            alpha=0.45,
+        )
+    _scatter_position(
+        axes,
+        np.zeros(3),
+        position_indices,
         color="#F8F9FA",
         marker="D",
         s=55,
         label="Chief",
-        depthshade=False,
     )
-    if chief_radius > 0.0:
-        longitude = np.linspace(0.0, 2.0 * np.pi, 48)
-        colatitude = np.linspace(0.0, np.pi, 24)
-        longitude_grid, colatitude_grid = np.meshgrid(longitude, colatitude)
-        axes.plot_surface(
-            chief_radius * np.cos(longitude_grid) * np.sin(colatitude_grid),
-            chief_radius * np.sin(longitude_grid) * np.sin(colatitude_grid),
-            chief_radius * np.cos(colatitude_grid),
-            color="#868E96",
-            alpha=0.45,
-            linewidth=0.0,
-        )
     for index, maneuver in enumerate(maneuvers or (), start=1):
         position = np.asarray(maneuver.r_m, dtype=float).reshape(3)
-        axes.scatter(
-            *position,
+        _scatter_position(
+            axes,
+            position,
+            position_indices,
             color="#FF6B6B",
             marker="D",
             s=48,
             label=f"M{index}: {maneuver.name}",
-            depthshade=False,
         )
 
-    axes.set_xlabel("Radial, R (m)")
-    axes.set_ylabel("In-track, I (m)")
-    axes.set_zlabel("Cross-track, C (m)")
-    _finish_3d_figure(figure, axes)
+    _set_position_axis_labels(
+        axes,
+        ("Radial, R (m)", "In-track, I (m)", "Cross-track, C (m)"),
+        position_indices,
+    )
+    _finish_trajectory_figure(figure, axes, position_indices)
     return figure
 
 
@@ -213,9 +230,13 @@ def cr3bp_trajectory_figure(
     phase_segments: Sequence[dict[str, object]] | None = None,
     reference_trajectories: Sequence[dict[str, object]] | None = None,
     title: str = "octavian CR3BP trajectory",
+    projection: str = "3d",
     figsize: tuple[float, float] = (9.0, 7.0),
 ) -> Any:
-    """Build a static barycentric-synodic CR3BP trajectory figure."""
+    """Build a static barycentric-synodic CR3BP trajectory figure.
+
+    ``projection`` accepts ``"3d"``, ``"xy"``, ``"xz"``, or ``"yz"``.
+    """
     plt = _pyplot()
     trajectory = _trajectory(traj)
     scale = 1.0 / 1_000.0 if dimensional else 1.0
@@ -234,13 +255,10 @@ def cr3bp_trajectory_figure(
         lagrange_point_names,
     )
 
-    figure = plt.figure(figsize=figsize)
-    axes = figure.add_subplot(111, projection="3d")
-    _style_3d_axes(figure, axes, title)
+    position_indices = _projection_indices(projection)
+    figure, axes = _trajectory_axes(plt, figsize, title, position_indices)
     axes.plot(
-        positions[:, 0],
-        positions[:, 1],
-        positions[:, 2],
+        *(positions[:, index] for index in position_indices),
         color="#00CC96",
         linewidth=2.4,
         label="Trajectory",
@@ -249,54 +267,63 @@ def cr3bp_trajectory_figure(
         reference_rows = _position_rows(reference.get("traj"))
         reference_positions = scale * reference_rows[:, 0:3]
         axes.plot(
-            reference_positions[:, 0],
-            reference_positions[:, 1],
-            reference_positions[:, 2],
+            *(reference_positions[:, axis_index] for axis_index in position_indices),
             color=str(reference.get("color", "#A0AEC0")),
             linewidth=1.5,
             linestyle="--",
             alpha=0.8,
             label=str(reference.get("name", f"Reference {index}")),
         )
-    _plot_phase_segments(axes, positions, time_values, phase_segments)
+    _plot_phase_segments(
+        axes,
+        positions,
+        time_values,
+        phase_segments,
+        position_indices,
+    )
     for index, maneuver in enumerate(maneuvers or (), start=1):
         position = scale * np.asarray(maneuver.r_m, dtype=float).reshape(3)
-        axes.scatter(
-            *position,
+        _scatter_position(
+            axes,
+            position,
+            position_indices,
             color="#FFA15A",
             marker="D",
             s=48,
             label=f"M{index}: {maneuver.name}",
-            depthshade=False,
         )
     for body_name, body_position, marker_size, marker_color in (
         (system.primary.name.title(), primary_position, 130, "#3B82F6"),
         (system.secondary.name.title(), secondary_position, 75, "#9CA3AF"),
     ):
-        axes.scatter(
-            *body_position,
+        _scatter_position(
+            axes,
+            body_position,
+            position_indices,
             color=marker_color,
             s=marker_size,
             label=body_name,
-            depthshade=False,
         )
-        axes.text(*body_position, f" {body_name}", color=_FOREGROUND_COLOR)
+        _position_text(axes, body_position, position_indices, f" {body_name}")
     for point_name in selected_lagrange_names:
         point = scale * all_lagrange_points[point_name]
-        axes.scatter(
-            *point,
+        _scatter_position(
+            axes,
+            point,
+            position_indices,
             color="#EF553B",
             marker="D",
             s=32,
             label=point_name,
-            depthshade=False,
         )
-        axes.text(*point, f" {point_name}", color=_FOREGROUND_COLOR)
+        _position_text(axes, point, position_indices, f" {point_name}")
 
-    axes.set_xlabel(f"Synodic X ({unit})")
-    axes.set_ylabel(f"Synodic Y ({unit})")
-    axes.set_zlabel(f"Synodic Z ({unit})")
-    _finish_3d_figure(figure, axes)
+    _set_position_axis_labels(
+        axes,
+        tuple(f"Synodic {axis} ({unit})" for axis in ("X", "Y", "Z")),
+        position_indices,
+    )
+    _finish_trajectory_figure(figure, axes, position_indices)
     return figure
 
 
@@ -375,6 +402,7 @@ def save_trajectory_image(
     phase_segments: Sequence[dict[str, object]] | None = None,
     title: str = "octavian trajectory",
     earth_radius_m: float = EARTH_RADIUS_M,
+    projection: str = "3d",
     figsize: tuple[float, float] = (9.0, 7.0),
     dpi: int = 160,
 ) -> None:
@@ -385,6 +413,7 @@ def save_trajectory_image(
         phase_segments=phase_segments,
         title=title,
         earth_radius_m=earth_radius_m,
+        projection=projection,
         figsize=figsize,
     )
     save_figure_image(figure, out_image, dpi=dpi)
@@ -398,6 +427,7 @@ def save_relative_trajectory_image(
     phase_segments: Sequence[dict[str, object]] | None = None,
     title: str = "octavian relative trajectory",
     chief_radius_m: float = 0.0,
+    projection: str = "3d",
     figsize: tuple[float, float] = (9.0, 7.0),
     dpi: int = 160,
 ) -> None:
@@ -408,6 +438,7 @@ def save_relative_trajectory_image(
         phase_segments=phase_segments,
         title=title,
         chief_radius_m=chief_radius_m,
+        projection=projection,
         figsize=figsize,
     )
     save_figure_image(figure, out_image, dpi=dpi)
@@ -424,6 +455,7 @@ def save_cr3bp_trajectory_image(
     phase_segments: Sequence[dict[str, object]] | None = None,
     reference_trajectories: Sequence[dict[str, object]] | None = None,
     title: str = "octavian CR3BP trajectory",
+    projection: str = "3d",
     figsize: tuple[float, float] = (9.0, 7.0),
     dpi: int = 160,
 ) -> None:
@@ -437,6 +469,7 @@ def save_cr3bp_trajectory_image(
         phase_segments=phase_segments,
         reference_trajectories=reference_trajectories,
         title=title,
+        projection=projection,
         figsize=figsize,
     )
     save_figure_image(figure, out_image, dpi=dpi)
@@ -548,6 +581,7 @@ def _plot_phase_segments(
     positions: np.ndarray,
     time_values: np.ndarray,
     phase_segments: Sequence[dict[str, object]] | None,
+    position_indices: tuple[int, ...],
 ) -> None:
     for index, segment in enumerate(phase_segments or (), start=1):
         start_time = float(segment["t_start_s"])
@@ -557,13 +591,120 @@ def _plot_phase_segments(
             continue
         phase_positions = positions[mask]
         axes.plot(
-            phase_positions[:, 0],
-            phase_positions[:, 1],
-            phase_positions[:, 2],
+            *(phase_positions[:, axis_index] for axis_index in position_indices),
             color=str(segment.get("color", _TRAJECTORY_COLOR)),
             linewidth=3.2,
             label=str(segment.get("name", f"Phase {index}")),
         )
+
+
+def _projection_indices(projection: str) -> tuple[int, ...]:
+    normalized = str(projection).strip().lower()
+    projections = {
+        "3d": (0, 1, 2),
+        "xy": (0, 1),
+        "xz": (0, 2),
+        "yz": (1, 2),
+    }
+    try:
+        return projections[normalized]
+    except KeyError as exc:
+        raise ValueError('projection must be one of: "3d", "xy", "xz", or "yz"') from exc
+
+
+def _trajectory_axes(
+    plt: Any,
+    figsize: tuple[float, float],
+    title: str,
+    position_indices: tuple[int, ...],
+) -> tuple[Any, Any]:
+    figure = plt.figure(figsize=figsize)
+    if len(position_indices) == 3:
+        axes = figure.add_subplot(111, projection="3d")
+        _style_3d_axes(figure, axes, title)
+    else:
+        axes = figure.add_subplot(111)
+        figure.patch.set_facecolor(_BACKGROUND_COLOR)
+        _style_2d_axes(axes)
+        axes.set_title(title, color=_FOREGROUND_COLOR, pad=16)
+    return figure, axes
+
+
+def _plot_spherical_body(
+    plt: Any,
+    axes: Any,
+    position: np.ndarray,
+    radius: float,
+    position_indices: tuple[int, ...],
+    *,
+    color: str,
+    alpha: float,
+    label: str | None = None,
+) -> None:
+    if len(position_indices) == 2:
+        center = tuple(float(position[index]) for index in position_indices)
+        axes.add_patch(
+            plt.Circle(
+                center,
+                radius,
+                color=color,
+                alpha=alpha,
+                linewidth=0.0,
+                label=label,
+            )
+        )
+        axes.autoscale_view()
+        return
+
+    longitude = np.linspace(0.0, 2.0 * np.pi, 64)
+    colatitude = np.linspace(0.0, np.pi, 32)
+    longitude_grid, colatitude_grid = np.meshgrid(longitude, colatitude)
+    axes.plot_surface(
+        position[0] + radius * np.cos(longitude_grid) * np.sin(colatitude_grid),
+        position[1] + radius * np.sin(longitude_grid) * np.sin(colatitude_grid),
+        position[2] + radius * np.cos(colatitude_grid),
+        color=color,
+        alpha=alpha,
+        linewidth=0.0,
+        shade=True,
+    )
+    if label is not None:
+        axes.scatter([], [], [], color=color, s=70, label=label)
+
+
+def _scatter_position(
+    axes: Any,
+    position: np.ndarray,
+    position_indices: tuple[int, ...],
+    **kwargs: Any,
+) -> None:
+    if len(position_indices) == 3:
+        kwargs["depthshade"] = False
+    axes.scatter(*(position[index] for index in position_indices), **kwargs)
+
+
+def _position_text(
+    axes: Any,
+    position: np.ndarray,
+    position_indices: tuple[int, ...],
+    label: str,
+) -> None:
+    axes.text(
+        *(position[index] for index in position_indices),
+        label,
+        color=_FOREGROUND_COLOR,
+    )
+
+
+def _set_position_axis_labels(
+    axes: Any,
+    labels: tuple[str, str, str],
+    position_indices: tuple[int, ...],
+) -> None:
+    axes.set_xlabel(labels[position_indices[0]], color=_FOREGROUND_COLOR)
+    axes.set_ylabel(labels[position_indices[1]], color=_FOREGROUND_COLOR)
+    if len(position_indices) == 3:
+        axes.set_zlabel(labels[position_indices[2]], color=_FOREGROUND_COLOR)
 
 
 def _style_3d_axes(figure: Any, axes: Any, title: str) -> None:
@@ -588,8 +729,15 @@ def _style_2d_axes(axes: Any) -> None:
     axes.grid(True, color=_GRID_COLOR, alpha=0.45, linewidth=0.7)
 
 
-def _finish_3d_figure(figure: Any, axes: Any) -> None:
-    _set_axes_equal(axes)
+def _finish_trajectory_figure(
+    figure: Any,
+    axes: Any,
+    position_indices: tuple[int, ...],
+) -> None:
+    if len(position_indices) == 3:
+        _set_axes_equal(axes)
+    else:
+        axes.set_aspect("equal", adjustable="datalim")
     legend = axes.legend(
         loc="best",
         facecolor=_BACKGROUND_COLOR,
