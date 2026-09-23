@@ -11,13 +11,12 @@ import numpy as np
 
 from ..cislunar import CR3BPSystem
 from ..types import Maneuver
+from .constants import EARTH_RADIUS_M
 from .diagnostics import (
     cr3bp_diagnostic_panels,
     inertial_diagnostic_panels,
     relative_diagnostic_panels,
 )
-
-EARTH_RADIUS_M = 6378137.0
 
 
 def _get_default_earth_texture_path() -> str:

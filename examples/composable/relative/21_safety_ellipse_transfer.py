@@ -46,6 +46,7 @@ from octavian.solvers import SolverOptions
 from octavian.types import Maneuver
 from octavian.viz import (
     save_relative_trajectory_html,
+    save_relative_trajectory_image,
     save_trajectory_diagnostics_html,
 )
 
@@ -313,3 +314,15 @@ save_trajectory_diagnostics_html(
     frame_kind="relative",
     title="Safety-ellipse transfer state history",
 )
+
+# The safety ellipses have cross-track motion. Include the surrounding coasts
+# and use the same mission-elapsed times for phase colors and burn markers.
+save_relative_trajectory_image(
+    plot_traj,
+    "traj_safety_ellipse_transfer.png",
+    maneuvers=plot_maneuvers,
+    phase_segments=plot_phase_segments,
+    projection="3d",
+    title="Transfer between D'Amico safety ellipses",
+)
+print("Wrote: traj_safety_ellipse_transfer.png")

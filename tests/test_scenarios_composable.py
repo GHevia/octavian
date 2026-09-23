@@ -116,8 +116,9 @@ def _fake_solution() -> Solution:
     ],
 )
 def test_composable_examples_run_as_scenarios(
-    monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, script_rel: str, expected_solve_calls: int
 ) -> None:
+    monkeypatch.chdir(tmp_path)
     missions = []
     plotted = []
     plotted_trajectories = []

@@ -109,7 +109,7 @@ The package keeps optional user interfaces separate from solver core:
 # Solver and astrodynamics only.
 python -m pip install octavian
 
-# Add Plotly HTML visualization.
+# Add Plotly HTML and Matplotlib image/GUI visualization.
 python -m pip install "octavian[viz]"
 
 # Add JSON/YAML mission-file support.
@@ -118,8 +118,8 @@ python -m pip install "octavian[yaml]"
 
 ASSET currently brings several scientific packages transitively. Octavian still
 declares NumPy and SpiceyPy directly because its public astrodynamics and
-ephemeris modules import them. Plotly and Pillow are optional because only the
-visualization helper needs them.
+ephemeris modules import them. Matplotlib, Plotly, and Pillow are optional
+because only visualization helpers need them.
 
 ## Environment Rule Of Thumb
 

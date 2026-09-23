@@ -327,6 +327,17 @@ range, speed, and solar phase angle when ephemeris geometry is present;
 inertial diagnostics include Cartesian state, radius, speed, and osculating
 elements.
 
+The Matplotlib backend provides the same inertial, relative, CR3BP, and
+diagnostic views as ordinary figures. Import `save_trajectory_image`,
+`save_relative_trajectory_image`, or `save_cr3bp_trajectory_image` from
+`octavian.viz.matplotlib` and pass the trajectory and optional maneuvers, just
+as with the HTML functions. `save_trajectory_diagnostics_image` writes state
+and geometry panels. These functions save PNG or JPEG files; the matching
+`show_*` functions open the active GUI backend. Use the corresponding
+`*_figure` builder to customize labels, camera angles, or styling before export. Spatial figures default to 3D; pass
+`projection="xy"`, `"xz"`, or `"yz"` to render an equal-scale 2D plane with
+labels appropriate to the solution frame.
+
 ## Documentation Contract
 
 Octavian treats docs and examples as part of the product surface. If a new

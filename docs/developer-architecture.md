@@ -178,6 +178,7 @@ of the phase definition.
 - `octavian/study.py`: study-level utilities.
 - `octavian/viz/diagnostics.py`: plotting-backend-independent time-series data.
 - `octavian/viz/plotly.py`: Plotly trajectory and diagnostic visualization.
+- `octavian/viz/matplotlib.py`: static image and desktop trajectory visualization.
 - `octavian/viz/data/`: bundled visualization assets.
 
 ## Solve Flow

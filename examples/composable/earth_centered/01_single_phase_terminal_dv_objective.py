@@ -27,6 +27,7 @@ from octavian import (
 )
 from octavian.quick import state
 from octavian.solvers import SolverOptions
+from octavian.viz.matplotlib import save_trajectory_image
 from octavian.viz.plotly import save_trajectory_html
 
 MU = 3.986004418e14
@@ -87,3 +88,14 @@ save_trajectory_html(
     title=mission.name,
 )
 print(f"Wrote: {output_path}")
+
+image_path = "traj_composable_hohmann_terminal_dv_objective.png"
+save_trajectory_image(
+    solution.traj,
+    image_path,
+    maneuvers=solution.result.maneuvers,
+    phase_segments=solution.result.info.get("phase_segments"),
+    projection="xy",
+    title=f"{mission.name} — XY plane",
+)
+print(f"Wrote: {image_path}")

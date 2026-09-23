@@ -1,5 +1,7 @@
 """Quick example 01: Hohmann transfer between circular orbits.
 
+Saves an equatorial XY Matplotlib PNG alongside the interactive HTML.
+
 Run:
   python examples/quick/01_two_impulse_free_time.py
 
@@ -14,6 +16,7 @@ import numpy as np
 
 from octavian import state, two_burn_rendezvous
 from octavian.solvers import SolverOptions
+from octavian.viz.matplotlib import save_trajectory_image
 from octavian.viz.plotly import save_trajectory_html
 
 MU = 3.986004418e14
@@ -58,3 +61,14 @@ save_trajectory_html(
     title=mission.name,
 )
 print(f"Wrote: {output_path}")
+
+# The equatorial transfer lies in the ECI XY plane.
+save_trajectory_image(
+    solution.traj,
+    "traj_quick_hohmann_transfer.png",
+    maneuvers=solution.result.maneuvers,
+    phase_segments=solution.result.info.get("phase_segments"),
+    projection="xy",
+    title="Equatorial Hohmann transfer — ECI XY plane",
+)
+print("Wrote: traj_quick_hohmann_transfer.png")

@@ -7,6 +7,8 @@ the extra terminal burn expands a nonconvex optimization problem, so comparing
 two independently optimized objective values is informative but not a global
 optimality proof.
 
+Saves a 3D Matplotlib PNG of the inclined transfer alongside the HTML.
+
 Run:
   python examples/composable/earth_centered/07_terminal_orbital_elements.py
 """
@@ -27,6 +29,7 @@ from octavian import (
 )
 from octavian.astro import classical_to_cartesian
 from octavian.quick import state
+from octavian.viz.matplotlib import save_trajectory_image
 from octavian.viz.plotly import save_trajectory_html
 
 MU = 3.986004418e14
@@ -142,3 +145,14 @@ save_trajectory_html(
     title=two_impulse.name,
 )
 print(f"Wrote: {out_html}")
+
+# Keep all three dimensions visible for the 28.5-degree target inclination.
+save_trajectory_image(
+    two_impulse_solution.traj,
+    "traj_composable_terminal_orbital_elements.png",
+    maneuvers=two_impulse_solution.result.maneuvers,
+    phase_segments=two_impulse_solution.result.info.get("phase_segments"),
+    projection="3d",
+    title="Inclined orbital-element transfer",
+)
+print("Wrote: traj_composable_terminal_orbital_elements.png")

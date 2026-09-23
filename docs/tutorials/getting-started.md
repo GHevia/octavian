@@ -129,6 +129,26 @@ save_trajectory_html(
 )
 ```
 
+For a static image, import the Matplotlib helper just like the HTML helper:
+
+```python
+from octavian.viz.matplotlib import save_trajectory_image
+
+save_trajectory_image(
+    sol.traj,
+    "traj_quick_hohmann_transfer.png",
+    maneuvers=sol.result.maneuvers,
+    phase_segments=sol.result.info.get("phase_segments"),
+    projection="xy",
+)
+```
+
+Omit `projection` for the default 3D view, choose `"xz"` or `"yz"` for another
+2D plane. Import `show_trajectory` from the same module and call
+`show_trajectory(sol.traj, projection="xy")` to open a desktop window.
+See [Output Files And Static Plots](output-files.md) for figure customization,
+JPEG output, and diagnostic panels.
+
 ## Prefer A Literal Config File?
 
 The same mission is available as a schema-versioned JSON example:

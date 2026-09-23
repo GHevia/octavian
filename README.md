@@ -78,7 +78,7 @@ python -m pip install --no-user -e ".[dev]"
 python -m octavian.diagnostics
 ```
 
-For a standard installed package with the Plotly examples:
+For a standard installed package with the Plotly and Matplotlib backends:
 
 ```bash
 pip install "octavian[viz]"
@@ -113,8 +113,18 @@ python examples/composable/cislunar/29_periodic_orbit_transfer.py
 python examples/composable/cislunar/30_high_fidelity_recapture.py
 python examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py
 python examples/outputs/01_ephemeris_files.py
+python examples/outputs/02_matplotlib_plots.py
 python -m octavian.config examples/config/01_two_impulse_transfer.json
 ```
+
+The examples also save Matplotlib PNGs beside their interactive HTML plots.
+Import `save_trajectory_image` (or its relative/CR3BP counterpart) from
+`octavian.viz.matplotlib` and pass the trajectory, just like the HTML helpers.
+Equatorial transfers and planar Lyapunov orbits use equal-scale 2D XY views;
+inclined transfers and relative safety ellipses use 3D views. For examples,
+output filenames, and figure customization, see the
+[static plotting guide](https://ghevia.github.io/octavian/tutorials/output-files/#matplotlib-example-gallery).
+Install `octavian[viz]` first; set `MPLBACKEND=Agg` when running without a display.
 
 JSON works without another dependency. Install `octavian[yaml]` to load YAML
 mission files. Both formats construct the same Python mission objects and use
