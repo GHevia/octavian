@@ -156,6 +156,8 @@ Important choices:
 | `target_radii_m = np.linspace(8_000e3, 14_000e3, 7)` | Defines seven circular target radii to test. |
 | loop over `target_radii_m` | Builds and solves one mission per target. |
 | `precoast=True` | Allows each target case to choose departure timing. |
+| `t1_bounds_s=(0.0, 6_000.0)` | Bounds the pre-coast duration; a zero lower bound is supported. |
+| `tf_bounds_s=(600.0, 20_000.0)` | Bounds final elapsed mission time, including the pre-coast. |
 | `nrevs_to_try=(0,)` | Keeps the sweep fast and comparable. |
 | `best = min(converged, key=lambda x: x[0])` | Selects the converged case with lowest total delta-v. |
 
@@ -164,6 +166,13 @@ Expected output:
 - Per-case printed summary lines.
 - Best-case summary.
 - `traj_quick_batch_best.html`.
+
+The transfer duration is `tf - t1`, not `tf`. The bounds may overlap:
+for each candidate departure time, the solver intersects the remaining final-time
+window with its positive minimum transfer duration. It never extends the final
+time limit to manufacture a seed. A zero pre-coast lower bound is also valid;
+seeding uses the solver's positive minimum pre-coast duration (0.0001 s by
+default) so the initial phase has strictly increasing sample times.
 
 Screenshot placeholder: `docs/assets/screenshots/quick-04-batch-best.png`.
 

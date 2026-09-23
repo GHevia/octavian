@@ -91,7 +91,8 @@ def rendezvous_precoast_then_transfer(
         initial_state: Initial state fixed at the start of the precoast phase.
         final_state: Final state target applied at the end of the transfer phase.
         t1_bounds_s: Bounds on precoast duration in seconds.
-        tf_bounds_s: Bounds on the final mission time in seconds.
+        tf_bounds_s: Bounds on elapsed mission time at rendezvous, including
+            the precoast; these are not bounds on transfer duration alone.
         nsegs_precoast: Number of mesh segments for the precoast phase.
         nsegs_transfer: Number of mesh segments for the transfer phase.
         precoast_grid_size: Number of precoast seed candidates to evaluate.

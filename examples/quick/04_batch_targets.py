@@ -19,7 +19,6 @@ MU = 3.986004418e14
 R_INITIAL_M = 7_000e3
 
 
-
 x0 = state(
     r_m=[R_INITIAL_M, 0.0, 0.0],
     v_mps=[0.0, float(np.sqrt(MU / R_INITIAL_M)), 0.0],
@@ -36,14 +35,17 @@ for i, radius_m in enumerate(target_radii_m):
         v_mps=[0.0, -target_speed_mps, 0.0],
     )
 
+    # Final time includes the pre-coast; the solver seeds only positive
+    # phase durations that fit inside both time windows.
     mission = two_burn_rendezvous(
         x0,
         xf,
         mu_m3ps2=MU,
-        tf_bounds_s=(600.0, 10_000.0),
+        tf_bounds_s=(600.0, 20_000.0),
         nsegs=50,
         precoast=True,
         lambert_grid_size=45,
+        t1_bounds_s=(0.0, 6_000.0),
         solver_options=SolverOptions(print_level=3),
         nrevs_to_try=(0,),
         name=f"Quick sweep case {i} (rf={radius_m/1e3:.0f} km)",
