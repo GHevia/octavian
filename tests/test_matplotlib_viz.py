@@ -210,3 +210,52 @@ def test_solution_viz_saves_frame_aware_image(tmp_path: Path) -> None:
     assert planar_axes.get_xlabel() == "ECI Y (km)"
     assert planar_axes.get_ylabel() == "ECI Z (km)"
     assert len(solution.viz().diagnostics_figure().axes) == 4
+
+
+@pytest.mark.parametrize("projection", ["xy", "3d"])
+def test_trajectory_legend_clears_axes_and_stays_inside_figure(projection: str) -> None:
+    figure = trajectory_figure(
+        _inertial_trajectory(),
+        projection=projection,
+        phase_segments=[
+            {"name": "Coast before the transfer", "t_start_s": 0.0, "t_end_s": 800.0},
+            {"name": "Transfer to the destination orbit", "t_start_s": 800.0, "t_end_s": 2000.0},
+        ],
+    )
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    legend_bounds = figure.legends[0].get_window_extent(renderer)
+    axes_bounds = figure.axes[0].get_tightbbox(renderer)
+
+    assert not legend_bounds.overlaps(axes_bounds)
+    assert figure.bbox.contains(*legend_bounds.p0)
+    assert figure.bbox.contains(*legend_bounds.p1)
+
+
+def test_focused_cr3bp_image_excludes_offscreen_body_labels(tmp_path: Path) -> None:
+    from octavian.viz.matplotlib import save_figure_image
+
+    trajectory = np.zeros((24, 7))
+    angles = np.linspace(0.0, 2.0 * np.pi, 24)
+    trajectory[:, 0] = 0.84 + 0.02 * np.cos(angles)
+    trajectory[:, 1] = 0.08 * np.sin(angles)
+    trajectory[:, 6] = np.linspace(0.0, 2.8, 24)
+    figure = cr3bp_trajectory_figure(
+        trajectory,
+        system=CR3BPSystem.earth_moon(),
+        dimensional=False,
+        lagrange_point_names=("L1",),
+        projection="xy",
+    )
+    axes = figure.axes[0]
+    axes.set_xlim(0.80, 0.88)
+    axes.set_ylim(-0.1, 0.1)
+    axes.set_aspect("equal", adjustable="box")
+    output = tmp_path / "focused-orbit.png"
+    save_figure_image(figure, output, dpi=100)
+
+    # An unclipped Earth label near x=-0.012 expands this image to thousands
+    # of pixels even though the selected view is only 0.08 DU wide.
+    with Image.open(output) as image:
+        assert image.width < 1000
+        assert image.height < 800

@@ -33,7 +33,10 @@ def _fake_solution() -> Solution:
         ("examples/quick/07_relative_transfer_chain.py", 1),
     ],
 )
-def test_quick_examples_run_as_scenarios(monkeypatch: pytest.MonkeyPatch, script_rel: str, expected_solve_calls: int) -> None:
+def test_quick_examples_run_as_scenarios(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, script_rel: str, expected_solve_calls: int
+) -> None:
+    monkeypatch.chdir(tmp_path)
     missions = []
     plotted = []
 

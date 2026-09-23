@@ -116,6 +116,13 @@ python examples/outputs/02_matplotlib_plots.py
 python -m octavian.config examples/config/01_two_impulse_transfer.json
 ```
 
+The examples also save Matplotlib PNGs beside their interactive HTML plots.
+Equatorial transfers and planar Lyapunov orbits use equal-scale 2D XY views;
+inclined transfers and relative safety ellipses use 3D views. For examples,
+output filenames, and figure customization, see the
+[static plotting guide](https://ghevia.github.io/octavian/tutorials/output-files/#matplotlib-example-gallery).
+Install `octavian[viz]` first; set `MPLBACKEND=Agg` when running without a display.
+
 JSON works without another dependency. Install `octavian[yaml]` to load YAML
 mission files. Both formats construct the same Python mission objects and use
 the same solvers as ordinary mission scripts.

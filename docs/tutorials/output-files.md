@@ -23,6 +23,9 @@ solution.viz().save_diagnostics_image("diagnostics.jpg", dpi=180)
 The axis labels remain frame-aware. For example, `projection="xy"` means ECI
 X/Y for an inertial result, radial/in-track for a relative result, and
 synodic X/Y for a CR3BP result. All spatial projections use equal axis scales.
+Trajectory legends sit below the axes so phase names and maneuver labels stay
+clear of the plotted geometry. CR3BP body labels are clipped to the axes when
+you zoom with custom limits.
 
 For a desktop pop-up using the active Matplotlib GUI backend:
 
@@ -57,6 +60,34 @@ Frame-specific functions follow the Plotly naming pattern:
 `examples/outputs/02_matplotlib_plots.py`. Planar image output also appears in
 the Hohmann transfer, CWH rendezvous, canonical L1 orbit, and L1 orbit-family
 composable examples.
+
+### Matplotlib Example Gallery
+
+These mission scripts save a PNG in addition to their existing interactive
+HTML output. Run them from the repository root after installing `octavian[viz]`.
+Files go to the current working directory; use `MPLBACKEND=Agg` on a machine
+without a display. Saving an image closes its figure and does not open a GUI.
+
+| Example | Static trajectory output | View and purpose |
+| --- | --- | --- |
+| `examples/quick/01_two_impulse_free_time.py` | `traj_quick_hohmann_transfer.png` | ECI XY: equatorial Hohmann transfer with departure/arrival burns. |
+| `examples/composable/earth_centered/07_terminal_orbital_elements.py` | `traj_composable_terminal_orbital_elements.png` | 3D ECI: transfer to an inclined target orbit. |
+| `examples/composable/relative/21_safety_ellipse_transfer.py` | `traj_safety_ellipse_transfer.png` | 3D RIC: cross-track separation, surrounding coasts, phase colors, and burns. |
+| `examples/composable/cislunar/29_periodic_orbit_transfer.py` | `traj_L1_to_L2_periodic_orbits.png` | Synodic XY in km: planar transfer with both reference Lyapunov orbits and burns. |
+| `examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py` | `traj_jacobi_targeted_L1_periodic_orbit.png` | Synodic XY in DU: the Jacobi-selected planar Lyapunov orbit. |
+
+Choose the projection from the physical geometry: XY preserves a planar orbit's
+shape without an artificial viewing angle, while 3D reveals inclination and
+cross-track motion. Example 29 uses the same reference orbits and phase colors
+for both backends. Example 21 also preserves the pre/post-transfer coasts and
+the shifted maneuver times in both views.
+
+Examples 29 and 31 customize the returned figure's axis limits from the
+trajectory bounds, with padding, to resolve the small orbits near L1/L2.
+They use `axes.set_aspect("equal", adjustable="box")` to preserve both the
+selected limits and equal spatial scales. Their HTML files retain the full
+Earth–Moon context. Modify the ordinary Matplotlib axes before calling
+`save_figure_image(figure, "orbit.png")` to choose a different view.
 
 ## Ephemeris Output Files
 

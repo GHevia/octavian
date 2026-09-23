@@ -1,5 +1,7 @@
 """Quick example 01: Hohmann transfer between circular orbits.
 
+Saves an equatorial XY Matplotlib PNG alongside the interactive HTML.
+
 Run:
   python examples/quick/01_two_impulse_free_time.py
 
@@ -58,3 +60,11 @@ save_trajectory_html(
     title=mission.name,
 )
 print(f"Wrote: {output_path}")
+
+# The equatorial transfer lies in the ECI XY plane.
+solution.viz().save_image(
+    "traj_quick_hohmann_transfer.png",
+    projection="xy",
+    title="Equatorial Hohmann transfer — ECI XY plane",
+)
+print("Wrote: traj_quick_hohmann_transfer.png")

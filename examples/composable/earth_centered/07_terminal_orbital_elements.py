@@ -7,6 +7,8 @@ the extra terminal burn expands a nonconvex optimization problem, so comparing
 two independently optimized objective values is informative but not a global
 optimality proof.
 
+Saves a 3D Matplotlib PNG of the inclined transfer alongside the HTML.
+
 Run:
   python examples/composable/earth_centered/07_terminal_orbital_elements.py
 """
@@ -142,3 +144,11 @@ save_trajectory_html(
     title=two_impulse.name,
 )
 print(f"Wrote: {out_html}")
+
+# Keep all three dimensions visible for the 28.5-degree target inclination.
+two_impulse_solution.viz().save_image(
+    "traj_composable_terminal_orbital_elements.png",
+    projection="3d",
+    title="Inclined orbital-element transfer",
+)
+print("Wrote: traj_composable_terminal_orbital_elements.png")

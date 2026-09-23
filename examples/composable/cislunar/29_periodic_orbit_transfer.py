@@ -5,6 +5,8 @@ in canonical units. The composable mission propagates along the L1 orbit,
 chooses an impulsive departure into a free-time CR3BP transfer, inserts a
 second impulse onto the L2 orbit, and then propagates an arrival coast.
 
+Saves a focused synodic XY PNG with reference orbits alongside the HTML overview.
+
 Run:
   python examples/composable/cislunar/29_periodic_orbit_transfer.py
 """
@@ -35,6 +37,7 @@ from octavian.viz import (
     save_cr3bp_trajectory_html,
     save_trajectory_diagnostics_html,
 )
+from octavian.viz.matplotlib import cr3bp_trajectory_figure, save_figure_image
 
 system = CR3BPSystem.earth_moon()
 spacecraft = Spacecraft(name="Libration-point transfer vehicle", dry_mass_kg=400.0)
@@ -149,6 +152,11 @@ print(f"Total impulsive delta-v: {total_delta_v_mps:.6f} m/s")
 for maneuver in solution.result.maneuvers:
     print(f"  {maneuver.name}: {np.linalg.norm(maneuver.dv_mps):.6f} m/s")
 
+reference_orbits = [
+    {"name": "L1 reference orbit", "traj": l1_reference, "color": "#54A24B"},
+    {"name": "L2 reference orbit", "traj": l2_reference, "color": "#E45756"},
+]
+
 save_cr3bp_trajectory_html(
     solution.traj,
     "traj_L1_to_L2_periodic_orbits.html",
@@ -156,10 +164,7 @@ save_cr3bp_trajectory_html(
     lagrange_point_names=("L1", "L2"),
     maneuvers=solution.result.maneuvers,
     phase_segments=segments,
-    reference_trajectories=[
-        {"name": "L1 reference orbit", "traj": l1_reference, "color": "#54A24B"},
-        {"name": "L2 reference orbit", "traj": l2_reference, "color": "#E45756"},
-    ],
+    reference_trajectories=reference_orbits,
     title=mission.name,
 )
 save_trajectory_diagnostics_html(
@@ -169,3 +174,26 @@ save_trajectory_diagnostics_html(
     cr3bp_system=system,
     title=mission.name,
 )
+
+# Planar Lyapunov geometry is clearest in synodic XY. Focus the static view
+# on the orbit(s); the HTML above retains the full Earth-Moon context.
+figure = cr3bp_trajectory_figure(
+    solution.traj,
+    system=system,
+    lagrange_point_names=("L1", "L2"),
+    maneuvers=solution.result.maneuvers,
+    phase_segments=segments,
+    reference_trajectories=reference_orbits,
+    projection="xy",
+    title=f"{mission.name} — synodic XY plane",
+)
+positions = np.vstack([solution.traj[:, :2], l1_reference[:, :2], l2_reference[:, :2]]) / 1_000.0
+lower = positions.min(axis=0)
+upper = positions.max(axis=0)
+padding = 0.15 * max(upper - lower)
+axes = figure.axes[0]
+axes.set_xlim(lower[0] - padding, upper[0] + padding)
+axes.set_ylim(lower[1] - padding, upper[1] + padding)
+axes.set_aspect("equal", adjustable="box")
+save_figure_image(figure, "traj_L1_to_L2_periodic_orbits.png")
+print("Wrote: traj_L1_to_L2_periodic_orbits.png")

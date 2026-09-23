@@ -618,7 +618,9 @@ def _trajectory_axes(
     title: str,
     position_indices: tuple[int, ...],
 ) -> tuple[Any, Any]:
-    figure = plt.figure(figsize=figsize)
+    figure = plt.figure(figsize=figsize, layout="constrained")
+    # Leave room for projected 3D tick labels above the figure-level legend.
+    figure.get_layout_engine().set(h_pad=0.2)
     if len(position_indices) == 3:
         axes = figure.add_subplot(111, projection="3d")
         _style_3d_axes(figure, axes, title)
@@ -693,6 +695,7 @@ def _position_text(
         *(position[index] for index in position_indices),
         label,
         color=_FOREGROUND_COLOR,
+        clip_on=True,
     )
 
 
@@ -701,10 +704,11 @@ def _set_position_axis_labels(
     labels: tuple[str, str, str],
     position_indices: tuple[int, ...],
 ) -> None:
-    axes.set_xlabel(labels[position_indices[0]], color=_FOREGROUND_COLOR)
-    axes.set_ylabel(labels[position_indices[1]], color=_FOREGROUND_COLOR)
+    labelpad = 14 if len(position_indices) == 3 else 4
+    axes.set_xlabel(labels[position_indices[0]], color=_FOREGROUND_COLOR, labelpad=labelpad)
+    axes.set_ylabel(labels[position_indices[1]], color=_FOREGROUND_COLOR, labelpad=labelpad)
     if len(position_indices) == 3:
-        axes.set_zlabel(labels[position_indices[2]], color=_FOREGROUND_COLOR)
+        axes.set_zlabel(labels[position_indices[2]], color=_FOREGROUND_COLOR, labelpad=14)
 
 
 def _style_3d_axes(figure: Any, axes: Any, title: str) -> None:
@@ -738,14 +742,15 @@ def _finish_trajectory_figure(
         _set_axes_equal(axes)
     else:
         axes.set_aspect("equal", adjustable="datalim")
-    legend = axes.legend(
-        loc="best",
+    # Keep phase names and maneuver labels clear of trajectories and tick labels.
+    legend = figure.legend(
+        loc="outside lower center",
+        ncols=2,
         facecolor=_BACKGROUND_COLOR,
         edgecolor=_GRID_COLOR,
         labelcolor=_FOREGROUND_COLOR,
     )
     legend.get_frame().set_alpha(0.85)
-    figure.tight_layout()
 
 
 def _set_axes_equal(axes: Any) -> None:
