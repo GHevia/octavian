@@ -47,6 +47,8 @@ optimization, then inspect summaries and Plotly trajectory views.
 - [Example Capability Index](examples/index.md) maps design tasks across every regime to executable scripts.
 - [Cislunar Design Guide](examples/cislunar.md) builds from CR3BP propagation through periodic orbits, transfers, and perturbed-model recapture.
 - [GitHub Pages](publishing.md) explains how this site is deployed.
+- [Output And Visualization](tutorials/output-files.md) covers ephemeris files,
+  Matplotlib images and desktop windows, and frame-aware plotting.
 - [API Reference](api.md) is generated from numpy-style docstrings with mkdocstrings.
 
 The files under `examples/` are executable mission and analysis scripts. They

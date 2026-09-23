@@ -5,6 +5,8 @@ one member of the L1 planar Lyapunov family. Here the family member is selected
 by its canonical Jacobi constant instead. ASSET is free to correct the initial
 position, velocity, and period while front/back equality closes the orbit.
 
+Saves a focused synodic XY PNG of the planar orbit alongside the HTML overview.
+
 Run:
   python examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py
 """
@@ -24,6 +26,7 @@ from octavian.viz import (
     save_cr3bp_trajectory_html,
     save_trajectory_diagnostics_html,
 )
+from octavian.viz.matplotlib import cr3bp_trajectory_figure, save_figure_image
 
 system = CR3BPSystem.earth_moon()
 
@@ -95,9 +98,7 @@ solved_jacobi = jacobi_constant(
     system=system,
     dimensional=False,
 )
-closure_error = float(
-    np.linalg.norm(trajectory_canonical[-1, 0:6] - trajectory_canonical[0, 0:6])
-)
+closure_error = float(np.linalg.norm(trajectory_canonical[-1, 0:6] - trajectory_canonical[0, 0:6]))
 
 print(solution.summary())
 print(f"Target canonical Jacobi constant: {target_jacobi_canonical:.12f}")
@@ -122,3 +123,24 @@ save_trajectory_diagnostics_html(
     cr3bp_dimensional=False,
     title=f"{mission.name} — canonical diagnostics",
 )
+
+# Planar Lyapunov geometry is clearest in synodic XY. Focus the static view
+# on the orbit(s); the HTML above retains the full Earth-Moon context.
+figure = cr3bp_trajectory_figure(
+    trajectory_canonical,
+    system=system,
+    dimensional=False,
+    lagrange_point_names=("L1",),
+    projection="xy",
+    title=f"{mission.name} — synodic XY plane",
+)
+positions = trajectory_canonical[:, :2]
+lower = positions.min(axis=0)
+upper = positions.max(axis=0)
+padding = 0.15 * max(upper - lower)
+axes = figure.axes[0]
+axes.set_xlim(lower[0] - padding, upper[0] + padding)
+axes.set_ylim(lower[1] - padding, upper[1] + padding)
+axes.set_aspect("equal", adjustable="box")
+save_figure_image(figure, "traj_jacobi_targeted_L1_periodic_orbit.png")
+print("Wrote: traj_jacobi_targeted_L1_periodic_orbit.png")

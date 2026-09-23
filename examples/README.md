@@ -61,7 +61,14 @@ RIC, coupled relative, relative-element, and CR3BP entry points.
 
 Mission inputs use SI units unless an API explicitly selects another
 convention, such as `Dynamics.cr3bp(dimensional=False)`. Generated Plotly HTML
-files are written to the current directory.
+and Matplotlib PNG files are written to the current directory. Install
+`octavian[viz]` for both backends. Use `MPLBACKEND=Agg` for headless image export.
+
+The [Matplotlib example gallery](../docs/tutorials/output-files.md#matplotlib-example-gallery)
+lists static outputs: equatorial transfers and planar Lyapunov orbits in 2D,
+and inclined transfers and relative safety ellipses in 3D. The cislunar PNGs
+in examples 29 and 31 zoom to the orbits so their geometry stays readable;
+the companion HTML files retain the Earth–Moon overview.
 
 ## Literal Config Files
 

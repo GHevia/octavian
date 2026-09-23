@@ -22,6 +22,7 @@ from octavian import (
 )
 from octavian.relative import cwh_rendezvous_velocity, propagate_cwh
 from octavian.solvers import SolverOptions
+from octavian.viz.matplotlib import save_relative_trajectory_image
 from octavian.viz.plotly import save_relative_trajectory_html
 
 CHIEF_ORBIT_RADIUS_M = EARTH.mean_radius_m + 400_000.0
@@ -102,4 +103,12 @@ save_relative_trajectory_html(
 solution.viz().save_diagnostics_html(
     "diagnostics_composable_cwh_relative_rendezvous.html",
     title="CWH relative state over time",
+)
+save_relative_trajectory_image(
+    solution.traj,
+    "traj_composable_cwh_relative_rendezvous.png",
+    maneuvers=solution.result.maneuvers,
+    phase_segments=solution.result.info.get("phase_segments"),
+    projection="xy",
+    title="CWH rendezvous — radial/in-track plane",
 )

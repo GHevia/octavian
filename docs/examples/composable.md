@@ -69,7 +69,10 @@ Important choices:
 | `lambert_grid_size=60` | Seeds the coast arc with a Lambert search. |
 | `nrevs_to_try=(0,)` | Keeps the solve on the direct transfer family. |
 
-Expected output: `traj_composable_hohmann_terminal_dv_objective.html`.
+Expected outputs:
+
+- `traj_composable_hohmann_terminal_dv_objective.html`
+- `traj_composable_hohmann_terminal_dv_objective.png` (XY projection)
 
 Screenshot placeholder: `docs/assets/screenshots/composable-01-terminal-dv.png`.
 
@@ -427,9 +430,10 @@ Important choices:
 | relative `constraints.state(...)` | Fixes deputy state values in meters and meters per second. |
 | front/back `impulsive_delta_v` | Frees boundary velocities and reports both maneuvers. |
 
-The example also writes `traj_composable_cwh_relative_rendezvous.html` with
-explicit radial, in-track, and cross-track axes, a chief marker at the origin,
-and the optimized impulse markers.
+The example writes an interactive 3D
+`traj_composable_cwh_relative_rendezvous.html` and a static, planar
+`traj_composable_cwh_relative_rendezvous.png`. Both use explicit relative axes,
+a chief marker at the origin, and the optimized impulse markers.
 
 ## 15: CWH Safety Corridor
 
@@ -658,6 +662,7 @@ diagnostics.
 Expected outputs:
 
 - `traj_canonical_L1_periodic_orbit.html`
+- `traj_canonical_L1_periodic_orbit.png` (synodic XY projection)
 - `diagnostics_canonical_L1_periodic_orbit.html`
 
 ## 29: Transfer Between Periodic Orbits
@@ -715,9 +720,10 @@ retains the `y=0` phase condition, and keeps the period in a narrow local
 interval. This combination avoids the failed-target and family-switching modes
 that arise from a broad-period solve with only endpoint seed states.
 
-Expected output:
+Expected outputs:
 
 - `traj_L1_periodic_orbit_family.html`
+- `traj_L1_periodic_orbit_family.png` (synodic XY projection)
 
 For the canonical/SI boundary, periodicity formulation, transfer topology,
 and current model limits, read
