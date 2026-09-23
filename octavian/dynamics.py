@@ -19,6 +19,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from ._asset import oc, require_asset, vf
 from ._control_dynamics import thrust_vector_and_rate
+from ._interpolation import bounded_query_times
 from .bodies import MOON, SUN
 from .control import ThrustControl
 from .forces import (
@@ -54,13 +55,12 @@ class ThirdBodyTable:
     positions_eci_m: NDArray[np.float64] | None = None
 
     def position_at(self, time_s: float) -> NDArray[np.float64]:
-        """Interpolate the numeric Earth-centered position at ``time_s``."""
+        """Interpolate position, clipping endpoint time roundoff up to 1e-8 s."""
         if self.times_s is None or self.positions_eci_m is None:
             raise ValueError(f"ThirdBodyTable {self.name!r} does not contain numeric samples")
         times = np.asarray(self.times_s, dtype=float)
         positions = np.asarray(self.positions_eci_m, dtype=float)
-        if float(time_s) < times[0] or float(time_s) > times[-1]:
-            raise ValueError(f"Requested {self.name} position lies outside the sampled time range")
+        time_s = float(bounded_query_times(time_s, times, quantity=f"{self.name} position"))
         return np.asarray(
             [np.interp(float(time_s), times, positions[:, component]) for component in range(3)],
             dtype=float,

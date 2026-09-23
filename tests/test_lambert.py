@@ -50,3 +50,29 @@ def test_non_finite_lambert_candidates_are_rejected(
 
     with pytest.raises(RuntimeError, match="No finite Lambert solution"):
         _select_exact_antipodal_seed()
+
+
+def test_fixed_time_reference_evaluates_each_branch_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
+
+    def fake_lambert(r0, rf, tof_s, mu, longway, nrev, rightbranch):
+        calls.append((tof_s, longway))
+        cost = 100.0 if longway else 10.0
+        return np.array([0.0, 7500.0 + cost, 0.0]), np.array([0.0, -5800.0, 0.0])
+
+    monkeypatch.setattr(lambert, "_call_lambert_izzo", fake_lambert)
+    seed = lambert.select_best_lambert_seed(
+        r0_m=np.array([7_000_000.0, 0.0, 0.0]),
+        rf_m=np.array([-12_000_000.0, 0.0, 0.0]),
+        v0_mps=np.array([0.0, 7500.0, 0.0]),
+        vf_mps=np.array([0.0, -5800.0, 0.0]),
+        mu_m3ps2=3.986004418e14,
+        tmin_s=2400.0,
+        tmax_s=2400.0,
+        nrevs=(0,),
+    )
+
+    assert calls == [(2400.0, False), (2400.0, True)]
+    assert seed.tof_s == 2400.0
+    assert seed.total_dv_mps == 10.0
+    assert not seed.longway

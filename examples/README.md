@@ -83,3 +83,16 @@ JSON and YAML use the same versioned schema and construct the same public
 `Mission`, `Phase`, and model objects as Python scripts. Python remains the
 most expressive interface; config files are useful when a plain declarative
 artifact is easier to generate, review, or exchange.
+
+## Validate Every Example
+
+Run the executable examples with real solvers and headless plots:
+
+```bash
+python -m pytest tests/test_executable_examples.py -q
+```
+
+The test discovers every Python example and JSON mission, runs each in a
+separate process and temporary output directory, and reports failures with
+captured logs. It is also part of the normal test suite used by CI. Install
+`octavian[dev]` in the supported development environment first.

@@ -93,7 +93,6 @@ def _fake_solution() -> Solution:
         ("examples/composable/earth_centered/06_precoast_impulsive_link_3burn.py", 1),
         ("examples/composable/earth_centered/07_terminal_orbital_elements.py", 2),
         ("examples/composable/earth_centered/08_chemical_burn_j2.py", 1),
-        ("examples/composable/earth_centered/09_impulse_vs_chemical_burn.py", 1),
         ("examples/composable/earth_centered/10_sun_moon_perturbations.py", 1),
         ("examples/composable/earth_centered/11_low_thrust_orbit_raise.py", 1),
         ("examples/composable/earth_centered/12_thrust_frames_and_attitude.py", 1),
@@ -199,16 +198,6 @@ def test_composable_examples_run_as_scenarios(
             "chemical_burn",
         ]
         assert plotted == ["traj_composable_chemical_burn_j2.html"]
-    elif script_rel.endswith("09_impulse_vs_chemical_burn.py"):
-        assert [phase.mode for phase in missions[0].phases] == [
-            "chemical_burn",
-            "coast",
-            "chemical_burn",
-        ]
-        assert plotted == [
-            "traj_composable_impulse_reference.html",
-            "traj_composable_chemical_reference.html",
-        ]
     elif script_rel.endswith("10_sun_moon_perturbations.py"):
         mission = missions[0]
         perturbations = mission.phases[0].dynamics.active_perturbations()
