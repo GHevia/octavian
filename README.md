@@ -10,7 +10,8 @@ on **ASSET (asset_asrl)**.
 This package includes:
 
 - Two-impulse rendezvous with bounded free final time.
-- Two-impulse rendezvous with bounded variable pre-coast.
+- Two-impulse rendezvous with bounded variable pre-coast and final elapsed
+  mission time, including support for a zero pre-coast lower bound.
 - Composable coast phases with continuous or impulsive links.
 - Terminal state, terminal delta-v, path, and orbital-element constraints.
 - Finite chemical-burn phases with mass depletion and three thrust-direction controls.

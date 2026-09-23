@@ -68,7 +68,8 @@ def two_burn_rendezvous(
         central_body: Optional built-in or custom body. When provided, its
             gravity, radius, J2, and inertial frame replace ``mu_m3ps2`` and
             the legacy Earth defaults.
-        tf_bounds_s: Bounds on the final rendezvous time in seconds.
+        tf_bounds_s: Bounds on elapsed mission time at rendezvous, including
+            any precoast. Transfer duration is final time minus precoast time.
         nsegs: Number of mesh segments used by the transfer phase.
         lambert_grid_size: Number of Lambert time-of-flight samples to try.
         nrevs_to_try: Revolution counts to include in the Lambert seed search.
@@ -76,7 +77,8 @@ def two_burn_rendezvous(
         precoast: If ``True``, build a precoast-plus-transfer mission instead
             of a single transfer phase.
         t1_bounds_s: Bounds on precoast duration in seconds when ``precoast``
-            is enabled.
+            is enabled. A zero lower bound is allowed; the two-phase solver
+            uses its positive minimum phase duration when constructing seeds.
         precoast_grid_size: Number of precoast candidates to test when seeding.
         limit_precoast_to_one_period: Whether to cap the precoast seed sweep to
             one orbital period when possible.

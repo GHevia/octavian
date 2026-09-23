@@ -485,16 +485,27 @@ def solve_two_impulse_precoast(
     ode = TwoBodyECI(mu_m3ps2=mu)
     t0 = 0.0
 
-    # --- Candidate t1 sweep using Kepler propagation
+    # Seed both phases with positive durations inside the requested time bounds.
+    min_precoast = float(spec.min_dt_precoast_s)
+    min_transfer = float(spec.min_dt_transfer_s)
+    if not all(np.isfinite(dt) and dt > 0.0 for dt in (min_precoast, min_transfer)):
+        raise ValueError("Minimum precoast and transfer durations must be finite and positive")
+    seed_t1_min = max(t1min, min_precoast)
+    seed_t1_max = min(t1max, tfmax - min_transfer)
+    if seed_t1_max < seed_t1_min:
+        raise ValueError("Time bounds leave no room for the minimum precoast and transfer durations")
+
     n_t1 = max(int(spec.precoast_grid_size), 2)
-    t1_candidates = np.linspace(t1min, t1max, n_t1)
+    t1_candidates = np.linspace(seed_t1_min, seed_t1_max, n_t1)
 
     if bool(spec.limit_precoast_to_one_period):
         T0 = estimate_orbital_period_s(spec.x0.r_m, spec.x0.v_mps, mu)
         if T0 is not None:
-            span = t1max - t1min
+            span = seed_t1_max - seed_t1_min
             if span > 1.5 * T0:
-                t1_candidates = np.linspace(t1min, min(t1min + T0, t1max), n_t1)
+                t1_candidates = np.linspace(
+                    seed_t1_min, min(seed_t1_min + T0, seed_t1_max), n_t1
+                )
 
     rv0 = np.hstack([as_vec3(spec.x0.r_m), as_vec3(spec.x0.v_mps)])
 
@@ -507,8 +518,8 @@ def solve_two_impulse_precoast(
         r1 = rv1[0:3]
         v1_minus = rv1[3:6]
 
-        dtmin = max(1.0, tfmin - float(t1_try))
-        dtmax = max(dtmin + 1.0, tfmax - float(t1_try))
+        dtmin = max(min_transfer, tfmin - float(t1_try))
+        dtmax = tfmax - float(t1_try)
         if dtmax <= dtmin:
             continue
 
@@ -713,6 +724,7 @@ def solve_two_impulse_precoast(
             "seed_nrev": seed.nrev,
             "seed_rightbranch": seed.rightbranch,
             "seed_total_dv_mps": seed.total_dv_mps,
+            "seed_precoast_s": t1_guess,
             "precoast_seed_score_mps": float(best["score"]),
         },
     )
