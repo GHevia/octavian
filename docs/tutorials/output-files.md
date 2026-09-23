@@ -9,18 +9,41 @@ backend:
 python -m pip install "octavian[viz]"
 ```
 
-A solved mission selects the correct inertial, relative RIC, or rotating
-CR3BP view automatically. Trajectory views are 3D by default; set
+Import the plotting function at the top of your script and pass the solved
+trajectory, just as with the HTML visualizers. Choose `save_trajectory_image`
+for Earth-centered ECI, `save_relative_trajectory_image` for RIC, or
+`save_cr3bp_trajectory_image` for rotating CR3BP coordinates.
+Trajectory views are 3D by default; set
 `projection` to `"xy"`, `"xz"`, or `"yz"` for a 2D plane. The output suffix
 chooses PNG or JPEG:
 
 ```python
-solution.viz().save_image("trajectory.png")
-solution.viz().save_image("trajectory-xy.png", projection="xy")
-solution.viz().save_diagnostics_image("diagnostics.jpg", dpi=180)
+from octavian.viz.matplotlib import (
+    save_trajectory_image,
+    save_trajectory_diagnostics_image,
+)
+
+save_trajectory_image(
+    solution.traj,
+    "trajectory-xy.png",
+    maneuvers=solution.result.maneuvers,
+    phase_segments=solution.result.info.get("phase_segments"),
+    projection="xy",
+)
+save_trajectory_diagnostics_image(
+    solution.traj,
+    "diagnostics.jpg",
+    frame_kind="inertial",
+    mu_m3ps2=solution.result.info["mu_m3ps2"],
+    dpi=180,
+)
 ```
 
-The axis labels remain frame-aware. For example, `projection="xy"` means ECI
+For CR3BP plots, also pass `system=solution.cr3bp_system` and the appropriate
+`dimensional` flag. Diagnostics accept `frame_kind="relative"` or
+`frame_kind="rotating"` with the corresponding solar/CR3BP metadata.
+
+The axis labels follow the selected plotting function. For example, `projection="xy"` means ECI
 X/Y for an inertial result, radial/in-track for a relative result, and
 synodic X/Y for a CR3BP result. All spatial projections use equal axis scales.
 Trajectory legends sit below the axes so phase names and maneuver labels stay
@@ -30,9 +53,14 @@ you zoom with custom limits.
 For a desktop pop-up using the active Matplotlib GUI backend:
 
 ```python
-solution.viz().show()
-solution.viz().show(projection="xz")
-solution.viz().show_diagnostics()
+from octavian.viz.matplotlib import show_trajectory, show_trajectory_diagnostics
+
+show_trajectory(solution.traj, projection="xz", maneuvers=solution.result.maneuvers)
+show_trajectory_diagnostics(
+    solution.traj,
+    frame_kind="inertial",
+    mu_m3ps2=solution.result.info["mu_m3ps2"],
+)
 ```
 
 Figure builders return ordinary Matplotlib figures for customization before

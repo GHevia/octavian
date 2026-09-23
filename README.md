@@ -117,6 +117,8 @@ python -m octavian.config examples/config/01_two_impulse_transfer.json
 ```
 
 The examples also save Matplotlib PNGs beside their interactive HTML plots.
+Import `save_trajectory_image` (or its relative/CR3BP counterpart) from
+`octavian.viz.matplotlib` and pass the trajectory, just like the HTML helpers.
 Equatorial transfers and planar Lyapunov orbits use equal-scale 2D XY views;
 inclined transfers and relative safety ellipses use 3D views. For examples,
 output filenames, and figure customization, see the

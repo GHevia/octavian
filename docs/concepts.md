@@ -328,11 +328,13 @@ inertial diagnostics include Cartesian state, radius, speed, and osculating
 elements.
 
 The Matplotlib backend provides the same inertial, relative, CR3BP, and
-diagnostic views as ordinary figures. `solution.viz().save_image(...)` and
-`save_diagnostics_image(...)` write PNG or JPEG files, while `show()` and
-`show_diagnostics()` open the active GUI backend. Use `figure()` or
-`diagnostics_figure()` when a script needs to customize labels, camera angles,
-or styling before export. Spatial figures default to 3D; pass
+diagnostic views as ordinary figures. Import `save_trajectory_image`,
+`save_relative_trajectory_image`, or `save_cr3bp_trajectory_image` from
+`octavian.viz.matplotlib` and pass the trajectory and optional maneuvers, just
+as with the HTML functions. `save_trajectory_diagnostics_image` writes state
+and geometry panels. These functions save PNG or JPEG files; the matching
+`show_*` functions open the active GUI backend. Use the corresponding
+`*_figure` builder to customize labels, camera angles, or styling before export. Spatial figures default to 3D; pass
 `projection="xy"`, `"xz"`, or `"yz"` to render an equal-scale 2D plane with
 labels appropriate to the solution frame.
 
