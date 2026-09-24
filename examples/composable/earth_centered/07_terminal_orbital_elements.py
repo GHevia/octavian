@@ -137,11 +137,20 @@ if one_impulse_solution.result is not None and two_impulse_solution.result is no
     )
     print("  Note: independent local solves may converge to different minima.")
 
+# Compare the actual local solutions; the Cartesian target guess is not a
+# reference orbit because its unconstrained orientation may differ at convergence.
+reference_trajectories = [{
+    "name": "One-impulse transfer",
+    "traj": one_impulse_solution.traj,
+    "color": "#F59E0B",
+}]
+
 out_html = "traj_composable_terminal_orbital_elements.html"
 save_trajectory_html(
     two_impulse_solution.result.traj,
     out_html,
     maneuvers=two_impulse_solution.result.maneuvers,
+    reference_trajectories=reference_trajectories,
     title=two_impulse.name,
 )
 print(f"Wrote: {out_html}")
@@ -151,8 +160,9 @@ save_trajectory_image(
     two_impulse_solution.traj,
     "traj_composable_terminal_orbital_elements.png",
     maneuvers=two_impulse_solution.result.maneuvers,
+    reference_trajectories=reference_trajectories,
     phase_segments=two_impulse_solution.result.info.get("phase_segments"),
     projection="3d",
-    title="Inclined orbital-element transfer",
+    title="Inclined transfer: two-impulse solution and one-impulse reference",
 )
 print("Wrote: traj_composable_terminal_orbital_elements.png")

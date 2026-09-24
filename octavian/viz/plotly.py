@@ -11,6 +11,7 @@ import numpy as np
 
 from ..cislunar import CR3BPSystem
 from ..types import Maneuver
+from ._references import reference_positions
 from .constants import EARTH_RADIUS_M
 from .diagnostics import (
     cr3bp_diagnostic_panels,
@@ -34,6 +35,7 @@ def save_trajectory_html(
     xf_v_mps: np.ndarray | None = None,
     maneuvers: Sequence[Maneuver] | None = None,
     phase_segments: Sequence[dict[str, object]] | None = None,
+    reference_trajectories: Sequence[dict[str, object]] | None = None,
     title: str = "octavian trajectory",
     earth_radius_m: float = EARTH_RADIUS_M,
     use_earth_texture: bool = True,
@@ -52,6 +54,9 @@ def save_trajectory_html(
         maneuvers: Optional maneuver markers.
         phase_segments: Optional phase interval dictionaries with ``name``,
             ``t_start_s``, ``t_end_s``, and optional ``color`` keys.
+        reference_trajectories: Dashed overlays with ``traj`` position rows
+            in the same frame and units, plus optional ``name`` and ``color``.
+            Velocity and time columns are ignored.
         title: Plot title.
         earth_radius_m: Earth radius used for the sphere in meters.
         use_earth_texture: Whether to render Earth with a texture map.
@@ -267,7 +272,15 @@ def save_trajectory_html(
         )
 
     figure = go.Figure(
-        data=[earth_trace, trajectory_trace, *phase_traces, start_trace, end_trace, *maneuver_traces]
+        data=[
+            earth_trace,
+            trajectory_trace,
+            *phase_traces,
+            *_reference_traces(go, reference_trajectories),
+            start_trace,
+            end_trace,
+            *maneuver_traces,
+        ]
     )
     figure.update_layout(
         title=dict(text=title, x=0.5),
@@ -393,31 +406,6 @@ def cr3bp_trajectory_figure(
             hovertemplate="%{text}<extra></extra>",
         )
     )
-    for reference_index, reference in enumerate(reference_trajectories or (), start=1):
-        reference_rows = np.asarray(reference["traj"], dtype=float)
-        if (
-            reference_rows.ndim != 2
-            or reference_rows.shape[0] < 1
-            or reference_rows.shape[1] < 3
-            or not np.all(np.isfinite(reference_rows[:, 0:3]))
-        ):
-            raise ValueError("Each CR3BP reference trajectory must contain finite position rows")
-        reference_positions = scale * reference_rows[:, 0:3]
-        figure.add_trace(
-            go.Scatter3d(
-                x=reference_positions[:, 0],
-                y=reference_positions[:, 1],
-                z=reference_positions[:, 2],
-                mode="lines",
-                name=str(reference.get("name", f"Reference {reference_index}")),
-                line=dict(
-                    width=3,
-                    color=str(reference.get("color", "#A0AEC0")),
-                    dash="dash",
-                ),
-                opacity=0.75,
-            )
-        )
     for phase_index, segment in enumerate(phase_segments or (), start=1):
         start_time = float(segment["t_start_s"])
         end_time = float(segment["t_end_s"])
@@ -440,6 +428,7 @@ def cr3bp_trajectory_figure(
                 ),
             )
         )
+    figure.add_traces(_reference_traces(go, reference_trajectories, scale=scale))
     for maneuver_index, maneuver in enumerate(maneuvers or (), start=1):
         maneuver_position = scale * np.asarray(maneuver.r_m, dtype=float).reshape(3)
         delta_v = np.asarray(maneuver.dv_mps, dtype=float).reshape(3)
@@ -557,6 +546,7 @@ def relative_trajectory_figure(
     *,
     maneuvers: Sequence[Maneuver] | None = None,
     phase_segments: Sequence[dict[str, object]] | None = None,
+    reference_trajectories: Sequence[dict[str, object]] | None = None,
     title: str = "octavian relative trajectory",
     chief_radius_m: float = 0.0,
 ) -> Any:
@@ -568,6 +558,9 @@ def relative_trajectory_figure(
         maneuvers: Optional maneuver markers expressed in the same RIC frame.
         phase_segments: Optional phase interval dictionaries with ``name``,
             ``t_start_s``, ``t_end_s``, and optional ``color`` keys.
+        reference_trajectories: Dashed overlays with ``traj`` position rows
+            in the same frame and units, plus optional ``name`` and ``color``.
+            Velocity and time columns are ignored.
         title: Plot title.
         chief_radius_m: Optional physical or keep-out radius drawn about the
             chief.  Zero draws a marker without a surrounding sphere.
@@ -652,6 +645,8 @@ def relative_trajectory_figure(
                 line=dict(width=8, color=str(segment.get("color", "#3BA3FF"))),
             )
         )
+
+    traces.extend(_reference_traces(go, reference_trajectories))
 
     traces.extend(
         [
@@ -759,6 +754,7 @@ def save_relative_trajectory_html(
     *,
     maneuvers: Sequence[Maneuver] | None = None,
     phase_segments: Sequence[dict[str, object]] | None = None,
+    reference_trajectories: Sequence[dict[str, object]] | None = None,
     title: str = "octavian relative trajectory",
     chief_radius_m: float = 0.0,
 ) -> None:
@@ -772,6 +768,7 @@ def save_relative_trajectory_html(
         traj,
         maneuvers=maneuvers,
         phase_segments=phase_segments,
+        reference_trajectories=reference_trajectories,
         title=title,
         chief_radius_m=chief_radius_m,
     )
@@ -890,3 +887,26 @@ def save_trajectory_diagnostics_html(
         title=title,
     )
     figure.write_html(out_html, include_plotlyjs="cdn")
+
+
+def _reference_traces(
+    go: Any,
+    references: Sequence[dict[str, object]] | None,
+    *,
+    scale: float = 1.0,
+) -> list[Any]:
+    traces = []
+    for index, reference in enumerate(references or (), start=1):
+        positions = scale * reference_positions(reference.get("traj"))
+        traces.append(
+            go.Scatter3d(
+                x=positions[:, 0],
+                y=positions[:, 1],
+                z=positions[:, 2],
+                mode="lines",
+                name=str(reference.get("name", f"Reference {index}")),
+                line=dict(width=3, color=str(reference.get("color", "#A0AEC0")), dash="dash"),
+                opacity=0.75,
+            )
+        )
+    return traces

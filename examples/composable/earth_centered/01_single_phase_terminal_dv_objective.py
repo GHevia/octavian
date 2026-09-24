@@ -80,10 +80,19 @@ mission = Mission(
 solution = mission.solve()
 print(solution.summary())
 
+# Exact circular position curves provide context without changing the solve.
+angles = np.linspace(0.0, 2.0 * np.pi, 361)
+unit_circle = np.column_stack([np.cos(angles), np.sin(angles), np.zeros_like(angles)])
+reference_trajectories = [
+    {"name": "Departure orbit", "traj": R_INITIAL_M * unit_circle, "color": "#F59E0B"},
+    {"name": "Target circular orbit", "traj": R_FINAL_M * unit_circle, "color": "#C084FC"},
+]
+
 output_path = "traj_composable_hohmann_terminal_dv_objective.html"
 save_trajectory_html(
     solution.result.traj,
     output_path,
+    reference_trajectories=reference_trajectories,
     maneuvers=solution.result.maneuvers,
     title=mission.name,
 )
@@ -93,6 +102,7 @@ image_path = "traj_composable_hohmann_terminal_dv_objective.png"
 save_trajectory_image(
     solution.traj,
     image_path,
+    reference_trajectories=reference_trajectories,
     maneuvers=solution.result.maneuvers,
     phase_segments=solution.result.info.get("phase_segments"),
     projection="xy",

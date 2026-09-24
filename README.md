@@ -124,6 +124,9 @@ Equatorial transfers and planar Lyapunov orbits use equal-scale 2D XY views;
 inclined transfers and relative safety ellipses use 3D views. For examples,
 output filenames, and figure customization, see the
 [static plotting guide](https://ghevia.github.io/octavian/tutorials/output-files/#matplotlib-example-gallery).
+Composable examples 01, 07, 09, and 14 also overlay departure/target orbits or
+comparison transfers. Use the same `reference_trajectories` list with either
+backend; see the [reference-trajectory guide](https://ghevia.github.io/octavian/tutorials/output-files/#reference-trajectories).
 Install `octavian[viz]` first; set `MPLBACKEND=Agg` when running without a display.
 
 JSON works without another dependency. Install `octavian[yaml]` to load YAML

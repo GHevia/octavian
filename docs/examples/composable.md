@@ -57,6 +57,8 @@ Capability showcased:
 - Front and back impulsive delta-v variables.
 - Terminal velocity relaxed into a delta-v objective while terminal position remains fixed.
 - Hohmann-style circular transfer used by the regression tests.
+- Full analytical departure and target circles
+  overlaid as dashed references in both HTML and the planar PNG.
 
 Important choices:
 
@@ -261,7 +263,13 @@ Important choices:
 | `constraints.inclination_deg(...)` | Targets orbital plane tilt at the end of the phase. |
 | `use_terminal_burn` | Reports one- and two-impulse local formulations; use it to compare feasible solutions, not to prove global objective ordering. |
 
-Expected output: `traj_composable_terminal_orbital_elements.html`.
+The HTML and 3D PNG overlay the actual one-impulse trajectory as a dashed
+reference alongside the two-impulse solution. The Cartesian seed anchor is not
+used as a target-orbit reference: its orientation is unconstrained and may
+change during optimization.
+
+Expected outputs: `traj_composable_terminal_orbital_elements.html` and
+`traj_composable_terminal_orbital_elements.png`.
 
 Screenshot placeholder: `docs/assets/screenshots/composable-07-orbital-elements.png`.
 
@@ -335,6 +343,11 @@ Expected output:
 
 - `traj_composable_impulse_reference.html`.
 - `traj_composable_chemical_reference.html`.
+- `traj_composable_chemical_reference.png` (XY projection).
+
+The chemical-transfer HTML and PNG overlay the Lambert reference as a dashed
+curve at the same total flight time, allowing both paths to be compared in a
+common frame. Their close overlap is expected for this short-burn case.
 
 Screenshot placeholders:
 
@@ -441,7 +454,9 @@ Important choices:
 The example writes an interactive 3D
 `traj_composable_cwh_relative_rendezvous.html` and a static, planar
 `traj_composable_cwh_relative_rendezvous.png`. Both use explicit relative axes,
-a chief marker at the origin, and the optimized impulse markers.
+a chief marker at the origin, and the optimized impulse markers. A dashed
+analytical rendezvous at the nominal 1800-second duration provides a spatial
+comparison with the free-time optimized transfer.
 
 ## 15: CWH Safety Corridor
 

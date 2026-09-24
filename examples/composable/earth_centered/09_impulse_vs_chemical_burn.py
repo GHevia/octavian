@@ -16,6 +16,7 @@ from octavian import Mission, Phase, Spacecraft, Thruster, constraints, objectiv
 from octavian.astro import kepler_dense_guess, select_best_lambert_seed
 from octavian.models import Dynamics
 from octavian.solvers import SolverOptions
+from octavian.viz.matplotlib import save_trajectory_image
 from octavian.viz.plotly import save_trajectory_html
 
 MU = 3.986004418e14
@@ -145,6 +146,13 @@ if not np.isfinite(relative_difference) or relative_difference > 0.20:
         "Finite-burn equivalent delta-v differs from the impulsive reference by more than 20%."
     )
 
+# Compare both trajectories in the same view at their shared flight time.
+reference_trajectories = [{
+    "name": "Two-impulse Lambert reference",
+    "traj": impulsive_traj,
+    "color": "#F59E0B",
+}]
+
 impulse_html = "traj_composable_impulse_reference.html"
 chemical_html = "traj_composable_chemical_reference.html"
 save_trajectory_html(
@@ -155,8 +163,18 @@ save_trajectory_html(
 save_trajectory_html(
     chemical_solution.result.traj,
     chemical_html,
+    reference_trajectories=reference_trajectories,
     phase_segments=chemical_solution.result.info.get("phase_segments", []),
     title=chemical_mission.name,
 )
 print(f"Wrote: {impulse_html}")
 print(f"Wrote: {chemical_html}")
+
+save_trajectory_image(
+    chemical_solution.traj,
+    "traj_composable_chemical_reference.png",
+    reference_trajectories=reference_trajectories,
+    phase_segments=chemical_solution.result.info.get("phase_segments"),
+    projection="xy",
+    title="Finite chemical burns and impulsive reference — XY plane",
+)

@@ -16,6 +16,7 @@ import numpy as np
 
 from ..cislunar import CR3BPSystem
 from ..types import Maneuver
+from ._references import reference_positions
 from .constants import EARTH_RADIUS_M
 from .diagnostics import (
     cr3bp_diagnostic_panels,
@@ -34,6 +35,7 @@ def trajectory_figure(
     *,
     maneuvers: Sequence[Maneuver] | None = None,
     phase_segments: Sequence[dict[str, object]] | None = None,
+    reference_trajectories: Sequence[dict[str, object]] | None = None,
     title: str = "octavian trajectory",
     earth_radius_m: float = EARTH_RADIUS_M,
     projection: str = "3d",
@@ -46,6 +48,9 @@ def trajectory_figure(
         maneuvers: Optional maneuver markers.
         phase_segments: Optional phase dictionaries with ``name``,
             ``t_start_s``, ``t_end_s``, and optional ``color`` keys.
+        reference_trajectories: Dashed overlays with ``traj`` position rows,
+            optional ``name`` and ``color``. Use the same ECI frame and SI
+            units as ``traj``; velocity and time columns are ignored.
         title: Figure title.
         earth_radius_m: Earth radius in meters.
         projection: ``"3d"`` or a 2D ``"xy"``, ``"xz"``, or ``"yz"``
@@ -89,6 +94,7 @@ def trajectory_figure(
         phase_segments,
         position_indices,
     )
+    _plot_reference_trajectories(axes, reference_trajectories, position_indices, scale=0.001)
     _scatter_position(
         axes,
         positions_km[0],
@@ -131,6 +137,7 @@ def relative_trajectory_figure(
     *,
     maneuvers: Sequence[Maneuver] | None = None,
     phase_segments: Sequence[dict[str, object]] | None = None,
+    reference_trajectories: Sequence[dict[str, object]] | None = None,
     title: str = "octavian relative trajectory",
     chief_radius_m: float = 0.0,
     projection: str = "3d",
@@ -140,6 +147,8 @@ def relative_trajectory_figure(
 
     ``projection`` accepts ``"3d"``, ``"xy"`` (radial/in-track), ``"xz"``
     (radial/cross-track), or ``"yz"`` (in-track/cross-track).
+    ``reference_trajectories`` contains dictionaries with ``traj`` position
+    rows in RIC meters and optional ``name`` and ``color`` for dashed overlays.
     """
     plt = _pyplot()
     trajectory = _trajectory(traj)
@@ -164,6 +173,7 @@ def relative_trajectory_figure(
         phase_segments,
         position_indices,
     )
+    _plot_reference_trajectories(axes, reference_trajectories, position_indices)
     _scatter_position(
         axes,
         positions[0],
@@ -236,6 +246,8 @@ def cr3bp_trajectory_figure(
     """Build a static barycentric-synodic CR3BP trajectory figure.
 
     ``projection`` accepts ``"3d"``, ``"xy"``, ``"xz"``, or ``"yz"``.
+    ``reference_trajectories`` contains dictionaries with ``traj`` position
+    rows in the same frame/units and optional ``name`` and ``color``.
     """
     plt = _pyplot()
     trajectory = _trajectory(traj)
@@ -263,17 +275,6 @@ def cr3bp_trajectory_figure(
         linewidth=2.4,
         label="Trajectory",
     )
-    for index, reference in enumerate(reference_trajectories or (), start=1):
-        reference_rows = _position_rows(reference.get("traj"))
-        reference_positions = scale * reference_rows[:, 0:3]
-        axes.plot(
-            *(reference_positions[:, axis_index] for axis_index in position_indices),
-            color=str(reference.get("color", "#A0AEC0")),
-            linewidth=1.5,
-            linestyle="--",
-            alpha=0.8,
-            label=str(reference.get("name", f"Reference {index}")),
-        )
     _plot_phase_segments(
         axes,
         positions,
@@ -281,6 +282,7 @@ def cr3bp_trajectory_figure(
         phase_segments,
         position_indices,
     )
+    _plot_reference_trajectories(axes, reference_trajectories, position_indices, scale=scale)
     for index, maneuver in enumerate(maneuvers or (), start=1):
         position = scale * np.asarray(maneuver.r_m, dtype=float).reshape(3)
         _scatter_position(
@@ -400,6 +402,7 @@ def save_trajectory_image(
     *,
     maneuvers: Sequence[Maneuver] | None = None,
     phase_segments: Sequence[dict[str, object]] | None = None,
+    reference_trajectories: Sequence[dict[str, object]] | None = None,
     title: str = "octavian trajectory",
     earth_radius_m: float = EARTH_RADIUS_M,
     projection: str = "3d",
@@ -411,6 +414,7 @@ def save_trajectory_image(
         traj,
         maneuvers=maneuvers,
         phase_segments=phase_segments,
+        reference_trajectories=reference_trajectories,
         title=title,
         earth_radius_m=earth_radius_m,
         projection=projection,
@@ -425,6 +429,7 @@ def save_relative_trajectory_image(
     *,
     maneuvers: Sequence[Maneuver] | None = None,
     phase_segments: Sequence[dict[str, object]] | None = None,
+    reference_trajectories: Sequence[dict[str, object]] | None = None,
     title: str = "octavian relative trajectory",
     chief_radius_m: float = 0.0,
     projection: str = "3d",
@@ -436,6 +441,7 @@ def save_relative_trajectory_image(
         traj,
         maneuvers=maneuvers,
         phase_segments=phase_segments,
+        reference_trajectories=reference_trajectories,
         title=title,
         chief_radius_m=chief_radius_m,
         projection=projection,
@@ -545,16 +551,23 @@ def _trajectory(traj: np.ndarray) -> np.ndarray:
     return trajectory
 
 
-def _position_rows(value: object) -> np.ndarray:
-    rows = np.asarray(value, dtype=float)
-    if (
-        rows.ndim != 2
-        or rows.shape[0] < 1
-        or rows.shape[1] < 3
-        or not np.all(np.isfinite(rows[:, 0:3]))
-    ):
-        raise ValueError("Each reference trajectory must contain finite position rows")
-    return rows
+def _plot_reference_trajectories(
+    axes: Any,
+    references: Sequence[dict[str, object]] | None,
+    position_indices: tuple[int, ...],
+    *,
+    scale: float = 1.0,
+) -> None:
+    for index, reference in enumerate(references or (), start=1):
+        positions = scale * reference_positions(reference.get("traj"))
+        axes.plot(
+            *(positions[:, axis] for axis in position_indices),
+            color=str(reference.get("color", "#A0AEC0")),
+            linewidth=1.5,
+            linestyle="--",
+            alpha=0.8,
+            label=str(reference.get("name", f"Reference {index}")),
+        )
 
 
 def _selected_lagrange_names(
