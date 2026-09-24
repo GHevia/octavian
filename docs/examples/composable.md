@@ -18,6 +18,17 @@ The files are grouped into three folders:
 | `examples/composable/relative/` | Chief-centered RIC missions, relative elements, and relative finite burns. |
 | `examples/composable/cislunar/` | Earth–Moon CR3BP propagation, optimization, and synodic-frame workflows. |
 
+The scripts read sequentially from configuration through solve and reporting.
+Short, single-use helpers are inlined; repeated cases use ordinary loops.
+Example 32 retains `solve_family_member` for its substantial continuation solve.
+
+Earth-centered examples 01, 02, 03, 05, 06, 08, and 11 use `propagate.inertial`
+to overlay departure and target reference orbits. The history spans one nominal
+Keplerian period computed from each boundary state. Example 08 enables the
+same J2 perturbation as its mission. Examples 01, 02, 03, 05, and 06 also save
+XY PNGs with the same references (the HTML filename with a `.png` suffix;
+example 05 uses its raw-maneuver filename).
+
 ## Shared Composable API Terms
 
 | Setting | What it controls |
@@ -57,8 +68,8 @@ Capability showcased:
 - Front and back impulsive delta-v variables.
 - Terminal velocity relaxed into a delta-v objective while terminal position remains fixed.
 - Hohmann-style circular transfer used by the regression tests.
-- Full analytical departure and target circles
-  overlaid as dashed references in both HTML and the planar PNG.
+- Full departure and target orbits from `propagate.inertial`, overlaid as
+  dashed references in both HTML and the planar PNG.
 
 Important choices:
 
@@ -194,7 +205,7 @@ Important choices:
 | Code | Purpose |
 | --- | --- |
 | `constraints.min_radius(r_min_m, where="Path")` | Keeps the path above the configured altitude floor. |
-| `snap_maneuvers_to_traj(...)` | Moves maneuver markers to the nearest plotted trajectory sample for cleaner visuals. |
+| `replace(maneuver, r_m=traj[index, :3])` | Moves maneuver markers to the nearest plotted trajectory sample for cleaner visuals. |
 | `save_trajectory_html(..., maneuvers=...)` | Writes an inspectable plot with burn markers. |
 
 Expected output:

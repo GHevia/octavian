@@ -11,10 +11,49 @@ from octavian import propagate
 It collects the package's analysis propagators without hiding which physical
 model is selected.
 
+## Inertial Propagation With Optional Perturbations
+
+`propagate.inertial` is the Earth-centered counterpart to `propagate.cr3bp`:
+it takes a Cartesian initial state and output times and returns `[r, v, t]`
+rows in SI units. It integrates Cartesian equations directly, including for
+circular and equatorial states. No solver or mission is needed.
+
+```python
+import numpy as np
+from octavian import EARTH, Perturbations, propagate, state
+
+initial = state([7_000_000.0, 0.0, 0.0], [0.0, 7_500.0, 200.0])
+times_s = np.linspace(0.0, 6_000.0, 361)
+reference = propagate.inertial(initial, times_s)
+j2_reference = propagate.inertial(
+    initial, times_s, central_body=EARTH,
+    perturbations=Perturbations(j2=True), max_step_s=10.0,
+)
+```
+
+The default force is point-mass gravity. Optional forces share the existing
+relative propagator's implementation: J2, Moon/Sun gravity, cannonball drag,
+and cannonball SRP. Moon/Sun gravity or SRP requires `initial_epoch` and uses
+Earth-centered TOD ephemerides; supply the initial state in that frame.
+Drag/SRP also requires `spacecraft` with mass and positive corresponding
+cannonball areas. Spacecraft mass remains constant; this is unpowered propagation.
+
+Times must be strictly monotonic with zero at the first or last sample.
+Backward histories are supported. Fixed-step RK4 shortens its internal steps
+to hit the requested times; `max_step_s` (default 10 seconds) controls accuracy
+independently of output spacing. Reduce the step to check convergence for long
+or demanding trajectories. `ephemeris_step_s` controls Sun/Moon interpolation.
+
+Pass the history directly as `reference_trajectories=[{"name": "Reference",
+"traj": reference}]` to a trajectory visualizer. For an elliptic orbit, its
+nominal Keplerian period is a useful display span; perturbed orbits need not
+close after that time. See the [reference plotting guide](output-files.md#reference-trajectories).
+
 ## Available Models
 
 | Call | Model | Return |
 | --- | --- | --- |
+| `propagate.inertial(...)` | Cartesian RK4 with optional J2, third-body gravity, drag, and SRP | `[r, v, time]` array |
 | `propagate.two_body(...)` | Elliptic point-mass inertial motion | `[r, v, time]` array |
 | `propagate.cwh(...)` | Linear circular-chief CWH | `[RIC state, time]` array |
 | `propagate.nonlinear_ric(...)` | Exact circular-chief RIC before linearization | `[RIC state, time]` array |
@@ -39,11 +78,7 @@ chief = state(
 )
 times_s = np.linspace(0.0, 600.0, 13)
 
-inertial = propagate.two_body(
-    chief,
-    times_s,
-    mu_m3ps2=EARTH.mu_m3ps2,
-)
+inertial = propagate.inertial(chief, times_s)
 
 mean_motion = np.sqrt(EARTH.mu_m3ps2 / radius_m**3)
 relative = propagate.cwh(

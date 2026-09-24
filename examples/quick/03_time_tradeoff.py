@@ -12,34 +12,48 @@ from __future__ import annotations
 
 import numpy as np
 
-from octavian import state, two_burn_rendezvous
+from octavian import propagate, state, two_burn_rendezvous
 from octavian.solvers import SolverOptions
+from octavian.viz.matplotlib import save_trajectory_image
 from octavian.viz.plotly import save_trajectory_html
 
 MU = 3.986004418e14
 
 
-def build_x0_xf():
-    r_initial_m = 7_000e3
-    r_final_m = 10_000e3
-    theta = np.deg2rad(120.0)
-    x0 = state(
-        r_m=[r_initial_m, 0.0, 0.0],
-        v_mps=[0.0, float(np.sqrt(MU / r_initial_m)), 0.0],
+r_initial_m = 7_000e3
+r_final_m = 10_000e3
+theta = np.deg2rad(120.0)
+x0 = state(
+    r_m=[r_initial_m, 0.0, 0.0],
+    v_mps=[0.0, float(np.sqrt(MU / r_initial_m)), 0.0],
+)
+
+xf = state(
+    r_m=[r_final_m * float(np.cos(theta)), r_final_m * float(np.sin(theta)), 0.0],
+    v_mps=[
+        -float(np.sqrt(MU / r_final_m)) * float(np.sin(theta)),
+        float(np.sqrt(MU / r_final_m)) * float(np.cos(theta)),
+        0.0,
+    ],
+)
+
+# Propagate the departure and target states for one nominal orbital period.
+reference_trajectories = []
+for name, orbit_state, color in (
+    ("Departure orbit", x0, "#F59E0B"),
+    ("Target orbit", xf, "#C084FC"),
+):
+    semi_major_axis_m = 1.0 / (
+        2.0 / np.linalg.norm(orbit_state.r_m) - np.dot(orbit_state.v_mps, orbit_state.v_mps) / MU
     )
-
-    xf = state(
-        r_m=[r_final_m * float(np.cos(theta)), r_final_m * float(np.sin(theta)), 0.0],
-        v_mps=[
-            -float(np.sqrt(MU / r_final_m)) * float(np.sin(theta)),
-            float(np.sqrt(MU / r_final_m)) * float(np.cos(theta)),
-            0.0,
-        ],
+    period_s = 2.0 * np.pi * np.sqrt(semi_major_axis_m**3 / MU)
+    reference_trajectories.append(
+        {
+            "name": name,
+            "traj": propagate.inertial(orbit_state, np.linspace(0.0, period_s, 361)),
+            "color": color,
+        }
     )
-    return x0, xf
-
-
-x0, xf = build_x0_xf()
 
 missions = [
     ("dv_only", 0.0),
@@ -65,5 +79,20 @@ for tag, w_time in missions:
     print(sol.summary())
 
     out_html = f"traj_quick_time_tradeoff_{tag}.html"
-    save_trajectory_html(sol.result.traj, out_html, maneuvers=sol.result.maneuvers, title=mission.name)
+    save_trajectory_html(
+        sol.result.traj,
+        out_html,
+        maneuvers=sol.result.maneuvers,
+        reference_trajectories=reference_trajectories,
+        title=mission.name,
+    )
     print(f"Wrote: {out_html}")
+
+    save_trajectory_image(
+        sol.traj,
+        out_html.replace(".html", ".png"),
+        maneuvers=sol.result.maneuvers,
+        reference_trajectories=reference_trajectories,
+        projection="xy",
+        title="Departure and target reference orbits — XY plane",
+    )

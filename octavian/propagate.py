@@ -33,6 +33,13 @@ from .relative import (
     propagate_nonlinear_relative_ric as _propagate_nonlinear_relative_ric,
 )
 from .relative import propagate_relative_numerical as _propagate_relative_numerical
+from .relative.propagation import (
+    _absolute_acceleration,
+    _build_body_position_interpolator,
+    _normalize_perturbations,
+    _resolved_atmosphere,
+    _validate_cannonball_spacecraft,
+)
 from .spacecraft import Spacecraft
 from .specs import BoundaryState
 
@@ -48,6 +55,113 @@ def _finite_times(times_s: ArrayLike) -> NDArray[np.float64]:
     if times.size == 0 or not np.all(np.isfinite(times)):
         raise ValueError("times_s must contain at least one finite value")
     return times
+
+
+def inertial(
+    initial_state: BoundaryState,
+    times_s: ArrayLike,
+    *,
+    central_body: CelestialBody = EARTH,
+    perturbations: Perturbations | None = None,
+    initial_epoch: str | datetime | float | int | None = None,
+    spacecraft: Spacecraft | None = None,
+    max_step_s: float = 10.0,
+    ephemeris_step_s: float = 600.0,
+    bsp_path: str | Path = DEFAULT_EPHEMERIS_BSP,
+) -> StateHistory:
+    """Numerically propagate an unpowered inertial Cartesian state.
+
+    Uses the same force model as :func:`relative` and fixed-step RK4, with
+    shortened steps to hit each output time exactly. Circular and equatorial
+    states are integrated directly without singular orbital elements.
+
+    Args:
+        initial_state: Central-body inertial position/velocity at time zero.
+        times_s: Strictly monotonic elapsed seconds, with zero at either end.
+            Forward and backward propagation are supported.
+        central_body: Gravity/J2 constants; defaults to Earth.
+        perturbations: Optional J2, Moon/Sun gravity, drag, and SRP flags.
+        initial_epoch: UTC or SPICE ET at time zero, required for third-body
+            gravity or SRP. Ephemeris positions use the Earth-centered TOD frame.
+        spacecraft: Constant mass and cannonball properties, required for
+            drag or SRP. This analysis propagator does not apply thrust.
+        max_step_s: Maximum internal RK4 step in seconds.
+        ephemeris_step_s: Sun/Moon interpolation spacing in seconds.
+        bsp_path: BSP containing Earth-centered Sun/Moon states.
+
+    Returns:
+        ``(N, 7)`` rows ``[r, v, elapsed_time]`` in SI units, in requested order.
+    """
+    times = _finite_times(times_s)
+    if times[0] == 0.0:
+        integration_times = times
+    elif times[-1] == 0.0:
+        integration_times = times[::-1]
+    else:
+        raise ValueError("times_s must have 0.0 at the first or last output")
+    differences = np.diff(integration_times)
+    if not (np.all(differences > 0.0) or np.all(differences < 0.0)):
+        raise ValueError("times_s must be strictly monotonic")
+    if not np.isfinite(max_step_s) or max_step_s <= 0.0:
+        raise ValueError("max_step_s must be finite and positive")
+    if not np.isfinite(ephemeris_step_s) or ephemeris_step_s <= 0.0:
+        raise ValueError("ephemeris_step_s must be finite and positive")
+    current_state = np.hstack([initial_state.r_m, initial_state.v_mps]).astype(float)
+    if not np.all(np.isfinite(current_state)) or np.linalg.norm(current_state[:3]) == 0.0:
+        raise ValueError("initial_state must be finite with nonzero position")
+    flags = _normalize_perturbations(perturbations)
+    if (flags["third_bodies"] or flags["srp"]) and central_body.name.lower() != "earth":
+        raise ValueError("The bundled Sun/Moon BSP requires an Earth central body")
+    _validate_cannonball_spacecraft(
+        spacecraft,
+        flags=flags,
+        role="inertial",
+        required=bool(flags["drag"] or flags["srp"]),
+    )
+    atmosphere = _resolved_atmosphere(flags=flags, central_body=central_body)
+    requested_bodies = list(flags["third_bodies"])
+    if flags["srp"] and "sun" not in requested_bodies:
+        requested_bodies.append("sun")
+    body_positions = _build_body_position_interpolator(
+        requested_bodies=tuple(requested_bodies),
+        initial_epoch=initial_epoch,
+        start_time_s=float(times.min()),
+        end_time_s=float(times.max()),
+        step_s=ephemeris_step_s,
+        bsp_path=bsp_path,
+    )
+
+    def derivative(time_s: float, state: np.ndarray) -> np.ndarray:
+        acceleration = _absolute_acceleration(
+            state[:3],
+            state[3:6],
+            central_body=central_body,
+            flags=flags,
+            sampled_bodies=body_positions(time_s),
+            spacecraft=spacecraft,
+            atmosphere=atmosphere,
+        )
+        return np.hstack([state[3:6], acceleration])
+
+    history = np.empty((times.size, 7), dtype=float)
+    history[0] = np.hstack([current_state, 0.0])
+    current_time = 0.0
+    for index, output_time in enumerate(integration_times[1:], start=1):
+        interval = float(output_time - current_time)
+        substeps = max(1, int(np.ceil(abs(interval) / max_step_s)))
+        step = interval / substeps
+        for _ in range(substeps):
+            k1 = derivative(current_time, current_state)
+            k2 = derivative(current_time + step / 2, current_state + step * k1 / 2)
+            k3 = derivative(current_time + step / 2, current_state + step * k2 / 2)
+            k4 = derivative(current_time + step, current_state + step * k3)
+            current_state += step * (k1 + 2 * k2 + 2 * k3 + k4) / 6
+            current_time += step
+        current_time = float(output_time)
+        if not np.all(np.isfinite(current_state)):
+            raise RuntimeError(f"Inertial propagation became non-finite at t={current_time:.6f} s")
+        history[index] = np.hstack([current_state, current_time])
+    return history if times[0] == 0.0 else history[::-1].copy()
 
 
 def two_body(
@@ -184,9 +298,9 @@ def relative(
         optional_kwargs["chief_spacecraft"] = chief_spacecraft
     if deputy_spacecraft is not None:
         optional_kwargs["deputy_spacecraft"] = deputy_spacecraft
-    unsupported = optional_kwargs.keys() - signature(
-        _propagate_relative_numerical
-    ).parameters.keys()
+    unsupported = (
+        optional_kwargs.keys() - signature(_propagate_relative_numerical).parameters.keys()
+    )
     if unsupported:
         raise NotImplementedError(
             "This Octavian build does not provide cannonball spacecraft "
@@ -289,9 +403,7 @@ def cr3bp(
     try:
         from .cislunar import propagate_cr3bp
     except ImportError as exc:
-        raise ImportError(
-            "CR3BP propagation requires Octavian's cislunar module"
-        ) from exc
+        raise ImportError("CR3BP propagation requires Octavian's cislunar module") from exc
 
     return propagate_cr3bp(
         initial_state,

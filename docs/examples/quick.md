@@ -8,6 +8,11 @@ The files are deliberately flat scripts rather than importable application
 modules. Read them from constants to states to mission to solution, then copy
 one and edit it as a Python configuration file.
 
+Quick examples 01–04 propagate departure and target states into full reference
+orbits with `propagate.inertial`. Each writes an XY PNG alongside its HTML
+using the same basename. Example 04 uses the winning case's target state,
+so its reference matches the selected solution.
+
 ## Shared Quick API Terms
 
 | Setting | What it controls |

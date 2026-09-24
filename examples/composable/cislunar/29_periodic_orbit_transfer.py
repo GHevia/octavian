@@ -58,21 +58,13 @@ l1_state_si = dimensionalize_state(l1_state_canonical, system)
 l2_state_si = dimensionalize_state(l2_state_canonical, system)
 
 
-def time_bounds_tu(lower_tu: float, upper_tu: float) -> tuple[float, float]:
-    """Convert one canonical duration interval to seconds."""
-    return (
-        float(dimensionalize_time(lower_tu, system)),
-        float(dimensionalize_time(upper_tu, system)),
-    )
-
-
 departure_coast = Phase(
     name="coast_on_L1_orbit",
     mode="coast",
     spacecraft=spacecraft,
     dynamics=dynamics,
     initial_state=l1_state_si,
-    tof_bounds_s=time_bounds_tu(0.12, 0.18),
+    tof_bounds_s=tuple(dimensionalize_time((0.12, 0.18), system)),
     tof_is_relative=True,
     constraints=[constraints.state(l1_state_si, where="Front")],
 )
@@ -85,7 +77,7 @@ transfer = Phase(
     previous=departure_coast,
     link=links.impulsive(name="L1_departure"),
     final_state=l2_state_si,
-    tof_bounds_s=time_bounds_tu(0.8, 3.0),
+    tof_bounds_s=tuple(dimensionalize_time((0.8, 3.0), system)),
     tof_is_relative=True,
     variables=[variables.ImpulsiveDeltaV(where="Front")],
 )
@@ -97,7 +89,7 @@ arrival_coast = Phase(
     dynamics=dynamics,
     previous=transfer,
     link=links.impulsive(name="L2_insertion"),
-    tof_bounds_s=time_bounds_tu(0.15, 0.35),
+    tof_bounds_s=tuple(dimensionalize_time((0.15, 0.35), system)),
     tof_is_relative=True,
     constraints=[constraints.state(l2_state_si, where="Front")],
     variables=[variables.ImpulsiveDeltaV(where="Front")],

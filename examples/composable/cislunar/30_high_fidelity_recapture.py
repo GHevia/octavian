@@ -73,18 +73,16 @@ moon_velocities_mps = np.gradient(
 )
 
 
-def interpolate_ephemeris(samples: np.ndarray, time_s: float) -> np.ndarray:
-    """Interpolate a three-component BSP history at mission-relative time."""
-    return np.asarray(
-        [np.interp(time_s, ephemeris_times_s, samples[:, component]) for component in range(3)]
-    )
-
-
-def nominal_inertial_row(synodic_row: np.ndarray) -> np.ndarray:
-    """Embed one CR3BP sample in the instantaneous Earth-Moon geometry."""
+# Embed each CR3BP sample in the instantaneous Earth-Moon geometry.
+nominal_inertial_history = np.empty_like(synodic_history)
+for index, synodic_row in enumerate(synodic_history):
     time_s = float(synodic_row[6])
-    moon_position_m = interpolate_ephemeris(moon_positions_m, time_s)
-    moon_velocity_mps = interpolate_ephemeris(moon_velocities_mps, time_s)
+    moon_position_m = np.array(
+        [np.interp(time_s, ephemeris_times_s, moon_positions_m[:, axis]) for axis in range(3)]
+    )
+    moon_velocity_mps = np.array(
+        [np.interp(time_s, ephemeris_times_s, moon_velocities_mps[:, axis]) for axis in range(3)]
+    )
     moon_distance_m = float(np.linalg.norm(moon_position_m))
 
     x_axis = moon_position_m / moon_distance_m
@@ -104,10 +102,13 @@ def nominal_inertial_row(synodic_row: np.ndarray) -> np.ndarray:
         moon_radial_speed_mps * relative_position_canonical
         + moon_distance_m * relative_velocity_canonical_per_s
     )
-    return np.hstack([inertial_position_m, inertial_velocity_mps, time_s])
-
-
-nominal_inertial_history = np.asarray([nominal_inertial_row(row) for row in synodic_history])
+    nominal_inertial_history[index] = np.hstack(
+        [
+            inertial_position_m,
+            inertial_velocity_mps,
+            time_s,
+        ]
+    )
 
 inertial_initial = state(
     nominal_inertial_history[0, 0:3],

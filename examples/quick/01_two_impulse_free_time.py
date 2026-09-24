@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from octavian import state, two_burn_rendezvous
+from octavian import propagate, state, two_burn_rendezvous
 from octavian.solvers import SolverOptions
 from octavian.viz.matplotlib import save_trajectory_image
 from octavian.viz.plotly import save_trajectory_html
@@ -53,11 +53,30 @@ mission = two_burn_rendezvous(
 solution = mission.solve()
 print(solution.summary())
 
+# Propagate the departure and target states for one nominal orbital period.
+reference_trajectories = []
+for name, orbit_state, color in (
+    ("Departure orbit", initial_state, "#F59E0B"),
+    ("Target orbit", target_state, "#C084FC"),
+):
+    semi_major_axis_m = 1.0 / (
+        2.0 / np.linalg.norm(orbit_state.r_m) - np.dot(orbit_state.v_mps, orbit_state.v_mps) / MU
+    )
+    period_s = 2.0 * np.pi * np.sqrt(semi_major_axis_m**3 / MU)
+    reference_trajectories.append(
+        {
+            "name": name,
+            "traj": propagate.inertial(orbit_state, np.linspace(0.0, period_s, 361)),
+            "color": color,
+        }
+    )
+
 output_path = "traj_quick_hohmann_transfer.html"
 save_trajectory_html(
     solution.result.traj,
     output_path,
     maneuvers=solution.result.maneuvers,
+    reference_trajectories=reference_trajectories,
     title=mission.name,
 )
 print(f"Wrote: {output_path}")
@@ -69,6 +88,7 @@ save_trajectory_image(
     maneuvers=solution.result.maneuvers,
     phase_segments=solution.result.info.get("phase_segments"),
     projection="xy",
+    reference_trajectories=reference_trajectories,
     title="Equatorial Hohmann transfer — ECI XY plane",
 )
 print("Wrote: traj_quick_hohmann_transfer.png")

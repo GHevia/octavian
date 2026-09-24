@@ -98,17 +98,20 @@ also work. References use dashed lines and participate in automatic axis limits.
 
 ```python
 import numpy as np
+from octavian import EARTH, propagate
 from octavian.viz.matplotlib import save_trajectory_image
 from octavian.viz.plotly import save_trajectory_html
 
-# An equatorial circular orbit, supplied as positions in meters.
-angles = np.linspace(0.0, 2.0 * np.pi, 361)
-radius_m = 7_000_000.0
+# initial_state is the departure state before the transfer burn.
+mu = EARTH.mu_m3ps2
+semi_major_axis_m = 1.0 / (
+    2.0 / np.linalg.norm(initial_state.r_m)
+    - np.dot(initial_state.v_mps, initial_state.v_mps) / mu
+)
+period_s = 2.0 * np.pi * np.sqrt(semi_major_axis_m**3 / mu)
 references = [{
     "name": "Departure orbit",
-    "traj": radius_m * np.column_stack([
-        np.cos(angles), np.sin(angles), np.zeros_like(angles),
-    ]),
+    "traj": propagate.inertial(initial_state, np.linspace(0.0, period_s, 361)),
     "color": "#F59E0B",
 }]
 save_trajectory_image(
@@ -123,11 +126,18 @@ trajectory: ECI or RIC meters, or synodic meters/DU according to the CR3BP
 They draw spatial curves without aligning reference timestamps or transforming
 frames. These overlays do not change the mission, seed, objective, or constraints.
 
-Composable examples demonstrate circular departure/target orbits (01),
+Quick examples 01–04 and composable examples 01, 02, 03, 05, 06, 08, and 11
+propagate full departure/target reference histories. Example 08 includes J2;
+the nominal two-body period sets its plotting span without imposing closure.
+Pass `perturbations=Perturbations(j2=True)` to `propagate.inertial` for the
+same workflow, or see the [propagation guide](propagation.md) for other forces.
+
+Other composable comparisons include
 a one-impulse solution for comparison with an inclined two-impulse transfer (07),
 a Lambert reference for the finite chemical burns (09),
 a nominal 1800-second analytical CWH rendezvous (14), and full L1/L2 Lyapunov
-orbits (29). Each uses the same reference data for its HTML and PNG output.
+orbits (29). Where an example writes both HTML and PNG, it supplies the same
+reference histories to both renderers.
 
 ### Matplotlib Example Gallery
 

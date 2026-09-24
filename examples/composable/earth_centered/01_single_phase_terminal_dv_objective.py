@@ -23,6 +23,7 @@ from octavian import (
     Thruster,
     constraints,
     objectives,
+    propagate,
     variables,
 )
 from octavian.quick import state
@@ -80,13 +81,23 @@ mission = Mission(
 solution = mission.solve()
 print(solution.summary())
 
-# Exact circular position curves provide context without changing the solve.
-angles = np.linspace(0.0, 2.0 * np.pi, 361)
-unit_circle = np.column_stack([np.cos(angles), np.sin(angles), np.zeros_like(angles)])
-reference_trajectories = [
-    {"name": "Departure orbit", "traj": R_INITIAL_M * unit_circle, "color": "#F59E0B"},
-    {"name": "Target circular orbit", "traj": R_FINAL_M * unit_circle, "color": "#C084FC"},
-]
+# Propagate the departure and target states for one nominal orbital period.
+reference_trajectories = []
+for name, orbit_state, color in (
+    ("Departure orbit", initial_state, "#F59E0B"),
+    ("Target orbit", target_state, "#C084FC"),
+):
+    semi_major_axis_m = 1.0 / (
+        2.0 / np.linalg.norm(orbit_state.r_m) - np.dot(orbit_state.v_mps, orbit_state.v_mps) / MU
+    )
+    period_s = 2.0 * np.pi * np.sqrt(semi_major_axis_m**3 / MU)
+    reference_trajectories.append(
+        {
+            "name": name,
+            "traj": propagate.inertial(orbit_state, np.linspace(0.0, period_s, 361)),
+            "color": color,
+        }
+    )
 
 output_path = "traj_composable_hohmann_terminal_dv_objective.html"
 save_trajectory_html(
