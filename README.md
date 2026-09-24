@@ -134,6 +134,14 @@ See the hosted
 [example capability index](https://ghevia.github.io/octavian/examples/) for a task-oriented map of
 every executable example and mission pattern.
 
+Run every executable example with real solvers and isolated output directories:
+
+```bash
+python -m pytest tests/test_executable_examples.py -q
+```
+
+This check is included in the normal test suite and CI.
+
 ## Documentation
 
 The docs are built with MkDocs and publish through GitHub Pages.

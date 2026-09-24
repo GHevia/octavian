@@ -309,19 +309,27 @@ python examples/composable/earth_centered/09_impulse_vs_chemical_burn.py
 Capability showcased:
 
 - Impulsive transfer reference.
-- Finite-burn transfer over the same coast-time window.
+- Propellant-minimizing finite burns, compared at the same total flight time.
 - Side-by-side comparison of idealized and chemical-burn workflows.
 
 Important choices:
 
 | Code | Purpose |
 | --- | --- |
-| `COAST_BOUNDS_S` | Uses the same coast-time window for the impulsive reference and finite-burn transfer. |
-| `select_best_lambert_seed(...)` | Finds the best impulsive reference over that window. |
+| `COAST_BOUNDS_S` | Bounds only the unpowered phase; total flight time includes both burns. |
+| `select_best_lambert_seed(tmin_s=tf, tmax_s=tf, ...)` | Compares impulsive branches at the solved finite-burn flight time. |
 | `kepler_dense_guess(...)` | Builds a plot trajectory for the impulsive reference. |
-| `chemical_mission.solve()` | Solves the finite burn-coast-burn mission. |
-| `_chemical_equivalent_delta_v(...)` | Converts mass depletion summaries into equivalent delta-v for comparison. |
-| `relative_difference > 0.20` guard | Fails loudly if the finite-burn result diverges too far from the impulsive reference. |
+| `objectives.minimize_propellant()` | Minimizes propellant consumption in the finite-burn solve. |
+| `chemical_mission.solve()` | Solves the finite burn-coast-burn mission with a finer mesh and adaptive refinement. |
+| `chemical_burns` summaries | Sum the per-burn rocket-equation delta-v, `Isp * g0 * log(m_initial / m_final)`. |
+| 20% comparison guard | Rejects non-finite values or an excessive difference for this example. |
+
+The comparison uses the same initial state, target state, and final time. A
+coarse Lambert time grid can miss a low-cost arrival time, so its best seed
+is not a reliable baseline for a separately optimized finite-burn trajectory.
+The reference now uses the solved total flight time exactly, with no fabricated
+delta-v or straight-line fallback if Lambert fails. The 20% check is a
+regression check for this configured example, not a universal bound on finite-burn losses.
 
 Expected output:
 

@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from .._interpolation import bounded_query_times
 from ..data.ephemeris import DEFAULT_EPHEMERIS_BSP, sample_sun_moon_positions_eci_tod
 from ..specs import BoundaryState
 from .transforms import ric_basis
@@ -16,7 +17,11 @@ from .transforms import ric_basis
 
 @dataclass(frozen=True, slots=True)
 class SolarDirectionTable:
-    """Sampled Sun geometry for relative constraints and diagnostics."""
+    """Sampled Sun geometry for relative constraints and diagnostics.
+
+    Queries within 1e-8 s of an endpoint are clipped to that endpoint to
+    tolerate optimized time roundoff. Queries farther outside coverage fail.
+    """
 
     times_s: NDArray[np.float64]
     directions_ric: NDArray[np.float64]
@@ -44,9 +49,7 @@ class SolarDirectionTable:
 
     def at(self, times_s: ArrayLike) -> NDArray[np.float64]:
         """Interpolate and renormalize Sun directions at elapsed times."""
-        query = np.asarray(times_s, dtype=float)
-        if np.any(query < self.times_s[0]) or np.any(query > self.times_s[-1]):
-            raise ValueError("Requested solar direction lies outside the sampled time range")
+        query = bounded_query_times(times_s, self.times_s, quantity="solar direction")
         flat_query = query.reshape(-1)
         interpolated = np.column_stack(
             [
@@ -62,9 +65,7 @@ class SolarDirectionTable:
         """Interpolate the SPICE-derived Sun position in ECI."""
         if self.sun_positions_eci_m is None:
             raise ValueError("SolarDirectionTable does not contain ECI Sun positions")
-        query = np.asarray(times_s, dtype=float)
-        if np.any(query < self.times_s[0]) or np.any(query > self.times_s[-1]):
-            raise ValueError("Requested Sun position lies outside the sampled time range")
+        query = bounded_query_times(times_s, self.times_s, quantity="Sun position")
         flat_query = query.reshape(-1)
         interpolated = np.column_stack(
             [

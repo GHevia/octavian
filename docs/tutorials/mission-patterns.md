@@ -314,6 +314,9 @@ When Sun or Moon tables are active, each relative duration contributes to the
 cumulative absolute mission-time horizon. The shared table extends through
 that absolute upper bound plus `third_body_table_margin_s`; increase the margin
 for unusually aggressive time searches or custom solver behavior.
+Numeric ephemeris queries clip solver time roundoff within `1e-8` seconds
+of either table endpoint. Queries farther outside coverage still raise an
+error; this tolerance does not extend the propagation horizon.
 
 For the common coast–transfer–coast pattern, use the quick builder:
 

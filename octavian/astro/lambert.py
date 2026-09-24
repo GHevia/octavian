@@ -124,7 +124,8 @@ def select_best_lambert_seed(
         vf_mps: Final velocity [m/s].
         mu_m3ps2: Gravitational parameter [m^3/s^2].
         tmin_s: Minimum time-of-flight to test [s].
-        tmax_s: Maximum time-of-flight to test [s].
+        tmax_s: Maximum time-of-flight to test [s]. Set equal to ``tmin_s``
+            to compare Lambert branches at one fixed flight time.
         n_tofs: Number of TOF samples in ``[tmin_s, tmax_s]``.
         nrevs: Sequence of integer revolution counts to attempt.
 
@@ -143,8 +144,8 @@ def select_best_lambert_seed(
     """
     tmin = float(tmin_s)
     tmax = float(tmax_s)
-    if not (tmin > 0.0 and tmax > tmin):
-        raise ValueError("Require 0 < tmin_s < tmax_s.")
+    if not (np.isfinite(tmin) and np.isfinite(tmax) and 0.0 < tmin <= tmax):
+        raise ValueError("Require finite bounds with 0 < tmin_s <= tmax_s.")
     if int(n_tofs) < 2:
         raise ValueError("n_tofs must be >= 2.")
 
@@ -155,7 +156,8 @@ def select_best_lambert_seed(
     lambert_rf = _lambert_target_position(r0, rf, v0, vf)
 
     best: LambertSeed | None = None
-    for tof in np.linspace(tmin, tmax, int(n_tofs)):
+    times = [tmin] if tmin == tmax else np.linspace(tmin, tmax, int(n_tofs))
+    for tof in times:
         for longway in (False, True):
             for nrev in nrevs:
                 rb_iter: Iterable[bool] = (True,) if int(nrev) == 0 else (False, True)
