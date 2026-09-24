@@ -18,6 +18,17 @@ The files are grouped into three folders:
 | `examples/composable/relative/` | Chief-centered RIC missions, relative elements, and relative finite burns. |
 | `examples/composable/cislunar/` | Earth–Moon CR3BP propagation, optimization, and synodic-frame workflows. |
 
+The scripts read sequentially from configuration through solve and reporting.
+Short, single-use helpers are inlined; repeated cases use ordinary loops.
+Example 32 retains `solve_family_member` for its substantial continuation solve.
+
+Earth-centered examples 01, 02, 03, 05, 06, 08, and 11 use `propagate.inertial`
+to overlay departure and target reference orbits. The history spans one nominal
+Keplerian period computed from each boundary state. Example 08 enables the
+same J2 perturbation as its mission. Examples 01, 02, 03, 05, and 06 also save
+XY PNGs with the same references (the HTML filename with a `.png` suffix;
+example 05 uses its raw-maneuver filename).
+
 ## Shared Composable API Terms
 
 | Setting | What it controls |
@@ -57,6 +68,8 @@ Capability showcased:
 - Front and back impulsive delta-v variables.
 - Terminal velocity relaxed into a delta-v objective while terminal position remains fixed.
 - Hohmann-style circular transfer used by the regression tests.
+- Full departure and target orbits from `propagate.inertial`, overlaid as
+  dashed references in both HTML and the planar PNG.
 
 Important choices:
 
@@ -192,7 +205,7 @@ Important choices:
 | Code | Purpose |
 | --- | --- |
 | `constraints.min_radius(r_min_m, where="Path")` | Keeps the path above the configured altitude floor. |
-| `snap_maneuvers_to_traj(...)` | Moves maneuver markers to the nearest plotted trajectory sample for cleaner visuals. |
+| `replace(maneuver, r_m=traj[index, :3])` | Moves maneuver markers to the nearest plotted trajectory sample for cleaner visuals. |
 | `save_trajectory_html(..., maneuvers=...)` | Writes an inspectable plot with burn markers. |
 
 Expected output:
@@ -261,7 +274,13 @@ Important choices:
 | `constraints.inclination_deg(...)` | Targets orbital plane tilt at the end of the phase. |
 | `use_terminal_burn` | Reports one- and two-impulse local formulations; use it to compare feasible solutions, not to prove global objective ordering. |
 
-Expected output: `traj_composable_terminal_orbital_elements.html`.
+The HTML and 3D PNG overlay the actual one-impulse trajectory as a dashed
+reference alongside the two-impulse solution. The Cartesian seed anchor is not
+used as a target-orbit reference: its orientation is unconstrained and may
+change during optimization.
+
+Expected outputs: `traj_composable_terminal_orbital_elements.html` and
+`traj_composable_terminal_orbital_elements.png`.
 
 Screenshot placeholder: `docs/assets/screenshots/composable-07-orbital-elements.png`.
 
@@ -335,6 +354,11 @@ Expected output:
 
 - `traj_composable_impulse_reference.html`.
 - `traj_composable_chemical_reference.html`.
+- `traj_composable_chemical_reference.png` (XY projection).
+
+The chemical-transfer HTML and PNG overlay the Lambert reference as a dashed
+curve at the same total flight time, allowing both paths to be compared in a
+common frame. Their close overlap is expected for this short-burn case.
 
 Screenshot placeholders:
 
@@ -441,7 +465,9 @@ Important choices:
 The example writes an interactive 3D
 `traj_composable_cwh_relative_rendezvous.html` and a static, planar
 `traj_composable_cwh_relative_rendezvous.png`. Both use explicit relative axes,
-a chief marker at the origin, and the optimized impulse markers.
+a chief marker at the origin, and the optimized impulse markers. A dashed
+analytical rendezvous at the nominal 1800-second duration provides a spatial
+comparison with the free-time optimized transfer.
 
 ## 15: CWH Safety Corridor
 

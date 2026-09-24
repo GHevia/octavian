@@ -221,8 +221,8 @@ def test_cr3bp_plot_can_overlay_references_phases_and_maneuvers() -> None:
 
     assert [trace.name for trace in figure.data] == [
         "Trajectory",
-        "L1 reference",
         "transfer",
+        "L1 reference",
         "M1: departure",
         "Earth",
         "Moon",

@@ -117,6 +117,9 @@ python examples/outputs/02_matplotlib_plots.py
 python -m octavian.config examples/config/01_two_impulse_transfer.json
 ```
 
+Examples read sequentially from configuration to results, with short helper
+functions inlined so each step can be edited in place.
+
 The examples also save Matplotlib PNGs beside their interactive HTML plots.
 Import `save_trajectory_image` (or its relative/CR3BP counterpart) from
 `octavian.viz.matplotlib` and pass the trajectory, just like the HTML helpers.
@@ -124,6 +127,11 @@ Equatorial transfers and planar Lyapunov orbits use equal-scale 2D XY views;
 inclined transfers and relative safety ellipses use 3D views. For examples,
 output filenames, and figure customization, see the
 [static plotting guide](https://ghevia.github.io/octavian/tutorials/output-files/#matplotlib-example-gallery).
+Quick examples 01–04 and composable Earth-centered examples 01, 02, 03, 05,
+06, 08, and 11 overlay reference orbits propagated from their boundary states.
+Use `propagate.inertial(...)` for Cartesian propagation with optional J2,
+third-body gravity, drag, and SRP. Other examples overlay comparison transfers.
+Use the same `reference_trajectories` list with either backend; see the [reference-trajectory guide](https://ghevia.github.io/octavian/tutorials/output-files/#reference-trajectories).
 Install `octavian[viz]` first; set `MPLBACKEND=Agg` when running without a display.
 
 JSON works without another dependency. Install `octavian[yaml]` to load YAML

@@ -16,6 +16,7 @@ from octavian import Mission, Phase, Spacecraft, Thruster, constraints, objectiv
 from octavian.astro import kepler_dense_guess, select_best_lambert_seed
 from octavian.models import Dynamics
 from octavian.solvers import SolverOptions
+from octavian.viz.matplotlib import save_trajectory_image
 from octavian.viz.plotly import save_trajectory_html
 
 MU = 3.986004418e14
@@ -95,38 +96,34 @@ chemical_mission = Mission(
 )
 
 
-def _impulsive_reference(final_time_s: float) -> tuple[float, np.ndarray]:
-    """Compare Lambert branches at the finite-burn mission's total flight time."""
-    seed = select_best_lambert_seed(
-        r0_m=initial_state.r_m,
-        rf_m=target_state.r_m,
-        v0_mps=initial_state.v_mps,
-        vf_mps=target_state.v_mps,
-        mu_m3ps2=MU,
-        tmin_s=final_time_s,
-        tmax_s=final_time_s,
-        nrevs=(0,),
-    )
-    traj = np.asarray(
-        kepler_dense_guess(
-            r0_m=initial_state.r_m,
-            v0_mps=seed.v1_mps,
-            t0_s=0.0,
-            tf_s=seed.tof_s,
-            npts=80,
-            mu_m3ps2=MU,
-        ),
-        dtype=float,
-    )
-    return float(seed.total_dv_mps), traj
-
-
 chemical_solution = chemical_mission.solve()
 
 if not chemical_solution.ok or chemical_solution.result is None:
     raise RuntimeError("The finite-burn transfer must solve before delta-v can be compared.")
 
-impulsive_dv_mps, impulsive_traj = _impulsive_reference(chemical_solution.result.tf_s())
+# Compare Lambert branches at the solved total flight time.
+seed = select_best_lambert_seed(
+    r0_m=initial_state.r_m,
+    rf_m=target_state.r_m,
+    v0_mps=initial_state.v_mps,
+    vf_mps=target_state.v_mps,
+    mu_m3ps2=MU,
+    tmin_s=chemical_solution.result.tf_s(),
+    tmax_s=chemical_solution.result.tf_s(),
+    nrevs=(0,),
+)
+impulsive_traj = np.asarray(
+    kepler_dense_guess(
+        r0_m=initial_state.r_m,
+        v0_mps=seed.v1_mps,
+        t0_s=0.0,
+        tf_s=seed.tof_s,
+        npts=80,
+        mu_m3ps2=MU,
+    ),
+    dtype=float,
+)
+impulsive_dv_mps = float(seed.total_dv_mps)
 chemical_dv_mps = sum(
     float(burn["equivalent_dv_mps"]) for burn in chemical_solution.result.info["chemical_burns"]
 )
@@ -145,6 +142,15 @@ if not np.isfinite(relative_difference) or relative_difference > 0.20:
         "Finite-burn equivalent delta-v differs from the impulsive reference by more than 20%."
     )
 
+# Compare both trajectories in the same view at their shared flight time.
+reference_trajectories = [
+    {
+        "name": "Two-impulse Lambert reference",
+        "traj": impulsive_traj,
+        "color": "#F59E0B",
+    }
+]
+
 impulse_html = "traj_composable_impulse_reference.html"
 chemical_html = "traj_composable_chemical_reference.html"
 save_trajectory_html(
@@ -155,8 +161,18 @@ save_trajectory_html(
 save_trajectory_html(
     chemical_solution.result.traj,
     chemical_html,
+    reference_trajectories=reference_trajectories,
     phase_segments=chemical_solution.result.info.get("phase_segments", []),
     title=chemical_mission.name,
 )
 print(f"Wrote: {impulse_html}")
 print(f"Wrote: {chemical_html}")
+
+save_trajectory_image(
+    chemical_solution.traj,
+    "traj_composable_chemical_reference.png",
+    reference_trajectories=reference_trajectories,
+    phase_segments=chemical_solution.result.info.get("phase_segments"),
+    projection="xy",
+    title="Finite chemical burns and impulsive reference — XY plane",
+)

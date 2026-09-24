@@ -8,6 +8,8 @@ Run:
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 
 from octavian import (
@@ -19,37 +21,16 @@ from octavian import (
     constraints,
     links,
     objectives,
+    propagate,
     variables,
 )
 from octavian.quick import state
+from octavian.viz.matplotlib import save_trajectory_image
 from octavian.viz.plotly import save_trajectory_html
 
 MU = 3.986004418e14
 R_INITIAL_M = 7_000e3
 R_FINAL_M = 12_000e3
-
-
-def snap_maneuvers_to_traj(traj: np.ndarray, maneuvers):
-    """Snap maneuver marker positions to the nearest trajectory sample by time.
-
-    This prevents tiny visual offsets if the maneuver position is not exactly
-    on the returned polyline.
-    """
-    t = np.asarray(traj[:, 6], float)
-    r = np.asarray(traj[:, 0:3], float)
-    out = []
-    for m in maneuvers:
-        mt = float(m.t_s)
-        i = int(np.argmin(np.abs(t - mt)))
-        out.append(
-            type(m)(
-                r_m=r[i].copy(),
-                t_s=mt,
-                dv_mps=np.asarray(m.dv_mps, float).reshape(3),
-                name=m.name,
-            )
-        )
-    return out
 
 
 spacecraft = Spacecraft(name="DemoSat", dry_mass_kg=150.0, thrusters=[Thruster(name="main")])
@@ -107,12 +88,55 @@ print(sol.summary())
 
 traj = sol.result.traj
 
+# Propagate the departure and target states for one nominal orbital period.
+reference_trajectories = []
+for name, orbit_state, color in (
+    ("Departure orbit", x0, "#F59E0B"),
+    ("Target orbit", xf, "#C084FC"),
+):
+    semi_major_axis_m = 1.0 / (
+        2.0 / np.linalg.norm(orbit_state.r_m) - np.dot(orbit_state.v_mps, orbit_state.v_mps) / MU
+    )
+    period_s = 2.0 * np.pi * np.sqrt(semi_major_axis_m**3 / MU)
+    reference_trajectories.append(
+        {
+            "name": name,
+            "traj": propagate.inertial(orbit_state, np.linspace(0.0, period_s, 361)),
+            "color": color,
+        }
+    )
+
 out1 = "traj_plot_maneuvers_raw.html"
-save_trajectory_html(traj, out1, maneuvers=sol.result.maneuvers, title=mission.name + " (raw maneuvers)")
+save_trajectory_html(
+    traj,
+    out1,
+    maneuvers=sol.result.maneuvers,
+    reference_trajectories=reference_trajectories,
+    title=mission.name + " (raw maneuvers)",
+)
 
 out2 = "traj_plot_maneuvers_snapped.html"
-snapped = snap_maneuvers_to_traj(traj, list(sol.result.maneuvers))
-save_trajectory_html(traj, out2, maneuvers=snapped, title=mission.name + " (snapped maneuvers)")
+# Align each marker with the nearest sampled trajectory position.
+snapped = []
+for maneuver in sol.result.maneuvers:
+    index = int(np.argmin(np.abs(traj[:, 6] - maneuver.t_s)))
+    snapped.append(replace(maneuver, r_m=traj[index, :3].copy()))
+save_trajectory_html(
+    traj,
+    out2,
+    maneuvers=snapped,
+    reference_trajectories=reference_trajectories,
+    title=mission.name + " (snapped maneuvers)",
+)
 
 print(f"Wrote: {out1}")
 print(f"Wrote: {out2}")
+
+save_trajectory_image(
+    sol.traj,
+    out1.replace(".html", ".png"),
+    maneuvers=sol.result.maneuvers,
+    reference_trajectories=reference_trajectories,
+    projection="xy",
+    title="Departure and target reference orbits — XY plane",
+)

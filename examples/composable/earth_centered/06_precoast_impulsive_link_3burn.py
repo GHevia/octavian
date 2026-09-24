@@ -23,9 +23,11 @@ from octavian import (
     constraints,
     links,
     objectives,
+    propagate,
     variables,
 )
 from octavian.quick import state
+from octavian.viz.matplotlib import save_trajectory_image
 from octavian.viz.plotly import save_trajectory_html
 
 MU = 3.986004418e14
@@ -109,6 +111,39 @@ mission = Mission(
 sol = mission.solve()
 print(sol.summary())
 
+# Propagate the departure and target states for one nominal orbital period.
+reference_trajectories = []
+for name, orbit_state, color in (
+    ("Departure orbit", x0, "#F59E0B"),
+    ("Target orbit", xf, "#C084FC"),
+):
+    semi_major_axis_m = 1.0 / (
+        2.0 / np.linalg.norm(orbit_state.r_m) - np.dot(orbit_state.v_mps, orbit_state.v_mps) / MU
+    )
+    period_s = 2.0 * np.pi * np.sqrt(semi_major_axis_m**3 / MU)
+    reference_trajectories.append(
+        {
+            "name": name,
+            "traj": propagate.inertial(orbit_state, np.linspace(0.0, period_s, 361)),
+            "color": color,
+        }
+    )
+
 out_html = "traj_composable_precoast_impulsive_link_3burn.html"
-save_trajectory_html(sol.result.traj, out_html, maneuvers=sol.result.maneuvers, title=mission.name)
+save_trajectory_html(
+    sol.result.traj,
+    out_html,
+    maneuvers=sol.result.maneuvers,
+    reference_trajectories=reference_trajectories,
+    title=mission.name,
+)
 print(f"Wrote: {out_html}")
+
+save_trajectory_image(
+    sol.traj,
+    out_html.replace(".html", ".png"),
+    maneuvers=sol.result.maneuvers,
+    reference_trajectories=reference_trajectories,
+    projection="xy",
+    title="Departure and target reference orbits — XY plane",
+)

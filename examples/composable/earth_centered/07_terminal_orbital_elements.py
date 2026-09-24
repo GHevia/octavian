@@ -35,33 +35,39 @@ from octavian.viz.plotly import save_trajectory_html
 MU = 3.986004418e14
 
 
-def _build_mission(*, use_terminal_burn: bool) -> Mission:
-    spacecraft = Spacecraft(
-        name="DemoSat",
-        dry_mass_kg=150.0,
-        thrusters=[Thruster(name="main")],
-    )
-    dynamics = Dynamics(mu_m3ps2=MU)
+spacecraft = Spacecraft(
+    name="DemoSat",
+    dry_mass_kg=150.0,
+    thrusters=[Thruster(name="main")],
+)
+dynamics = Dynamics(mu_m3ps2=MU)
 
-    initial_state = state(
-        r_m=[7000e3, 0.0, 0.0],
-        v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 250.0],
-    )
+initial_state = state(
+    r_m=[7000e3, 0.0, 0.0],
+    v_mps=[0.0, float(np.sqrt(MU / 7000e3)), 250.0],
+)
 
-    target_a_m = 8_400e3
-    target_e = 0.18
-    target_inc_deg = 28.5
-    guess_r_m, guess_v_mps = classical_to_cartesian(
-        a_m=target_a_m,
-        e=target_e,
-        inc_deg=target_inc_deg,
-        raan_deg=35.0,
-        argp_deg=20.0,
-        true_anomaly_deg=70.0,
-        mu_m3ps2=MU,
-    )
-    terminal_guess = state(r_m=guess_r_m, v_mps=guess_v_mps)
+target_a_m = 8_400e3
+target_e = 0.18
+target_inc_deg = 28.5
+guess_r_m, guess_v_mps = classical_to_cartesian(
+    a_m=target_a_m,
+    e=target_e,
+    inc_deg=target_inc_deg,
+    raan_deg=35.0,
+    argp_deg=20.0,
+    true_anomaly_deg=70.0,
+    mu_m3ps2=MU,
+)
+terminal_guess = state(r_m=guess_r_m, v_mps=guess_v_mps)
 
+print("Initial Cartesian state:")
+print(f"  r_m   = {initial_state.r_m}")
+print(f"  v_mps = {initial_state.v_mps}")
+
+missions = []
+solutions = []
+for use_terminal_burn in (False, True):
     phase_variables = [variables.ImpulsiveDeltaV(where="Front")]
     if use_terminal_burn:
         phase_variables.append(variables.ImpulsiveDeltaV(where="Back"))
@@ -84,17 +90,19 @@ def _build_mission(*, use_terminal_burn: bool) -> Mission:
     )
 
     burn_label = "two-impulse" if use_terminal_burn else "one-impulse"
-    return Mission(
+    mission = Mission(
         name=f"Composable: terminal orbital elements ({burn_label})",
         phases=[transfer],
         objectives=[objectives.minimize_total_delta_v()],
     )
-
-
-def _print_constraint_report(mission_label: str, solution) -> None:  # type: ignore[no-untyped-def]
-    print(mission_label)
+    solution = mission.solve()
+    missions.append(mission)
+    solutions.append(solution)
+    print(mission.name)
     print(solution.summary())
-    report_rows = solution.result.info.get("constraint_report", []) if solution.result is not None else []
+    report_rows = (
+        solution.result.info.get("constraint_report", []) if solution.result is not None else []
+    )
     if report_rows:
         print("  orbital-element constraints:")
         for row in report_rows:
@@ -109,23 +117,8 @@ def _print_constraint_report(mission_label: str, solution) -> None:  # type: ign
     print()
 
 
-one_impulse = _build_mission(use_terminal_burn=False)
-two_impulse = _build_mission(use_terminal_burn=True)
-
-
-
-initial_state = one_impulse.phases[0].initial_state
-if initial_state is not None:
-    print("Initial Cartesian state:")
-    print(f"  r_m   = {np.asarray(initial_state.r_m, dtype=float)}")
-    print(f"  v_mps = {np.asarray(initial_state.v_mps, dtype=float)}")
-    print()
-
-one_impulse_solution = one_impulse.solve()
-two_impulse_solution = two_impulse.solve()
-
-_print_constraint_report("One-impulse transfer", one_impulse_solution)
-_print_constraint_report("Two-impulse transfer", two_impulse_solution)
+one_impulse, two_impulse = missions
+one_impulse_solution, two_impulse_solution = solutions
 
 if one_impulse_solution.result is not None and two_impulse_solution.result is not None:
     one_impulse_dv = one_impulse_solution.result.total_dv_mps()
@@ -137,11 +130,22 @@ if one_impulse_solution.result is not None and two_impulse_solution.result is no
     )
     print("  Note: independent local solves may converge to different minima.")
 
+# Compare the actual local solutions; the Cartesian target guess is not a
+# reference orbit because its unconstrained orientation may differ at convergence.
+reference_trajectories = [
+    {
+        "name": "One-impulse transfer",
+        "traj": one_impulse_solution.traj,
+        "color": "#F59E0B",
+    }
+]
+
 out_html = "traj_composable_terminal_orbital_elements.html"
 save_trajectory_html(
     two_impulse_solution.result.traj,
     out_html,
     maneuvers=two_impulse_solution.result.maneuvers,
+    reference_trajectories=reference_trajectories,
     title=two_impulse.name,
 )
 print(f"Wrote: {out_html}")
@@ -151,8 +155,9 @@ save_trajectory_image(
     two_impulse_solution.traj,
     "traj_composable_terminal_orbital_elements.png",
     maneuvers=two_impulse_solution.result.maneuvers,
+    reference_trajectories=reference_trajectories,
     phase_segments=two_impulse_solution.result.info.get("phase_segments"),
     projection="3d",
-    title="Inclined orbital-element transfer",
+    title="Inclined transfer: two-impulse solution and one-impulse reference",
 )
 print("Wrote: traj_composable_terminal_orbital_elements.png")

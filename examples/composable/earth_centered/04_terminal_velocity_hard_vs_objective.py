@@ -32,12 +32,6 @@ from octavian.viz.plotly import save_trajectory_html
 MU = 3.986004418e14
 
 
-def rotz(theta_rad: float) -> np.ndarray:
-    c = float(np.cos(theta_rad))
-    s = float(np.sin(theta_rad))
-    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], dtype=float)
-
-
 spacecraft = Spacecraft(name="DemoSat", dry_mass_kg=150.0, thrusters=[Thruster(name="main")])
 dynamics = Dynamics(mu_m3ps2=MU)
 
@@ -46,7 +40,8 @@ v0 = np.array([0.0, float(np.sqrt(MU / 7000e3)), 0.0])
 x0 = state(r_m=r0, v_mps=v0)
 
 theta = np.deg2rad(35.0)
-R = rotz(theta)
+c, s = np.cos(theta), np.sin(theta)
+R = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
 rf = R @ r0
 vf = R @ v0
 xf = state(r_m=rf, v_mps=vf)
@@ -59,7 +54,7 @@ tof_guess = float(theta / n)
 tof_bounds = (0.5 * tof_guess, 1.5 * tof_guess)
 
 
-def solve_case(tag: str, terminal_is_objective: bool) -> None:
+for tag, terminal_is_objective in (("hard", False), ("objective", True)):
     vars_ = [variables.ImpulsiveDeltaV(where="Back")] if terminal_is_objective else []
 
     phase = Phase(
@@ -91,9 +86,7 @@ def solve_case(tag: str, terminal_is_objective: bool) -> None:
     print(f"terminal velocity error vs desired: {verr:.6e} m/s")
 
     out_html = f"traj_composable_terminal_velocity_{tag}.html"
-    save_trajectory_html(sol.result.traj, out_html, maneuvers=sol.result.maneuvers, title=mission.name)
+    save_trajectory_html(
+        sol.result.traj, out_html, maneuvers=sol.result.maneuvers, title=mission.name
+    )
     print(f"Wrote: {out_html}")
-
-
-solve_case("hard", terminal_is_objective=False)
-solve_case("objective", terminal_is_objective=True)

@@ -156,9 +156,11 @@ For analysis propagation, start with the consolidated namespace:
 from octavian import propagate
 ```
 
-It exposes `two_body`, `cwh`, `nonlinear_ric`, `relative`,
+It exposes `inertial`, `two_body`, `cwh`, `nonlinear_ric`, `relative`,
 `relative_elements`, and `cr3bp` without hiding the selected dynamics model.
-State-history arrays use `[state, time]` columns. Coupled relative and
+`inertial` integrates Cartesian states directly with optional perturbations,
+including circular and equatorial orbits. `two_body` provides the analytical
+elliptic helper. State-history arrays use `[state, time]` columns. Coupled relative and
 relative-element calls return result objects so their absolute, RIC, and native
 representations remain available together.
 

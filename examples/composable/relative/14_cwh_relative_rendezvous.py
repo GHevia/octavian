@@ -17,6 +17,7 @@ from octavian import (
     Spacecraft,
     constraints,
     objectives,
+    propagate,
     state,
     variables,
 )
@@ -93,10 +94,22 @@ print(f"Dynamics model: {solution.result.info['dynamics_model']}")
 print(f"Analytical CWH departure velocity: {analytic_departure_velocity} m/s")
 print(f"Analytical CWH terminal position error: {np.linalg.norm(analytic_arrival[0:3]):.3e} m")
 
+# Hold the analytical rendezvous at 1800 s to compare with the optimized time.
+reference_trajectories = [{
+    "name": "Nominal 1800 s rendezvous",
+    "traj": propagate.cwh(
+        np.hstack([initial_relative_state.r_m, analytic_departure_velocity]),
+        np.linspace(0.0, nominal_time_s, 241),
+        mean_motion_radps=dynamics.model.mean_motion_radps,
+    ),
+    "color": "#F59E0B",
+}]
+
 save_relative_trajectory_html(
     solution.traj,
     "traj_composable_cwh_relative_rendezvous.html",
     maneuvers=solution.result.maneuvers,
+    reference_trajectories=reference_trajectories,
     phase_segments=solution.result.info["phase_segments"],
     title="CWH rendezvous in the chief RIC frame",
 )
@@ -108,6 +121,7 @@ save_relative_trajectory_image(
     solution.traj,
     "traj_composable_cwh_relative_rendezvous.png",
     maneuvers=solution.result.maneuvers,
+    reference_trajectories=reference_trajectories,
     phase_segments=solution.result.info.get("phase_segments"),
     projection="xy",
     title="CWH rendezvous — radial/in-track plane",

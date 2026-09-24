@@ -89,6 +89,56 @@ Frame-specific functions follow the Plotly naming pattern:
 the Hohmann transfer, CWH rendezvous, canonical L1 orbit, and L1 orbit-family
 composable examples.
 
+### Reference Trajectories
+
+The standalone ECI, RIC, and CR3BP trajectory visualizers accept `reference_trajectories`.
+Pass a list of dictionaries with `traj` and optional `name` and `color` keys.
+Each history needs at least three position columns; full `[r, v, t]` histories
+also work. References use dashed lines and participate in automatic axis limits.
+
+```python
+import numpy as np
+from octavian import EARTH, propagate
+from octavian.viz.matplotlib import save_trajectory_image
+from octavian.viz.plotly import save_trajectory_html
+
+# initial_state is the departure state before the transfer burn.
+mu = EARTH.mu_m3ps2
+semi_major_axis_m = 1.0 / (
+    2.0 / np.linalg.norm(initial_state.r_m)
+    - np.dot(initial_state.v_mps, initial_state.v_mps) / mu
+)
+period_s = 2.0 * np.pi * np.sqrt(semi_major_axis_m**3 / mu)
+references = [{
+    "name": "Departure orbit",
+    "traj": propagate.inertial(initial_state, np.linspace(0.0, period_s, 361)),
+    "color": "#F59E0B",
+}]
+save_trajectory_image(
+    solution.traj, "transfer.png", reference_trajectories=references, projection="xy",
+)
+save_trajectory_html(solution.traj, "transfer.html", reference_trajectories=references)
+```
+
+Supply reference positions in the **same frame and input units** as the primary
+trajectory: ECI or RIC meters, or synodic meters/DU according to the CR3BP
+`dimensional` flag. The visualizers apply their normal display-unit conversion.
+They draw spatial curves without aligning reference timestamps or transforming
+frames. These overlays do not change the mission, seed, objective, or constraints.
+
+Quick examples 01–04 and composable examples 01, 02, 03, 05, 06, 08, and 11
+propagate full departure/target reference histories. Example 08 includes J2;
+the nominal two-body period sets its plotting span without imposing closure.
+Pass `perturbations=Perturbations(j2=True)` to `propagate.inertial` for the
+same workflow, or see the [propagation guide](propagation.md) for other forces.
+
+Other composable comparisons include
+a one-impulse solution for comparison with an inclined two-impulse transfer (07),
+a Lambert reference for the finite chemical burns (09),
+a nominal 1800-second analytical CWH rendezvous (14), and full L1/L2 Lyapunov
+orbits (29). Where an example writes both HTML and PNG, it supplies the same
+reference histories to both renderers.
+
 ### Matplotlib Example Gallery
 
 These mission scripts save a PNG in addition to their existing interactive
@@ -99,7 +149,10 @@ without a display. Saving an image closes its figure and does not open a GUI.
 | Example | Static trajectory output | View and purpose |
 | --- | --- | --- |
 | `examples/quick/01_two_impulse_free_time.py` | `traj_quick_hohmann_transfer.png` | ECI XY: equatorial Hohmann transfer with departure/arrival burns. |
-| `examples/composable/earth_centered/07_terminal_orbital_elements.py` | `traj_composable_terminal_orbital_elements.png` | 3D ECI: transfer to an inclined target orbit. |
+| `examples/composable/earth_centered/01_single_phase_terminal_dv_objective.py` | `traj_composable_hohmann_terminal_dv_objective.png` | ECI XY: Hohmann transfer between full circular reference orbits. |
+| `examples/composable/earth_centered/09_impulse_vs_chemical_burn.py` | `traj_composable_chemical_reference.png` | ECI XY: finite chemical burns and the corresponding impulsive Lambert transfer. |
+| `examples/composable/relative/14_cwh_relative_rendezvous.py` | `traj_composable_cwh_relative_rendezvous.png` | RIC XY: optimized rendezvous and a fixed-time analytical reference. |
+| `examples/composable/earth_centered/07_terminal_orbital_elements.py` | `traj_composable_terminal_orbital_elements.png` | 3D ECI: inclined two-impulse transfer with the one-impulse solution as a reference. |
 | `examples/composable/relative/21_safety_ellipse_transfer.py` | `traj_safety_ellipse_transfer.png` | 3D RIC: cross-track separation, surrounding coasts, phase colors, and burns. |
 | `examples/composable/cislunar/29_periodic_orbit_transfer.py` | `traj_L1_to_L2_periodic_orbits.png` | Synodic XY in km: planar transfer with both reference Lyapunov orbits and burns. |
 | `examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py` | `traj_jacobi_targeted_L1_periodic_orbit.png` | Synodic XY in DU: the Jacobi-selected planar Lyapunov orbit. |
