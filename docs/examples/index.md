@@ -96,3 +96,11 @@ The focused [Quick API](quick.md) and [Composable API](composable.md) pages
 explain the declarations used by each family. The
 [API Reference](../api.md) is the definitive inventory of public call
 signatures and docstrings.
+
+## Spherical-harmonic propagation
+
+`examples/analysis/02_spherical_harmonics.py` propagates a rotating synthetic
+gravity field through ASSET and checks it against numerical RK4 propagation.
+Run with `--backend python` or `--backend cpp --degree 20`.
+See the [gravity tutorial](../tutorials/spherical-harmonics.md) for coefficient
+conventions and the native build.

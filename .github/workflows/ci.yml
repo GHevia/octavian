@@ -74,3 +74,32 @@ jobs:
       - name: Docs
         run: |
           ./.venv/bin/python -m mkdocs build --strict
+
+  linux-native-harmonics:
+    name: Native spherical harmonics (Linux, pip ASSET)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          auto-update-conda: false
+          channels: conda-forge
+          channel-priority: strict
+      - name: Create the supported environment and native toolchain
+        shell: bash -el {0}
+        run: |
+          conda env create --file environment.yml
+          conda install -y -n octavian-dev -c conda-forge clangxx=18 gcc_impl_linux-64=13 gxx_impl_linux-64=13 cmake ninja
+          conda run -n octavian-dev python -m pip install --no-user -e ".[dev]" scikit-build-core
+      - name: Fetch pinned ASSET headers without building ASSET
+        run: |
+          git clone --branch v0.5.1 --depth 1 https://github.com/AlabamaASRL/asset_asrl.git "$RUNNER_TEMP/asset-headers"
+          git -C "$RUNNER_TEMP/asset-headers" submodule update --init --depth 1 dep/eigen dep/pybind11 dep/fmt
+      - name: Build and validate the optional native wheel
+        shell: bash -el {0}
+        run: |
+          ASSET_SOURCE_DIR="$RUNNER_TEMP/asset-headers" conda run -n octavian-dev env CXX=clang++ python -m pip install --no-user --no-build-isolation ./native/spherical_harmonics
+          conda run -n octavian-dev python -c 'import octavian_harmonics_native'
+          conda run -n octavian-dev python -m pytest tests/test_spherical_harmonics.py -q
+          conda run -n octavian-dev python examples/analysis/02_spherical_harmonics.py --backend cpp --degree 20

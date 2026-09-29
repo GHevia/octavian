@@ -34,6 +34,8 @@ The API reference is generated from source docstrings with `mkdocstrings`.
 
 ::: octavian.models
 
+::: octavian.gravity
+
 ::: octavian.bodies.catalog
 
 ::: octavian.spacecraft

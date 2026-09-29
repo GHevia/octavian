@@ -30,6 +30,7 @@ from .forces import (
     cannonball_drag_acceleration,
     cannonball_srp_acceleration,
 )
+from .gravity import SphericalHarmonics
 
 SUN_MU_M3PS2 = SUN.mu_m3ps2
 MOON_MU_M3PS2 = MOON.mu_m3ps2
@@ -166,6 +167,7 @@ def gravity_acceleration_components(
     time_s: float = 0.0,
     mu_m3ps2: float,
     include_j2: bool = False,
+    spherical_harmonics: SphericalHarmonics | None = None,
     central_body_radius_m: float = 6_378_136.3,
     j2_coefficient: float = 1.08262668e-3,
     third_body_tables: Sequence[ThirdBodyTable] = (),
@@ -182,6 +184,8 @@ def gravity_acceleration_components(
     if radius <= 0.0:
         raise ValueError("position_m must have non-zero norm")
     acceleration = -float(mu_m3ps2) * position / radius**3
+    if include_j2 and spherical_harmonics is not None:
+        raise ValueError("Choose spherical_harmonics or J2, not both")
     if include_j2:
         acceleration = acceleration + np.asarray(
             j2_acceleration_components(
@@ -192,6 +196,8 @@ def gravity_acceleration_components(
             ),
             dtype=float,
         )
+    if spherical_harmonics is not None:
+        acceleration += spherical_harmonics.acceleration(position, mu_m3ps2=mu_m3ps2, time_s=time_s)
     for body in third_body_tables:
         acceleration = acceleration + np.asarray(
             third_body_acceleration_components(
@@ -212,6 +218,7 @@ def translational_acceleration_components(
     mass_kg: float,
     mu_m3ps2: float,
     include_j2: bool = False,
+    spherical_harmonics: SphericalHarmonics | None = None,
     central_body_radius_m: float = 6_378_136.3,
     j2_coefficient: float = 1.08262668e-3,
     third_body_tables: Sequence[ThirdBodyTable] = (),
@@ -235,6 +242,7 @@ def translational_acceleration_components(
         mass_kg: Instantaneous spacecraft mass.
         mu_m3ps2: Central-body gravitational parameter.
         include_j2: Include central-body J2.
+        spherical_harmonics: Optional normalized gravity field, mutually exclusive with J2.
         central_body_radius_m: Central-body radius.
         j2_coefficient: Central-body J2 coefficient.
         third_body_tables: Gravity ephemeris tables.
@@ -255,6 +263,7 @@ def translational_acceleration_components(
         time_s=time_s,
         mu_m3ps2=mu_m3ps2,
         include_j2=include_j2,
+        spherical_harmonics=spherical_harmonics,
         central_body_radius_m=central_body_radius_m,
         j2_coefficient=j2_coefficient,
         third_body_tables=third_body_tables,
@@ -303,6 +312,7 @@ def _gravity_acceleration(
     *,
     mu_m3ps2: float,
     include_j2: bool = False,
+    spherical_harmonics: SphericalHarmonics | None = None,
     central_body_radius_m: float = 6_378_136.3,
     j2_coefficient: float = 1.08262668e-3,
     time_var=None,
@@ -315,12 +325,18 @@ def _gravity_acceleration(
     mission-relative phase time.
     """
     acceleration = _point_mass_acceleration(position_vec, mu_m3ps2)
+    if include_j2 and spherical_harmonics is not None:
+        raise ValueError("Choose spherical_harmonics or J2, not both")
     if include_j2:
         acceleration = acceleration + _j2_acceleration(
             position_vec,
             mu_m3ps2=mu_m3ps2,
             radius_m=central_body_radius_m,
             j2=j2_coefficient,
+        )
+    if spherical_harmonics is not None:
+        acceleration = acceleration + spherical_harmonics.asset_acceleration(
+            position_vec, time_var, mu_m3ps2=mu_m3ps2
         )
     if third_body_tables:
         if time_var is None:
@@ -392,6 +408,7 @@ def _translational_acceleration(
     *,
     mu_m3ps2: float,
     include_j2: bool = False,
+    spherical_harmonics: SphericalHarmonics | None = None,
     central_body_radius_m: float = 6_378_136.3,
     j2_coefficient: float = 1.08262668e-3,
     time_var=None,
@@ -408,6 +425,7 @@ def _translational_acceleration(
         position_vec,
         mu_m3ps2=mu_m3ps2,
         include_j2=include_j2,
+        spherical_harmonics=spherical_harmonics,
         central_body_radius_m=central_body_radius_m,
         j2_coefficient=j2_coefficient,
         time_var=time_var,
@@ -466,7 +484,7 @@ class PerturbedECI(oc.ODEBase if oc is not None else object):
     """Point-mass gravity with optional perturbation accelerations.
 
     Currently implemented perturbations:
-        - J2 zonal harmonic
+        - J2 zonal harmonic or a fully normalized spherical-harmonic field
         - Sun and Moon third-body point-mass gravity through interpolation tables
         - Exponential-atmosphere cannonball drag
         - Cannonball solar radiation pressure
@@ -481,6 +499,7 @@ class PerturbedECI(oc.ODEBase if oc is not None else object):
         *,
         mu_m3ps2: float,
         j2: bool = False,
+        spherical_harmonics: SphericalHarmonics | None = None,
         central_body_radius_m: float = 6_378_136.3,
         j2_coefficient: float = 1.08262668e-3,
         third_body_tables: Sequence[ThirdBodyTable] = (),
@@ -505,6 +524,7 @@ class PerturbedECI(oc.ODEBase if oc is not None else object):
             float(spacecraft_mass_kg),
             mu_m3ps2=self.mu,
             include_j2=bool(j2),
+            spherical_harmonics=spherical_harmonics,
             central_body_radius_m=float(central_body_radius_m),
             j2_coefficient=float(j2_coefficient),
             time_var=XtU.TVar(),
@@ -543,6 +563,7 @@ class MassCoastECI(oc.ODEBase if oc is not None else object):
         *,
         mu_m3ps2: float,
         j2: bool = False,
+        spherical_harmonics: SphericalHarmonics | None = None,
         central_body_radius_m: float = 6_378_136.3,
         j2_coefficient: float = 1.08262668e-3,
         third_body_tables: Sequence[ThirdBodyTable] = (),
@@ -580,6 +601,7 @@ class MassCoastECI(oc.ODEBase if oc is not None else object):
             M,
             mu_m3ps2=self.mu,
             include_j2=bool(j2),
+            spherical_harmonics=spherical_harmonics,
             central_body_radius_m=float(central_body_radius_m),
             j2_coefficient=float(j2_coefficient),
             time_var=XtU.TVar(),
@@ -630,6 +652,7 @@ class FiniteThrustECI(oc.ODEBase if oc is not None else object):
         thrust_N: float,
         isp_s: float,
         j2: bool = False,
+        spherical_harmonics: SphericalHarmonics | None = None,
         central_body_radius_m: float = 6_378_136.3,
         j2_coefficient: float = 1.08262668e-3,
         third_body_tables: Sequence[ThirdBodyTable] = (),
@@ -675,6 +698,7 @@ class FiniteThrustECI(oc.ODEBase if oc is not None else object):
             M,
             mu_m3ps2=self.mu,
             include_j2=bool(j2),
+            spherical_harmonics=spherical_harmonics,
             central_body_radius_m=float(central_body_radius_m),
             j2_coefficient=float(j2_coefficient),
             time_var=XtU.TVar(),

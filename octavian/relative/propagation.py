@@ -205,6 +205,7 @@ def propagate_relative_numerical(
         central_body=central_body,
         flags=flags,
         sampled_bodies=body_positions(0.0),
+        time_s=0.0,
         spacecraft=chief_spacecraft,
         atmosphere=atmosphere,
     )
@@ -240,6 +241,7 @@ def propagate_relative_numerical(
             central_body=central_body,
             flags=flags,
             sampled_bodies=sampled_bodies,
+            time_s=time_s,
             spacecraft=chief_spacecraft,
             atmosphere=atmosphere,
         )
@@ -249,6 +251,7 @@ def propagate_relative_numerical(
             central_body=central_body,
             flags=flags,
             sampled_bodies=sampled_bodies,
+            time_s=time_s,
             spacecraft=deputy_spacecraft,
             atmosphere=atmosphere,
         )
@@ -293,6 +296,7 @@ def propagate_relative_numerical(
             central_body=central_body,
             flags=flags,
             sampled_bodies=body_positions(float(time_s)),
+            time_s=float(time_s),
             spacecraft=chief_spacecraft,
             atmosphere=atmosphere,
         )
@@ -475,6 +479,7 @@ def _normalize_perturbations(perturbations: Any | None) -> dict[str, Any]:
     if perturbations is None:
         return {
             "j2": False,
+            "spherical_harmonics": None,
             "drag": False,
             "srp": False,
             "third_bodies": (),
@@ -498,6 +503,7 @@ def _normalize_perturbations(perturbations: Any | None) -> dict[str, Any]:
         )
     return {
         "j2": bool(getattr(perturbations, "j2", False)),
+        "spherical_harmonics": getattr(perturbations, "spherical_harmonics", None),
         "drag": bool(getattr(perturbations, "drag", False)),
         "srp": bool(getattr(perturbations, "srp", False)),
         "third_bodies": bodies,
@@ -551,6 +557,7 @@ def _absolute_acceleration(
     central_body: CelestialBody,
     flags: dict[str, Any],
     sampled_bodies: dict[str, NDArray[np.float64]],
+    time_s: float,
     spacecraft: Spacecraft | None,
     atmosphere: ExponentialAtmosphere | None,
 ) -> NDArray[np.float64]:
@@ -567,6 +574,10 @@ def _absolute_acceleration(
                 j2=central_body.j2_coefficient,
             ),
             dtype=float,
+        )
+    if flags["spherical_harmonics"] is not None:
+        acceleration += flags["spherical_harmonics"].acceleration(
+            position_m, mu_m3ps2=central_body.mu_m3ps2, time_s=time_s
         )
     third_body_catalog = {"moon": MOON, "sun": SUN}
     for name in flags["third_bodies"]:

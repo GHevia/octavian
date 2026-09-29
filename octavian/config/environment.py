@@ -6,6 +6,7 @@ from typing import Any
 
 from ..coordinates import CoordinateFrame, SolverScaling
 from ..forces import ExponentialAtmosphere
+from ..gravity import SphericalHarmonics
 from ..models import Dynamics, Perturbations
 from ..phase import state
 from .errors import MissionConfigError
@@ -179,6 +180,7 @@ def build_perturbations(value: Any, path: str) -> Perturbations:
     config = mapping(value, path)
     allowed = {
         "j2",
+        "spherical_harmonics",
         "moon",
         "sun",
         "srp",
@@ -198,6 +200,11 @@ def build_perturbations(value: Any, path: str) -> Perturbations:
     )
     return Perturbations(
         j2=boolean(config.get("j2", False), f"{path}.j2"),
+        spherical_harmonics=(
+            _build_spherical_harmonics(config["spherical_harmonics"], f"{path}.spherical_harmonics")
+            if config.get("spherical_harmonics") is not None
+            else None
+        ),
         moon=boolean(config.get("moon", False), f"{path}.moon"),
         sun=boolean(config.get("sun", False), f"{path}.sun"),
         srp=boolean(config.get("srp", False), f"{path}.srp"),
@@ -248,3 +255,23 @@ def build_scaling(value: Any, path: str) -> SolverScaling:
         time_s=float(required(config, "time_s", path)),
         mass_kg=float(config.get("mass_kg", 1.0)),
     )
+
+
+def _build_spherical_harmonics(value: Any, path: str) -> SphericalHarmonics:
+    config = mapping(value, path)
+    reject_unknown(
+        config,
+        {
+            "cosine",
+            "sine",
+            "reference_radius_m",
+            "degree",
+            "order",
+            "rotation_rate_radps",
+            "reference_angle_rad",
+            "reference_time_s",
+            "backend",
+        },
+        path,
+    )
+    return SphericalHarmonics(**config)
