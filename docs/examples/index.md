@@ -99,8 +99,12 @@ signatures and docstrings.
 
 ## Spherical-harmonic propagation
 
-`examples/analysis/02_spherical_harmonics.py` propagates a rotating synthetic
+`examples/analysis/02_spherical_harmonics.py` plots point-mass, J2, and rotating synthetic
 gravity field through ASSET and checks it against numerical RK4 propagation.
 Run with `--backend python` or `--backend cpp --degree 20`.
 See the [gravity tutorial](../tutorials/spherical-harmonics.md) for coefficient
 conventions and the native build.
+
+The spherical-harmonics example saves a PNG and CSV showing the accumulated
+position difference beyond J2 over two orbits. Use `--backend python` or
+`--backend cpp --degree 20`; `--output gravity.png` selects the output path.

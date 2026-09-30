@@ -27,7 +27,7 @@ gravity = SphericalHarmonics(
     rotation_rate_radps=7.292115e-5,
     reference_angle_rad=0.0,
     reference_time_s=0.0,
-    backend="python",  # or "cpp" after installing the optional extension
+    backend="python",  # or "cpp" to select the bundled compiled backend
 )
 dynamics = Dynamics(perturbations=Perturbations(spherical_harmonics=gravity))
 ```
@@ -42,9 +42,21 @@ acceleration_mps2 = gravity.acceleration(
 )
 ```
 
-Run `examples/analysis/02_spherical_harmonics.py --backend python` for a complete
-ASSET propagation example. After building the extension, use
-`--backend cpp --degree 20` to exercise a larger field.
+Run the same propagation with either backend:
+
+```bash
+python examples/analysis/02_spherical_harmonics.py --backend python --output python-gravity.png
+python examples/analysis/02_spherical_harmonics.py --backend cpp --degree 20 --output cpp-gravity.png
+```
+
+Install `octavian[viz]` for plotting. Each run propagates point-mass, J2, and
+spherical-harmonic gravity from an identical initial state for two orbits. The
+PNG shows the orbit paths, departure from point-mass gravity, and the additional
+position change beyond J2. The adjacent CSV contains that additional change in
+meters. The example also checks ASSET propagation against numerical RK4 over
+600 seconds. Higher-order coefficients are synthetic, not a calibrated Earth
+model. The default 4×4 case produces about 108 m of additional displacement
+beyond J2; use the same degree to compare the two backends.
 
 ## Coefficients, units, and orientation
 
@@ -116,10 +128,33 @@ Use the Python backend for small fields and transparent inspection; use C++ for
 higher degree/order fields. Selecting `cpp` without an installed extension raises
 an actionable error and never silently switches backends.
 
-## Build the optional extension
+## Pip installation and backend selection
 
-The main `octavian` wheel stays pure Python. The separate local package
-`native/spherical_harmonics` builds `octavian-harmonics-native`. It uses upstream
+The release build bundles the compiled backend into Octavian wheels for:
+
+| Platform | Python | Native requirements |
+| --- | --- | --- |
+| Linux x86-64 | 3.10, 3.11, 3.12 | glibc 2.34 or newer, AVX2/FMA |
+| Windows x64 | 3.10, 3.11, 3.12 | AVX2, ASSET's MSVC runtime |
+
+On those platforms, `pip install octavian` installs the binary alongside the
+Python implementation: no compiler, headers, or ASSET source build is required.
+Use `backend="python"` (the default) for readable ASSET expressions, or explicitly
+select `backend="cpp"` for compiled evaluation. Installing the binary does not
+change the selected backend. These wheels are delivered when this change is
+released; a checkout alone does not install them.
+
+A pure Python wheel and source distribution remain available. Those installations
+support the Python backend wherever pip-installed ASSET is supported. They do
+not compile native code automatically. A missing or incompatible native binary
+raises an error when `cpp` is selected.
+
+## Build the optional standalone extension
+
+Developers can still install the separate local package
+`native/spherical_harmonics`, which builds `octavian-harmonics-native`. The loader
+prefers the bundled extension when present and otherwise uses this standalone
+package. Both use upstream
 ASSET headers and the **existing pip-installed `asset_asrl==0.5.1`** at runtime.
 It does not build ASSET, modify the wheel, or require a fork. Headers and their
 pinned Eigen, pybind11, and fmt submodules are needed only at build time.
@@ -145,9 +180,16 @@ submodules, Clang/libstdc++ ABI, Python minor version, and AVX2/Eigen alignment.
 The extension checks for the registered ASSET function type on import and rejects
 an incompatible pybind11 ABI. Rebuild and revalidate after changing ASSET versions.
 The current native build targets the ASSET x86-64 AVX2 wheel configuration.
-Windows uses Clang-CL and the matching MSVC runtime; Linux validation does not
-establish Windows binary compatibility. No prebuilt native wheels are published
-by this change.
+Windows uses Clang-CL with MSVC compatibility version 19.40 (matching ASSET's
+published pybind11 ABI) and the matching MSVC runtime. The wheel workflow builds
+and tests all six platform/Python combinations against pip-installed ASSET,
+including derivatives, optimization, and the 20×20 propagation example. Publishing
+waits for every wheel test to pass.
+
+Maintainers can build a bundled wheel with `OCTAVIAN_BUILD_NATIVE=1 python -m build
+--wheel`, with `ASSET_SOURCE_DIR`, Clang, CMake, and Ninja configured as above.
+The build hook is opt-in; regular editable/source installations remain compiler
+free. Linux release wheels are repaired with auditwheel before installation tests.
 
 The Python backend needs no compiler or header checkout. CWH, CR3BP, and relative
 formulations other than coupled ECI reject harmonic perturbations, consistently

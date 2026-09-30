@@ -96,10 +96,18 @@ class SphericalHarmonics:
 
         require_asset("compiled spherical harmonics")
         try:
-            import octavian_harmonics_native as native
+            from importlib import import_module
+
+            try:
+                native = import_module("octavian.octavian_harmonics_native")
+            except ModuleNotFoundError as exc:
+                if exc.name != "octavian.octavian_harmonics_native":
+                    raise
+                native = import_module("octavian_harmonics_native")
         except ImportError as exc:
             raise RuntimeError(
-                "backend='cpp' requires the optional octavian-harmonics-native extension; "
+                "backend='cpp' requires a compatible bundled binary or the optional "
+                "octavian-harmonics-native extension. Install a supported Octavian wheel, or "
                 "see docs/tutorials/spherical-harmonics.md for build instructions."
             ) from exc
         return native.acceleration_function(self.cosine, self.sine, self.degree, self.order)

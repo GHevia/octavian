@@ -1,0 +1,78 @@
+name: Native wheels
+
+on:
+  workflow_call:
+  pull_request:
+  push:
+    branches:
+      - 'agent/**'
+
+jobs:
+  wheels:
+    name: Wheel (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022]
+        python: ['3.10', '3.11', '3.12']
+    env:
+      OCTAVIAN_BUILD_NATIVE: '1'
+      PYTHONNOUSERSITE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: '17.0'
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+        with:
+          arch: x64
+      - name: Fetch pinned ASSET headers
+        shell: bash
+        run: |
+          git clone --branch v0.5.1 --depth 1 https://github.com/AlabamaASRL/asset_asrl.git "$RUNNER_TEMP/asset-headers"
+          git -C "$RUNNER_TEMP/asset-headers" submodule update --init --depth 1 dep/eigen dep/pybind11 dep/fmt
+          echo "ASSET_SOURCE_DIR=$(cygpath -m "$RUNNER_TEMP/asset-headers" 2>/dev/null || echo "$RUNNER_TEMP/asset-headers")" >> "$GITHUB_ENV"
+      - name: Configure compiler
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            echo 'CXX=clang-cl' >> "$GITHUB_ENV"
+            echo 'CXXFLAGS=-fms-compatibility-version=19.40' >> "$GITHUB_ENV"
+          else
+            echo 'CXX=clang++' >> "$GITHUB_ENV"
+          fi
+      - name: Build native wheel
+        run: |
+          python -m pip install --upgrade pip build cmake ninja
+          python -m build --wheel
+      - name: Repair Linux wheel
+        if: runner.os == 'Linux'
+        run: |
+          python -m pip install auditwheel patchelf
+          auditwheel repair --plat manylinux_2_34_x86_64 --wheel-dir wheelhouse dist/*.whl
+      - name: Collect Windows wheel
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir wheelhouse
+          cp dist/*.whl wheelhouse/
+      - name: Install and test the distributed wheel outside the checkout
+        shell: bash
+        run: |
+          python -m pip install wheelhouse/*.whl pytest matplotlib
+          mkdir -p "$RUNNER_TEMP/wheel-tests"
+          cp tests/test_spherical_harmonics.py "$RUNNER_TEMP/wheel-tests/"
+          cp examples/analysis/02_spherical_harmonics.py "$RUNNER_TEMP/wheel-tests/"
+          cd "$RUNNER_TEMP/wheel-tests"
+          python -c 'import octavian.octavian_harmonics_native as native; print(native.__file__)'
+          python -m pytest test_spherical_harmonics.py -q
+          python 02_spherical_harmonics.py --backend cpp --degree 20
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-wheel-${{ matrix.os }}-${{ matrix.python }}
+          path: wheelhouse/*.whl

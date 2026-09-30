@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "octavian"
-version = "0.4.14"
+version = "0.4.15"
 description = "Trajectory optimization and astrodynamics in Python using ASSET, with mission-script APIs."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -66,7 +66,12 @@ include = [
   "/octavian/viz/data/*.png",
   "/README.md",
   "/LICENSE",
+  "/hatch_build.py",
+  "/native/spherical_harmonics/**",
 ]
+
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["octavian"]

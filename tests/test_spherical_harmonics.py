@@ -1,5 +1,6 @@
 """Gravity normalization, pole behavior, derivatives, and ASSET EOM regressions."""
 
+import importlib.util
 import math
 from dataclasses import replace
 
@@ -43,10 +44,19 @@ def j2_field(backend="python"):
     return SphericalHarmonics(c, np.zeros_like(c), RADIUS, backend=backend)
 
 
+def require_native():
+    # A broken binary must fail the test; only an absent optional backend skips.
+    if not any(
+        importlib.util.find_spec(name) is not None
+        for name in ("octavian.octavian_harmonics_native", "octavian_harmonics_native")
+    ):
+        pytest.skip("native backend is not installed")
+
+
 @pytest.fixture(params=["python", "cpp"])
 def backend(request):
     if request.param == "cpp":
-        pytest.importorskip("octavian_harmonics_native")
+        require_native()
     return request.param
 
 
@@ -208,7 +218,7 @@ def test_asset_integration_matches_numerical_propagation(backend):
 
 
 def test_native_high_degree_derivatives_and_poles():
-    pytest.importorskip("octavian_harmonics_native")
+    require_native()
     model = field(50, "cpp")
     for position in [[0, 0, 7e6], [0, 0, -7e6], [7e6, 1e6, -2e6]]:
         np.testing.assert_allclose(
@@ -336,6 +346,7 @@ def test_missing_native_extension_has_actionable_error(monkeypatch):
 
     if ast is None:
         pytest.skip("ASSET unavailable")
+    monkeypatch.setitem(sys.modules, "octavian.octavian_harmonics_native", None)
     monkeypatch.setitem(sys.modules, "octavian_harmonics_native", None)
     with pytest.raises(RuntimeError, match="optional octavian-harmonics-native"):
         field(3, "cpp").acceleration([7e6, 0, 0], mu_m3ps2=MU)
