@@ -102,4 +102,4 @@ jobs:
           ASSET_SOURCE_DIR="$RUNNER_TEMP/asset-headers" conda run -n octavian-dev env CXX=clang++ python -m pip install --no-user --no-build-isolation ./native/spherical_harmonics
           conda run -n octavian-dev python -c 'import octavian_harmonics_native'
           conda run -n octavian-dev python -m pytest tests/test_spherical_harmonics.py -q
-          conda run -n octavian-dev python examples/analysis/02_spherical_harmonics.py --backend cpp --degree 20
+          conda run -n octavian-dev python examples/analysis/02_spherical_harmonics.py

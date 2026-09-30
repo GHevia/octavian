@@ -67,11 +67,13 @@ jobs:
           python -m pip install wheelhouse/*.whl pytest matplotlib
           mkdir -p "$RUNNER_TEMP/wheel-tests"
           cp tests/test_spherical_harmonics.py "$RUNNER_TEMP/wheel-tests/"
+          cp examples/analysis/03_spherical_harmonics_runtime.py "$RUNNER_TEMP/wheel-tests/"
           cp examples/analysis/02_spherical_harmonics.py "$RUNNER_TEMP/wheel-tests/"
           cd "$RUNNER_TEMP/wheel-tests"
           python -c 'import octavian.octavian_harmonics_native as native; print(native.__file__)'
           python -m pytest test_spherical_harmonics.py -q
-          python 02_spherical_harmonics.py --backend cpp --degree 20
+          python 02_spherical_harmonics.py
+          python 03_spherical_harmonics_runtime.py
       - uses: actions/upload-artifact@v4
         with:
           name: native-wheel-${{ matrix.os }}-${{ matrix.python }}

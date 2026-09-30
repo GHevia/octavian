@@ -31,7 +31,7 @@ class SphericalHarmonics:
     the EOM supplies the gravitational parameter, which must match the field.
 
     ``backend='python'`` builds ASSET expressions using the same recurrence as
-    numerical evaluation. ``backend='cpp'`` uses the optional native extension
+    numerical evaluation. ``backend='cpp'`` (the default) uses the bundled native extension
     with analytic derivatives, without Python callbacks during integration.
     Degree/order default to the full supplied array. No gravity data is bundled.
     """
@@ -44,7 +44,7 @@ class SphericalHarmonics:
     rotation_rate_radps: float = 0.0
     reference_angle_rad: float = 0.0
     reference_time_s: float = 0.0
-    backend: str = "python"
+    backend: str = "cpp"
 
     def __post_init__(self):
         c, s = np.asarray(self.cosine, dtype=float), np.asarray(self.sine, dtype=float)
@@ -108,7 +108,8 @@ class SphericalHarmonics:
             raise RuntimeError(
                 "backend='cpp' requires a compatible bundled binary or the optional "
                 "octavian-harmonics-native extension. Install a supported Octavian wheel, or "
-                "see docs/tutorials/spherical-harmonics.md for build instructions."
+                "select backend='python' explicitly for a compiler-free source install. "
+                "See docs/tutorials/spherical-harmonics.md for build instructions."
             ) from exc
         return native.acceleration_function(self.cosine, self.sine, self.degree, self.order)
 

@@ -1,14 +1,12 @@
 """Compare point-mass, J2, and spherical-harmonic gravity with ASSET.
 
-Run with --backend python for ASSET expressions or --backend cpp for the
-compiled recurrence. --degree 20 demonstrates a larger field. The PNG shows
-orbital paths and accumulated position differences from the same initial state.
-Coefficients above J2 are synthetic demonstration data, not an Earth model.
+Edit the settings and coefficient entries below, then run this file normally.
+The PNG shows orbital paths and accumulated position differences.
+Coefficients beyond J2 are illustrative, not a measured Earth gravity model.
 """
 
 from __future__ import annotations
 
-import argparse
 import time
 from pathlib import Path
 
@@ -18,39 +16,35 @@ import numpy as np
 from octavian import EARTH, Perturbations, SphericalHarmonics, propagate, state
 from octavian.dynamics import PerturbedECI, TwoBodyECI
 
-parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("--backend", choices=("python", "cpp"), default="python")
-parser.add_argument("--degree", type=int, default=4)
-parser.add_argument("--orbits", type=float, default=2.0)
-parser.add_argument("--output", type=Path, default=Path("traj_spherical_harmonics.png"))
-options = parser.parse_args()
-if options.degree < 2:
-    parser.error("--degree must be at least 2")
-if not np.isfinite(options.orbits) or options.orbits <= 0:
-    parser.error("--orbits must be finite and positive")
+# Settings: C++ is the model default; select "python" for ASSET expressions.
+backend = "cpp"
+orbits = 2.0
+output = Path("traj_spherical_harmonics.png")
 
-# Deterministic illustrative coefficients; C20 reproduces Octavian's existing J2.
-rng = np.random.default_rng(42)
-cosine = np.zeros((options.degree + 1, options.degree + 1))
+# Fully normalized dimensionless coefficients, indexed by [degree, order].
+# This explicit 4x4 example includes J2, longitude-dependent C22/S22, and
+# zonal C30/C40 terms. All unspecified terms are zero; no random data is used.
+cosine = np.zeros((5, 5))
 sine = np.zeros_like(cosine)
-for n in range(2, options.degree + 1):
-    cosine[n, : n + 1] = rng.normal(0, 1e-6 / n**2, n + 1)
-    sine[n, 1 : n + 1] = rng.normal(0, 1e-6 / n**2, n)
 cosine[2, 0] = -EARTH.j2_coefficient / np.sqrt(5)
+cosine[2, 2] = 1.5e-6
+sine[2, 2] = -0.9e-6
+cosine[3, 0] = 0.9e-6
+cosine[4, 0] = 0.5e-6
 gravity = SphericalHarmonics(
     cosine=cosine,
     sine=sine,
     reference_radius_m=EARTH.mean_radius_m,
     rotation_rate_radps=7.292115e-5,
     reference_angle_rad=0.0,  # Prime-meridian angle at mission-relative time zero.
-    backend=options.backend,
+    backend=backend,
 )
 initial = state([7e6, 0, 2e5], [0, 7400, 800])
 initial_row = np.r_[initial.r_m, initial.v_mps, 0.0]
 energy = np.dot(initial.v_mps, initial.v_mps) / 2 - EARTH.mu_m3ps2 / np.linalg.norm(initial.r_m)
 semi_major_axis_m = -EARTH.mu_m3ps2 / (2 * energy)
 period_s = 2 * np.pi * np.sqrt(semi_major_axis_m**3 / EARTH.mu_m3ps2)
-duration_s = options.orbits * period_s
+duration_s = orbits * period_s
 
 start = time.perf_counter()
 harmonic_ode = PerturbedECI(mu_m3ps2=EARTH.mu_m3ps2, spherical_harmonics=gravity)
@@ -66,9 +60,10 @@ for name, ode in models.items():
     integrator.setAbsTol(1e-7)  # SI states: avoid chasing sub-roundoff position errors.
     start = time.perf_counter()
     histories[name] = np.asarray(integrator.integrate_dense(initial_row, duration_s, 401))
-    print(f"{name}: {time.perf_counter() - start:.3f} s for {options.orbits:g} orbits")
+    print(f"{name}: {time.perf_counter() - start:.3f} s for {orbits:g} orbits")
 
-# Verify the force model independently with Octavian's Python RK4 propagator.
+# Cross-check the integrator with RK4 using the same force model.
+# This checks propagation consistency, not independent force-model accuracy.
 check_time_s = min(600.0, duration_s)
 reference = propagate.inertial(
     initial,
@@ -128,14 +123,14 @@ extra_axes.set(
 extra_axes.legend(ncols=4, fontsize=9)
 extra_axes.grid(alpha=0.25)
 figure.suptitle(
-    f"Rotating {gravity.degree}×{gravity.order} gravity field · {options.backend} backend\nSynthetic coefficients beyond J2; identical initial states",
+    f"Rotating {gravity.degree}×{gravity.order} gravity field · {backend} backend\nSynthetic coefficients beyond J2; identical initial states",
     fontsize=14,
 )
-options.output.parent.mkdir(parents=True, exist_ok=True)
-figure.savefig(options.output, dpi=170)
+output.parent.mkdir(parents=True, exist_ok=True)
+figure.savefig(output, dpi=170)
 plt.close(figure)
 
-csv_path = options.output.with_suffix(".csv")
+csv_path = output.with_suffix(".csv")
 np.savetxt(
     csv_path,
     np.column_stack([harmonics[:, 6], extra_position_m, extra_distance_m]),
@@ -144,9 +139,9 @@ np.savetxt(
     comments="",
 )
 print(
-    f"Backend: {options.backend}; degree/order: {gravity.degree}/{gravity.order}; build: {build_seconds:.3f} s"
+    f"Backend: {backend}; degree/order: {gravity.degree}/{gravity.order}; build: {build_seconds:.3f} s"
 )
 print(f"Maximum effect beyond J2: {extra_distance_m.max():.6g} m")
 print(f"Final effect beyond J2: {extra_distance_m[-1]:.6g} m")
 print(f"ASSET / RK4 position difference at {check_time_s:g} s: {position_error_m:.6g} m")
-print(f"Wrote: {options.output} and {csv_path}")
+print(f"Wrote: {output} and {csv_path}")

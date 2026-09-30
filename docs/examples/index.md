@@ -99,12 +99,15 @@ signatures and docstrings.
 
 ## Spherical-harmonic propagation
 
-`examples/analysis/02_spherical_harmonics.py` compares point-mass, J2, and a rotating
-synthetic gravity field through ASSET and checks the spherical-harmonic result
-against numerical RK4 propagation.
-See the [gravity tutorial](../tutorials/spherical-harmonics.md) for coefficient
-conventions and the native build.
+`examples/analysis/02_spherical_harmonics.py` compares point-mass, J2, and an
+explicit illustrative 4×4 field using ASSET. It saves a PNG and CSV and checks
+integration consistency with RK4. Edit `backend`, `orbits`, `output`, and the
+coefficient table directly in the file; there are no command-line arguments.
+C++ is the default, with Python available explicitly.
 
-The spherical-harmonics example saves a PNG and CSV showing the accumulated
-position difference beyond J2 over two orbits. Use `--backend python` or
-`--backend cpp --degree 20`; `--output gravity.png` selects the output path.
+`examples/analysis/03_spherical_harmonics_runtime.py` compares backend construction,
+acceleration, Jacobian, and adjoint-Hessian runtimes for identical deterministic
+fields, checking agreement before timing. Edit its settings at the top.
+
+See the [gravity tutorial](../tutorials/spherical-harmonics.md) for coefficient
+meaning, validation coverage, degree limits, and native installation.
