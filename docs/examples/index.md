@@ -100,13 +100,12 @@ signatures and docstrings.
 ## Spherical-harmonic propagation
 
 `examples/analysis/02_spherical_harmonics.py` compares point-mass, J2, and an
-explicit illustrative 4×4 field using ASSET. It saves a PNG and CSV and checks
-integration consistency with RK4. Edit `backend`, `orbits`, `output`, and the
-coefficient table directly in the file; there are no command-line arguments.
+published EGM2008 field (200×200 by default) using ASSET. It saves a PNG and CSV and checks
+integration consistency with RK4. Edit `degree`, `backend`, `orbits`, and `output` directly in the file; there are no command-line arguments.
 C++ is the default, with Python available explicitly.
 
 `examples/analysis/03_spherical_harmonics_runtime.py` compares backend construction,
-acceleration, Jacobian, and adjoint-Hessian runtimes for identical deterministic
+acceleration, Jacobian, and adjoint-Hessian runtimes for identical EGM2008
 fields, checking agreement before timing. Edit its settings at the top.
 
 See the [gravity tutorial](../tutorials/spherical-harmonics.md) for coefficient

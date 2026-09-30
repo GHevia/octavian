@@ -171,3 +171,10 @@ The `perturbations.spherical_harmonics` object accepts `cosine`, `sine`,
 C/S are square, fully normalized coefficient arrays indexed by degree/order.
 Do not also enable `j2`. See [Spherical-Harmonic Gravity](spherical-harmonics.md)
 for normalization and frame conventions.
+
+For the bundled Earth field, use `"spherical_harmonics": {"model": "EGM2008",
+"degree": 200, "order": 200}` instead of coefficient arrays. Set the surrounding
+dynamics `mu_m3ps2` to the published model value `3.986004415e14`; omit
+`central_body` when supplying that explicit GM. The model uses uniform Z
+rotation and accepts the usual rotation/epoch-angle/backend settings. Custom
+arrays and `model` cannot be combined.

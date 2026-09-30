@@ -5,66 +5,63 @@ existing point-mass EOM. It works with coast, mass-carrying coast, finite-burn,
 low-thrust, and coupled ECI chief/deputy phases, as well as numerical
 `propagate.inertial` and `propagate.relative` histories.
 
+## Published Earth coefficients: no manual arrays required
+
 ```python
-import numpy as np
 from octavian import Dynamics, Perturbations, SphericalHarmonics
 
-# Illustrative 4x4 coefficients, not a complete terrestrial gravity model.
-C = np.zeros((5, 5))
-S = np.zeros_like(C)
-C[2, 0] = -1.08262668e-3 / np.sqrt(5)  # J2 in fully normalized form
-C[2, 2] = 1.5e-6
-S[2, 2] = -0.9e-6
-C[3, 0] = 0.9e-6
-C[4, 0] = 0.5e-6
-
-gravity = SphericalHarmonics(
-    cosine=C,
-    sine=S,
-    reference_radius_m=6_378_136.3,
-    degree=4,
-    order=4,
-    rotation_rate_radps=7.292115e-5,
-    reference_angle_rad=0.0,
-    reference_time_s=0.0,
-    backend="cpp",  # default; "python" remains available explicitly
+gravity = SphericalHarmonics.earth()  # EGM2008, degree/order 200, C++ backend
+dynamics = Dynamics(
+    mu_m3ps2=gravity.reference_mu_m3ps2,
+    perturbations=Perturbations(spherical_harmonics=gravity),
 )
-dynamics = Dynamics(perturbations=Perturbations(spherical_harmonics=gravity))
 ```
 
-Use `dynamics` on an ordinary `Phase`. Quick missions automatically select the
-composable compiler when this perturbation is present. To evaluate only the
-perturbing acceleration numerically:
+This loads a **bundled, offline 200×200 subset of NGA EGM2008**. No coefficient
+calculation, network access, Java, or database account is required. NGA recommends
+[EGM2008 over legacy EGM96](https://earth-info.nga.mil/index.php?dir=wgs84&action=wgs84).
+The full published model extends beyond this subset; Octavian bundles through
+200×200 and rejects larger requests rather than silently padding with zeros.
 
 ```python
-acceleration_mps2 = gravity.acceleration(
-    [7_000_000, 0, 1_000_000], mu_m3ps2=3.986004418e14, time_s=1200,
-)
+gravity = SphericalHarmonics.earth(degree=20, order=20)
+small_python_field = SphericalHarmonics.earth(degree=4, backend="python")
 ```
 
-The examples are plain Python scripts: edit the settings near the top and run
-without command-line arguments.
+The factory loads fully normalized, **tide-free** C/S values, the published
+reference radius (6378136.3 m), and reference GM (3.986004415e14 m³/s²).
+Use `gravity.reference_mu_m3ps2` for the central EOM as shown above: it differs
+slightly from Octavian's general Earth catalog GM. No conversion is required.
+For `propagate.inertial`, use `dataclasses.replace(EARTH,
+mu_m3ps2=gravity.reference_mu_m3ps2)` as the `central_body`.
+
+Uniform Z rotation defaults to 7.292115e-5 rad/s. Set `reference_angle_rad` and
+`reference_time_s` to your mission's orientation convention; the factory does
+not turn an arbitrary mission epoch into an ITRF transform. Tides, nutation,
+precession, polar motion, and time-varying coefficients remain separate work.
+
+The dataset manifest records source URL, original archive SHA-256, uncompressed
+subset SHA-256, constants, tide system, and citation. The runtime checks the
+subset checksum. `tools/prepare_egm2008.py` reproduces it from NGA's archive;
+coefficient digits are retained unchanged. The gzip subset adds about 636 KiB.
+Source: Pavlis et al. (2012), [EGM2008](https://doi.org/10.1029/2011JB008916).
+The [ICGEM model database](https://icgem.gfz.de/tom_longtime) provides other
+published models; automatic network fetching and a generic model-file importer
+are not part of this API. Custom arrays still work through the constructor.
+
+The examples are plain Python scripts with settings near the top:
 
 ```bash
 python examples/analysis/02_spherical_harmonics.py
 python examples/analysis/03_spherical_harmonics_runtime.py
 ```
 
-Install `octavian[viz]` for plotting. The propagation example uses an explicit
-4×4 coefficient table, with J2 plus illustrative C22/S22, C30, and C40 entries.
-It contains no randomness and is not a calibrated Earth gravity model. The
-`backend`, `orbits`, and `output` variables control the run. Its PNG compares
-point-mass, J2, and spherical-harmonic trajectories; the CSV records the extra
-position change beyond J2. RK4 checks propagation consistency using the same
-force model; it is not an independent validation of the gravity equations.
-
-The runtime example compares the same dense, deterministic synthetic field and
-state through both backends. It reports construction, acceleration, Jacobian,
-and adjoint-Hessian times separately, and checks numerical agreement first.
-Both paths evaluate ASSET vector functions: the speedup comes from compact
-compiled recurrence loops versus repeated ASSET expression subtrees, not simply
-from comparing interpreted Python with compiled ASSET. Edit `degrees`, `backends`,
-`repeats`, and `trials` in the script. For large fields set `backends = ["cpp"]`.
+Install `octavian[viz]` for plotting. Example 02 compares point-mass, model-matched
+J2, and measured EGM2008 gravity, saving PNG/CSV outputs. Edit `degree`, `backend`,
+`orbits`, and `output`; use a small degree such as 4 for Python ASSET expressions.
+RK4 checks integration consistency using the same force model. Example 03
+compares both backends with identical EGM2008 coefficients at 4×4, 8×8, and
+10×10, including construction, force, Jacobian, and adjoint-Hessian timings.
 
 ## Coefficients, units, and orientation
 
@@ -91,8 +88,8 @@ U_p=\frac{\mu}{r}\sum_{n=2}^N(R/r)^n
 
 Convert unnormalized coefficients by dividing them by the normalization factor
 above. Schmidt-normalized coefficients need a different conversion; do not
-pass them directly. Octavian does not download coefficient files or infer their
-normalization. Use the field's published reference radius and gravitational
+pass them directly. The Earth factory supplies this convention automatically; custom arrays must
+use it explicitly. Octavian does not infer custom-array normalization. Use the field's published reference radius and gravitational
 parameter together. The coefficient radius need not equal the body's mean
 radius, which continues to define altitude for other perturbations.
 
@@ -225,8 +222,9 @@ Also check degree-truncation and integration-tolerance convergence. Current
 orientation is uniform rotation about Z, not a full Earth orientation model.
 
 There is no hard-coded maximum degree/order. Arrays of shape `(N+1, N+1)` support
-maximum degree N, with order M ≤ N. Current regression coverage reaches 100×100;
-higher degrees need their own accuracy and performance validation. For full
+maximum degree N, with order M ≤ N. Synthetic regression coverage reaches 100×100; the separate Actium/Orekit
+campaign validates measured EGM2008 fields through 200×200. Higher degrees need
+their own accuracy and performance validation. For full
 order, degrees 2…N contain `(N+1)**2 - 4` potentially nonzero real coefficients
 (C plus S): 437 at 20×20, 2,597 at 50×50, and 10,197 at 100×100. The arrays also
 contain required zero/unused slots. Zero-padding a low-degree field does not
@@ -244,8 +242,53 @@ longitude dependence. For m=0 the term is longitude-independent (zonal), and
 S[n,0] is zero. C22/S22 together specify a degree-two longitude pattern.
 
 Use coefficients from a gravity model for the body, with its published GM and
-reference radius. The example's small explicit table demonstrates the API;
-the benchmark's deterministic values exercise every term without requiring a
-data download. Neither is a measured gravity model. See the
+reference radius. The Earth factory and both examples use measured EGM2008 coefficients; custom
+arrays remain available for other bodies or test fields. See the
 [ICGEM coefficient explanation](https://icgem.gfz.de/faq) and
 [model file format](https://icgem.gfz.de/docs/ICGEM-Format-2023.pdf).
+
+## Independent validation through Actium/Orekit
+
+The sibling `actium` project contains `validation/validate_spherical_harmonics.py`.
+Its installable reference package never imports Octavian. Orekit independently
+parses the same ICGEM coefficient file and evaluates Holmes–Featherstone gravity;
+the bridge then compares Octavian/ASSET and Orekit numerical propagation.
+
+Run in the Octavian development environment after installing the Actium checkout
+and Java 11+ (or Actium's `jdk` extra):
+
+```bash
+conda run -n octavian-dev python -m pip install -e "../actium[jdk]"
+conda run -n octavian-dev python ../actium/validation/validate_spherical_harmonics.py
+```
+
+The plain-Python settings choose 20×20, 100×100, and 200×200, six hours and 121
+identical samples for inclined and near-polar LEO, with two tolerance settings.
+It verifies every coefficient and both constants via independent readers,
+evaluates forces at identical states (including near-pole and high-altitude
+points), and compares position/velocity/acceleration histories. Tolerance
+sensitivity is recorded for each integrator. CSV, PNG, and JSON reports are
+written under Actium's `validation/results/spherical_harmonics` before any
+nonzero failure exit. Gates are 1 mm, 1 µm/s, 1e-9 m/s² history acceleration,
+and 1e-11 m/s² same-state force disagreement.
+
+Both engines use identical uniform Z rotation and point mass plus static
+EGM2008 only. This validates the implemented gravity/EOM and integration; it
+does not claim equivalence to a full high-fidelity ITRF/tides/drag/SRP model.
+See Actium's validation README and saved `summary.json` for measured results.
+
+### Recorded six-hour EGM2008 result
+
+All 12 comparisons passed (two orbit types × three degrees × two tolerance
+settings). Each row reports the maximum across both orbit cases and both
+settings, over all 121 samples:
+
+| degree/order | position [m] | velocity [m/s] | history acceleration [m/s²] | same-state force [m/s²] |
+| --- | ---: | ---: | ---: | ---: |
+| 20×20 | 2.168e-04 | 1.362e-07 | 4.956e-10 | 7.692e-17 |
+| 100×100 | 2.085e-04 | 3.112e-07 | 2.805e-10 | 2.187e-16 |
+| 200×200 | 3.267e-04 | 4.007e-07 | 4.284e-10 | 4.165e-16 |
+
+These bounds apply to the documented matched-physics campaign, not arbitrary
+missions or full Earth-orientation models. The recorded reference uses
+Orekit-JPype 13.1.8.0. See Actium’s `validation/results/spherical_harmonics/summary.json` for every case and convergence metrics.
