@@ -31,3 +31,11 @@ user scripts.
 Lower-level helpers and complete signatures are listed in the API Reference.
 The examples stay intentionally direct: copy one, change the declarations, and
 run it as a normal Python script.
+
+## Spherical-harmonic gravity
+
+Use `Perturbations(spherical_harmonics=SphericalHarmonics(...))` for fully normalized
+zonal, tesseral, and sectoral gravity with explicit degree/order and body rotation.
+The Python ASSET-expression backend and optional compiled C++ backend share the
+same mission API. See [Spherical-Harmonic Gravity](tutorials/spherical-harmonics.md)
+for coefficient conventions, example configuration, and native build instructions.

@@ -123,7 +123,7 @@ phase; list order alone does not add a hidden connection.
 
 Schema version 1 covers the current public mission building blocks:
 
-- two-body dynamics with `central_body`, optional J2/Moon/Sun/drag/SRP
+- two-body dynamics with `central_body`, optional spherical-harmonic/J2/Moon/Sun/drag/SRP
   perturbations, frame, and scaling;
 - unforced linear CWH dynamics with `model: cwh`, chief orbit radius, optional
   inline `chief_initial_state_eci`, and relative scaling;
@@ -162,3 +162,19 @@ Use a Python mission script when the configuration needs computed ephemeris
 states, parameter sweeps, custom bodies, reusable functions, external services,
 or a new model that is not yet represented by schema version 1. Config files
 are a convenience surface, not a restriction on Octavian's Python-first API.
+
+### Spherical-harmonic coefficients
+
+The `perturbations.spherical_harmonics` object accepts `cosine`, `sine`,
+`reference_radius_m`, optional integer `degree`/`order`, `backend` (`python` or
+`cpp`), and `rotation_rate_radps`, `reference_angle_rad`, `reference_time_s`.
+C/S are square, fully normalized coefficient arrays indexed by degree/order.
+Do not also enable `j2`. See [Spherical-Harmonic Gravity](spherical-harmonics.md)
+for normalization and frame conventions.
+
+For the bundled Earth field, use `"spherical_harmonics": {"model": "EGM2008",
+"degree": 200, "order": 200}` instead of coefficient arrays. Set the surrounding
+dynamics `mu_m3ps2` to the published model value `3.986004415e14`; omit
+`central_body` when supplying that explicit GM. The model uses uniform Z
+rotation and accepts the usual rotation/epoch-angle/backend settings. Custom
+arrays and `model` cannot be combined.

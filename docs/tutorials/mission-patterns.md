@@ -520,3 +520,11 @@ Use a final Cartesian state only as the target-radius and scaling anchor, then
 constrain terminal orbital elements to leave longitude free. This built-in seed
 assumes a near-circular, approximately coplanar transfer. Adjust `time_scale`
 or provide a future custom seed for strongly eccentric or plane-changing arcs.
+
+## Higher-degree central-body gravity
+
+Use `Dynamics(perturbations=Perturbations(spherical_harmonics=gravity))` on
+coast or powered phases, where `gravity` is a `SphericalHarmonics` model.
+The same declaration works for coupled ECI relative missions. Choose
+`backend="python"` for an ASSET expression or `backend="cpp"` for the optional
+native evaluator. See [Spherical-Harmonic Gravity](spherical-harmonics.md).

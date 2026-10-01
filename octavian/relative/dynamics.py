@@ -17,6 +17,7 @@ from ..forces import (
     Cannonball,
     ExponentialAtmosphere,
 )
+from ..gravity import SphericalHarmonics
 
 
 class ClohessyWiltshireODE(oc.ODEBase if oc is not None else object):
@@ -69,6 +70,7 @@ class CoupledRelativeODE(oc.ODEBase if oc is not None else object):
         *,
         mu_m3ps2: float,
         j2: bool = False,
+        spherical_harmonics: SphericalHarmonics | None = None,
         central_body_radius_m: float = 6_378_136.3,
         j2_coefficient: float = 1.08262668e-3,
         third_body_tables: Sequence[ThirdBodyTable] = (),
@@ -93,6 +95,7 @@ class CoupledRelativeODE(oc.ODEBase if oc is not None else object):
         gravity_options = {
             "mu_m3ps2": float(mu_m3ps2),
             "include_j2": bool(j2),
+            "spherical_harmonics": spherical_harmonics,
             "central_body_radius_m": float(central_body_radius_m),
             "j2_coefficient": float(j2_coefficient),
             "time_var": time,
@@ -153,6 +156,7 @@ class CoupledRelativeMassCoastODE(oc.ODEBase if oc is not None else object):
         *,
         mu_m3ps2: float,
         j2: bool = False,
+        spherical_harmonics: SphericalHarmonics | None = None,
         central_body_radius_m: float = 6_378_136.3,
         j2_coefficient: float = 1.08262668e-3,
         third_body_tables: Sequence[ThirdBodyTable] = (),
@@ -190,6 +194,7 @@ class CoupledRelativeMassCoastODE(oc.ODEBase if oc is not None else object):
         gravity_options = {
             "mu_m3ps2": float(mu_m3ps2),
             "include_j2": bool(j2),
+            "spherical_harmonics": spherical_harmonics,
             "central_body_radius_m": float(central_body_radius_m),
             "j2_coefficient": float(j2_coefficient),
             "time_var": time,
@@ -260,6 +265,7 @@ class FiniteThrustRelativeODE(oc.ODEBase if oc is not None else object):
         thrust_N: float,
         isp_s: float,
         j2: bool = False,
+        spherical_harmonics: SphericalHarmonics | None = None,
         central_body_radius_m: float = 6_378_136.3,
         j2_coefficient: float = 1.08262668e-3,
         third_body_tables: Sequence[ThirdBodyTable] = (),
@@ -307,6 +313,7 @@ class FiniteThrustRelativeODE(oc.ODEBase if oc is not None else object):
         gravity_options = {
             "mu_m3ps2": float(mu_m3ps2),
             "include_j2": bool(j2),
+            "spherical_harmonics": spherical_harmonics,
             "central_body_radius_m": float(central_body_radius_m),
             "j2_coefficient": float(j2_coefficient),
             "time_var": time,

@@ -512,7 +512,10 @@ def _is_composable_mission(mission: Mission) -> bool:
         dynamics = getattr(phase, "dynamics", None)
         if dynamics is not None and dynamics.model is not None:
             return True
-        if dynamics is not None and dynamics.active_perturbations().j2:
+        if dynamics is not None and (
+            dynamics.active_perturbations().j2
+            or dynamics.active_perturbations().spherical_harmonics is not None
+        ):
             return True
         if getattr(phase, "variables", None) and len(list(phase.variables or [])) > 0:
             return True

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import subprocess
 import sys
@@ -19,6 +20,11 @@ EXAMPLES = sorted((ROOT / "examples").rglob("*.py")) + sorted(
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda path: str(path.relative_to(ROOT)))
 def test_executable_example(example: Path, tmp_path: Path) -> None:
+    if example.name in {"02_spherical_harmonics.py", "03_spherical_harmonics_runtime.py"} and not any(
+        importlib.util.find_spec(name) is not None
+        for name in ("octavian.octavian_harmonics_native", "octavian_harmonics_native")
+    ):
+        pytest.skip("This example selects the native backend; tested in native-wheel CI")
     command = [sys.executable]
     if example.suffix == ".json":
         command.extend(["-m", "octavian.config"])

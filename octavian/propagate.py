@@ -80,7 +80,7 @@ def inertial(
         times_s: Strictly monotonic elapsed seconds, with zero at either end.
             Forward and backward propagation are supported.
         central_body: Gravity/J2 constants; defaults to Earth.
-        perturbations: Optional J2, Moon/Sun gravity, drag, and SRP flags.
+        perturbations: Optional spherical harmonics or J2, Moon/Sun gravity, drag, and SRP.
         initial_epoch: UTC or SPICE ET at time zero, required for third-body
             gravity or SRP. Ephemeris positions use the Earth-centered TOD frame.
         spacecraft: Constant mass and cannonball properties, required for
@@ -138,6 +138,7 @@ def inertial(
             central_body=central_body,
             flags=flags,
             sampled_bodies=body_positions(time_s),
+            time_s=time_s,
             spacecraft=spacecraft,
             atmosphere=atmosphere,
         )
