@@ -8,13 +8,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from octavian import state
-from octavian.cislunar import (
-    CR3BPSystem,
-    jacobi_constant,
-    propagate_cr3bp,
-    synodic_to_inertial_state,
-)
+from octavian import propagate, state
+from octavian.cislunar import CR3BPSystem, jacobi_constant, synodic_to_inertial_state
 from octavian.viz.plotly import save_cr3bp_trajectory_html
 
 system = CR3BPSystem.earth_moon()
@@ -24,12 +19,7 @@ initial_position_m[0] += 100_000.0
 initial_state = state(initial_position_m, [0.0, 0.0, 0.0])
 
 duration_s = 10 * 12.0 * 3_600.0
-reference_history = propagate_cr3bp(
-    initial_state,
-    [0.0, duration_s],
-    system=system,
-    max_step=300.0,
-)
+reference_history = propagate.cr3bp(initial_state, [0.0, duration_s], system=system, max_step=300.0)
 target_state = state(
     reference_history[-1, 0:3],
     reference_history[-1, 3:6],
@@ -55,7 +45,7 @@ save_cr3bp_trajectory_html(
     reference_history,
     output_path,
     system=system,
-    lagrange_point_names=("L1","L2", "L3", "L4", "L5"),
+    lagrange_point_names=("L1", "L2", "L3", "L4", "L5"),
     title="CR3BP propagation near Earth-Moon L1",
 )
 print(f"Wrote: {output_path}")

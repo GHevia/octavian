@@ -183,6 +183,8 @@ def gravity_acceleration_components(
     radius = float(np.linalg.norm(position))
     if radius <= 0.0:
         raise ValueError("position_m must have non-zero norm")
+    if spherical_harmonics is not None:
+        mu_m3ps2 = spherical_harmonics.resolve_mu(mu_m3ps2)
     acceleration = -float(mu_m3ps2) * position / radius**3
     if include_j2 and spherical_harmonics is not None:
         raise ValueError("Choose spherical_harmonics or J2, not both")
@@ -324,6 +326,8 @@ def _gravity_acceleration(
     to query each body's interpolated Earth-centered position at the current
     mission-relative phase time.
     """
+    if spherical_harmonics is not None:
+        mu_m3ps2 = spherical_harmonics.resolve_mu(mu_m3ps2)
     acceleration = _point_mass_acceleration(position_vec, mu_m3ps2)
     if include_j2 and spherical_harmonics is not None:
         raise ValueError("Choose spherical_harmonics or J2, not both")
@@ -497,7 +501,7 @@ class PerturbedECI(oc.ODEBase if oc is not None else object):
     def __init__(
         self,
         *,
-        mu_m3ps2: float,
+        mu_m3ps2: float = 3.986004418e14,
         j2: bool = False,
         spherical_harmonics: SphericalHarmonics | None = None,
         central_body_radius_m: float = 6_378_136.3,
@@ -512,7 +516,11 @@ class PerturbedECI(oc.ODEBase if oc is not None else object):
         solar_pressure_at_1au_Npm2: float = SOLAR_PRESSURE_AT_1_AU_NPM2,
     ) -> None:
         _require_asset()
-        self.mu = float(mu_m3ps2)
+        self.mu = (
+            spherical_harmonics.resolve_mu(mu_m3ps2)
+            if spherical_harmonics is not None
+            else float(mu_m3ps2)
+        )
 
         XtU = oc.ODEArguments(6, 0)
         R = XtU.XVec().head(3)
@@ -561,7 +569,7 @@ class MassCoastECI(oc.ODEBase if oc is not None else object):
     def __init__(
         self,
         *,
-        mu_m3ps2: float,
+        mu_m3ps2: float = 3.986004418e14,
         j2: bool = False,
         spherical_harmonics: SphericalHarmonics | None = None,
         central_body_radius_m: float = 6_378_136.3,
@@ -576,7 +584,11 @@ class MassCoastECI(oc.ODEBase if oc is not None else object):
         solar_pressure_at_1au_Npm2: float = SOLAR_PRESSURE_AT_1_AU_NPM2,
     ) -> None:
         _require_asset()
-        self.mu = float(mu_m3ps2)
+        self.mu = (
+            spherical_harmonics.resolve_mu(mu_m3ps2)
+            if spherical_harmonics is not None
+            else float(mu_m3ps2)
+        )
         control_config = thrust_control or ThrustControl.vector()
         carries_attitude = control_config.carries_attitude
 
@@ -648,7 +660,7 @@ class FiniteThrustECI(oc.ODEBase if oc is not None else object):
     def __init__(
         self,
         *,
-        mu_m3ps2: float,
+        mu_m3ps2: float = 3.986004418e14,
         thrust_N: float,
         isp_s: float,
         j2: bool = False,
@@ -666,7 +678,11 @@ class FiniteThrustECI(oc.ODEBase if oc is not None else object):
         solar_pressure_at_1au_Npm2: float = SOLAR_PRESSURE_AT_1_AU_NPM2,
     ) -> None:
         _require_asset()
-        self.mu = float(mu_m3ps2)
+        self.mu = (
+            spherical_harmonics.resolve_mu(mu_m3ps2)
+            if spherical_harmonics is not None
+            else float(mu_m3ps2)
+        )
         self.thrust_N = float(thrust_N)
         self.isp_s = float(isp_s)
         self.g0_mps2 = float(g0_mps2)

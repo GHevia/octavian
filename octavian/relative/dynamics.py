@@ -68,7 +68,7 @@ class CoupledRelativeODE(oc.ODEBase if oc is not None else object):
     def __init__(
         self,
         *,
-        mu_m3ps2: float,
+        mu_m3ps2: float = 3.986004418e14,
         j2: bool = False,
         spherical_harmonics: SphericalHarmonics | None = None,
         central_body_radius_m: float = 6_378_136.3,
@@ -154,7 +154,7 @@ class CoupledRelativeMassCoastODE(oc.ODEBase if oc is not None else object):
     def __init__(
         self,
         *,
-        mu_m3ps2: float,
+        mu_m3ps2: float = 3.986004418e14,
         j2: bool = False,
         spherical_harmonics: SphericalHarmonics | None = None,
         central_body_radius_m: float = 6_378_136.3,
@@ -261,7 +261,7 @@ class FiniteThrustRelativeODE(oc.ODEBase if oc is not None else object):
     def __init__(
         self,
         *,
-        mu_m3ps2: float,
+        mu_m3ps2: float = 3.986004418e14,
         thrust_N: float,
         isp_s: float,
         j2: bool = False,

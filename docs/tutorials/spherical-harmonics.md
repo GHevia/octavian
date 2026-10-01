@@ -12,7 +12,6 @@ from octavian import Dynamics, Perturbations, SphericalHarmonics
 
 gravity = SphericalHarmonics.earth()  # EGM2008, degree/order 200, C++ backend
 dynamics = Dynamics(
-    mu_m3ps2=gravity.reference_mu_m3ps2,
     perturbations=Perturbations(spherical_harmonics=gravity),
 )
 ```
@@ -30,10 +29,20 @@ small_python_field = SphericalHarmonics.earth(degree=4, backend="python")
 
 The factory loads fully normalized, **tide-free** C/S values, the published
 reference radius (6378136.3 m), and reference GM (3.986004415e14 m³/s²).
-Use `gravity.reference_mu_m3ps2` for the central EOM as shown above: it differs
-slightly from Octavian's general Earth catalog GM. No conversion is required.
-For `propagate.inertial`, use `dataclasses.replace(EARTH,
-mu_m3ps2=gravity.reference_mu_m3ps2)` as the `central_body`.
+The selected field supplies GM automatically to `Dynamics`, ASSET EOMs and
+numerical propagation. It takes precedence over the general central-body GM,
+so point-mass and harmonic acceleration always use the same published constant.
+No replacement of `EARTH`, coefficient conversion, or manual parameter copying
+is needed. Custom fields without `reference_mu_m3ps2` use the caller's GM.
+
+```python
+from octavian import propagate, state
+from octavian.dynamics import PerturbedECI
+
+forces = Perturbations(spherical_harmonics=SphericalHarmonics.earth(degree=20, order=20))
+history = propagate.inertial(state([7e6, 0, 0], [0, 7500, 0]), [0, 600], perturbations=forces)
+ode = PerturbedECI(spherical_harmonics=forces.spherical_harmonics)
+```
 
 Uniform Z rotation defaults to 7.292115e-5 rad/s. Set `reference_angle_rad` and
 `reference_time_s` to your mission's orientation convention; the factory does
@@ -59,7 +68,8 @@ python examples/analysis/03_spherical_harmonics_runtime.py
 Install `octavian[viz]` for plotting. Example 02 compares point-mass, model-matched
 J2, and measured EGM2008 gravity, saving PNG/CSV outputs. Edit `degree`, `backend`,
 `orbits`, and `output`; use a small degree such as 4 for Python ASSET expressions.
-RK4 checks integration consistency using the same force model. Example 03
+Independent validation lives in Actium; example 02 focuses on the gravity model’s
+effect on an orbit. Example 03
 compares both backends with identical EGM2008 coefficients at 4×4, 8×8, and
 10×10, including construction, force, Jacobian, and adjoint-Hessian timings.
 
@@ -264,7 +274,9 @@ PYTHONNOUSERSITE=1 conda run -n octavian-dev python -m pip install -e "../actium
 PYTHONNOUSERSITE=1 conda run -n octavian-dev python ../actium/validation/validate_spherical_harmonics.py
 ```
 
-The plain-Python settings choose 20×20, 100×100, and 200×200, six hours and 121
+The introductory script compares one 200×200 orbit in five sequential steps.
+The detailed campaign in `validation/regression/spherical_harmonics.py` chooses
+20×20, 100×100, and 200×200, six hours and 121
 identical samples for inclined and near-polar LEO, with two tolerance settings.
 It verifies every coefficient and both constants via independent readers,
 evaluates forces at identical states (including near-pole and high-altitude

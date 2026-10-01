@@ -18,16 +18,11 @@ from octavian import (
     Phase,
     Spacecraft,
     constraints,
+    propagate,
     state,
 )
 from octavian.astro import classical_to_cartesian
-from octavian.relative import (
-    RelativeOrbitalElements,
-    propagate_relative_elements_to_ric,
-    propagate_relative_orbital_elements,
-    propagate_two_body_state,
-    relative_orbital_elements_to_relative_state,
-)
+from octavian.relative import RelativeOrbitalElements, relative_orbital_elements_to_relative_state
 from octavian.solvers import SolverOptions
 from octavian.viz import (
     save_relative_trajectory_html,
@@ -57,23 +52,17 @@ initial_elements = RelativeOrbitalElements(
     delta_iy_rad=-1000 / CHIEF_SEMI_MAJOR_AXIS_M,
 )
 target_time_s = 1_800.0
-target_elements = propagate_relative_orbital_elements(
-    initial_elements,
-    [target_time_s],
-    chief_initial_state_eci=chief_eci,
-    mu_m3ps2=EARTH.mu_m3ps2,
-)[0]
+target_elements = propagate.relative_elements(
+    initial_elements, [target_time_s], chief_initial_state_eci=chief_eci, mu_m3ps2=EARTH.mu_m3ps2
+).elements[0]
 
 initial_ric = relative_orbital_elements_to_relative_state(
     chief_eci,
     initial_elements,
     mu_m3ps2=EARTH.mu_m3ps2,
 )
-target_chief_eci = propagate_two_body_state(
-    chief_eci,
-    target_time_s,
-    EARTH.mu_m3ps2,
-)
+chief_at_target = propagate.two_body(chief_eci, [target_time_s], mu_m3ps2=EARTH.mu_m3ps2)[0]
+target_chief_eci = state(chief_at_target[:3], chief_at_target[3:6])
 target_ric_guess = relative_orbital_elements_to_relative_state(
     target_chief_eci,
     target_elements[0:6],
@@ -130,18 +119,12 @@ post_coast_times_s = np.linspace(
     transfer_end_s + POST_COAST_DURATION_S,
     61,
 )
-pre_coast_traj = propagate_relative_elements_to_ric(
-    initial_elements,
-    pre_coast_times_s,
-    chief_initial_state_eci=chief_eci,
-    mu_m3ps2=EARTH.mu_m3ps2,
-)
-post_coast_traj = propagate_relative_elements_to_ric(
-    initial_elements,
-    post_coast_times_s,
-    chief_initial_state_eci=chief_eci,
-    mu_m3ps2=EARTH.mu_m3ps2,
-)
+pre_coast_traj = propagate.relative_elements(
+    initial_elements, pre_coast_times_s, chief_initial_state_eci=chief_eci, mu_m3ps2=EARTH.mu_m3ps2
+).ric
+post_coast_traj = propagate.relative_elements(
+    initial_elements, post_coast_times_s, chief_initial_state_eci=chief_eci, mu_m3ps2=EARTH.mu_m3ps2
+).ric
 
 # The transfer solve uses its own zero-based phase time. Shift all three
 # histories onto one mission-elapsed plot axis that begins at the pre-coast.
@@ -174,11 +157,7 @@ phase_segments = [
     {
         "name": "Post-transfer coast (propagated)",
         "t_start_s": PRE_COAST_DURATION_S + transfer_end_s,
-        "t_end_s": (
-            PRE_COAST_DURATION_S
-            + transfer_end_s
-            + POST_COAST_DURATION_S
-        ),
+        "t_end_s": (PRE_COAST_DURATION_S + transfer_end_s + POST_COAST_DURATION_S),
         "color": "#00CC96",
     },
 ]

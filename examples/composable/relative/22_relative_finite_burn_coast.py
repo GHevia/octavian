@@ -22,9 +22,9 @@ from octavian import (
     Thruster,
     constraints,
     objectives,
+    propagate,
     state,
 )
-from octavian.relative import propagate_relative_numerical
 from octavian.solvers import SolverOptions
 
 CHIEF_ALTITUDE_M = 400_000.0
@@ -43,12 +43,7 @@ initial_ric = state(
 
 # Start from the ballistic endpoint, then request a five-meter radial trim.
 # This produces a compact example with a real, nonzero finite-burn solution.
-ballistic = propagate_relative_numerical(
-    chief_eci,
-    initial_ric,
-    [0.0, TARGET_TIME_S],
-    max_step_s=5.0,
-)
+ballistic = propagate.relative(chief_eci, initial_ric, [0.0, TARGET_TIME_S], max_step_s=5.0)
 target_vector = ballistic.relative_states_ric[-1].copy()
 target_vector[0] += 5.0
 target_ric = state(target_vector[0:3], target_vector[3:6])

@@ -9,11 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from octavian import EARTH, Dynamics, state
-from octavian.relative import (
-    propagate_nonlinear_relative_ric,
-    propagate_relative_numerical,
-)
+from octavian import EARTH, Dynamics, propagate, state
 
 CHIEF_RADIUS_M = EARTH.mean_radius_m + 400_000.0
 chief_eci = state(
@@ -26,19 +22,14 @@ deputy_ric = state(
 )
 times_s = np.linspace(0.0, 600.0, 61)
 
-direct_ric = propagate_nonlinear_relative_ric(
+direct_ric = propagate.nonlinear_ric(
     np.hstack([deputy_ric.r_m, deputy_ric.v_mps]),
     times_s,
     mu_m3ps2=EARTH.mu_m3ps2,
     chief_orbit_radius_m=CHIEF_RADIUS_M,
     max_step_s=1.0,
 )
-coupled_eci = propagate_relative_numerical(
-    chief_eci,
-    deputy_ric,
-    times_s,
-    max_step_s=1.0,
-)
+coupled_eci = propagate.relative(chief_eci, deputy_ric, times_s, max_step_s=1.0)
 np.testing.assert_allclose(
     direct_ric[:, 0:6],
     coupled_eci.relative_states_ric,

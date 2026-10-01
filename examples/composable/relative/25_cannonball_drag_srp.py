@@ -16,14 +16,11 @@ from octavian import (
     Dynamics,
     Perturbations,
     Spacecraft,
+    propagate,
     state,
 )
 from octavian.astro import classical_to_cartesian
-from octavian.relative import (
-    RelativeOrbitalElements,
-    propagate_relative_elements_to_ric,
-    propagate_relative_orbital_elements,
-)
+from octavian.relative import RelativeOrbitalElements
 from octavian.viz import (
     save_relative_trajectory_html,
     save_trajectory_diagnostics_html,
@@ -85,7 +82,7 @@ relative_dynamics = Dynamics.relative(
 assert relative_dynamics.active_perturbations().drag
 
 times_s = np.linspace(0.0, 2.0 * 3_600.0, 97)
-element_history = propagate_relative_orbital_elements(
+propagation = propagate.relative_elements(
     initial_elements,
     times_s,
     chief_initial_state_eci=chief_eci,
@@ -97,18 +94,9 @@ element_history = propagate_relative_orbital_elements(
     max_step_s=20.0,
     ephemeris_step_s=300.0,
 )
-ric_history = propagate_relative_elements_to_ric(
-    initial_elements,
-    times_s,
-    chief_initial_state_eci=chief_eci,
-    mu_m3ps2=EARTH.mu_m3ps2,
-    perturbations=force_model,
-    initial_epoch=INITIAL_EPOCH,
-    chief_spacecraft=chief_spacecraft,
-    deputy_spacecraft=deputy_spacecraft,
-    max_step_s=20.0,
-    ephemeris_step_s=300.0,
-)
+# Both views come from the same propagated chief/deputy histories.
+element_history = propagation.elements
+ric_history = propagation.ric
 
 print("Initial D'Amico ROEs:")
 print(element_history[0, 0:6])

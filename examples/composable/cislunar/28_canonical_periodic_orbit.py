@@ -13,12 +13,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from octavian import Dynamics, Mission, Phase, Spacecraft, constraints, state
-from octavian.cislunar import (
-    CR3BPSystem,
-    jacobi_constant,
-    propagate_cr3bp,
-)
+from octavian import Dynamics, Mission, Phase, Spacecraft, constraints, propagate, state
+from octavian.cislunar import CR3BPSystem, jacobi_constant
 from octavian.solvers import SolverOptions
 from octavian.viz import (
     save_cr3bp_trajectory_html,
@@ -37,11 +33,8 @@ seed_state_canonical = state(
 )
 seed_period_tu = 2.779749966597294
 
-seed_history_canonical = propagate_cr3bp(
-    seed_state_canonical,
-    [0.0, seed_period_tu],
-    system=system,
-    dimensional=False,
+seed_history_canonical = propagate.cr3bp(
+    seed_state_canonical, [0.0, seed_period_tu], system=system, dimensional=False
 )
 seed_terminal_canonical = state(
     seed_history_canonical[-1, 0:3],

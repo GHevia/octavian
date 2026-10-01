@@ -28,7 +28,8 @@ class SphericalHarmonics:
     Times are mission-relative seconds, not UTC or SPICE epochs. This simple
     model does not include precession, nutation, polar motion, or tidal changes.
     The coefficient reference radius is independent of the body's mean radius;
-    the EOM supplies the gravitational parameter, which must match the field.
+    a field with a published GM supplies that constant to both central and
+    harmonic gravity. Custom fields without GM use the EOM parameter.
 
     ``backend='python'`` builds ASSET expressions using the same recurrence as
     numerical evaluation. ``backend='cpp'`` (the default) uses the bundled native extension
@@ -64,9 +65,8 @@ class SphericalHarmonics:
     ):
         """Load NGA EGM2008 (tide-free), offline, truncated to at most 200x200.
 
-        No coefficient calculations or downloads are needed. Pass the returned
-        ``reference_mu_m3ps2`` to the EOM so central and harmonic gravity use
-        the model's published GM. Set the prime-meridian angle at the mission
+        No coefficient calculations or downloads are needed. Central and harmonic
+        gravity automatically use the model's published GM. Set the prime-meridian angle at the mission
         epoch explicitly; rotation is uniform about Z, not a full ITRF model.
         """
         from ._earth_gravity import earth_coefficients
@@ -136,6 +136,19 @@ class SphericalHarmonics:
         object.__setattr__(self, "degree", int(degree))
         object.__setattr__(self, "order", int(order))
 
+    def resolve_mu(self, mu_m3ps2: float | None = None) -> float:
+        """Use the field's published GM, or the supplied GM for a custom field.
+
+        Published coefficients and GM define one gravity model. A model GM
+        takes precedence over general central-body defaults and EOM arguments.
+        """
+        value = self.reference_mu_m3ps2 if self.reference_mu_m3ps2 is not None else mu_m3ps2
+        if value is None or not math.isfinite(value) or value <= 0:
+            raise ValueError(
+                "A custom gravity field without reference_mu_m3ps2 requires a positive mu_m3ps2"
+            )
+        return float(value)
+
     @cached_property
     def _native_function(self):
         from ._asset import require_asset
@@ -159,8 +172,9 @@ class SphericalHarmonics:
             ) from exc
         return native.acceleration_function(self.cosine, self.sine, self.degree, self.order)
 
-    def acceleration(self, position_m, *, mu_m3ps2: float, time_s: float = 0.0):
-        """Return inertial perturbing acceleration in m/s² (no point mass)."""
+    def acceleration(self, position_m, *, mu_m3ps2: float | None = None, time_s: float = 0.0):
+        """Return perturbing acceleration in m/s², using the field GM when available."""
+        mu_m3ps2 = self.resolve_mu(mu_m3ps2)
         position = np.asarray(position_m, dtype=float)
         if (
             position.shape != (3,)
@@ -186,11 +200,12 @@ class SphericalHarmonics:
             * np.asarray((c * ax - s * ay, s * ax + c * ay, az))
         )
 
-    def asset_acceleration(self, position, time, *, mu_m3ps2: float):
+    def asset_acceleration(self, position, time, *, mu_m3ps2: float | None = None):
         """Compose an ASSET inertial acceleration, including rotation derivatives."""
         from ._asset import require_asset, vf
 
         require_asset("spherical-harmonic EOMs")
+        mu_m3ps2 = self.resolve_mu(mu_m3ps2)
         if time is None:
             if self.rotation_rate_radps:
                 raise ValueError("Rotating spherical harmonics require an ASSET time variable")

@@ -564,7 +564,9 @@ def _absolute_acceleration(
     radius = float(np.linalg.norm(position_m))
     if radius <= 0.0:
         raise ValueError("Absolute spacecraft position must have non-zero norm")
-    acceleration = -float(central_body.mu_m3ps2) * position_m / radius**3
+    gravity = flags["spherical_harmonics"]
+    mu = gravity.resolve_mu(central_body.mu_m3ps2) if gravity is not None else central_body.mu_m3ps2
+    acceleration = -float(mu) * position_m / radius**3
     if flags["j2"]:
         acceleration += np.asarray(
             j2_acceleration_components(

@@ -26,15 +26,11 @@ from octavian import (
     constraints,
     guesses,
     objectives,
+    propagate,
     state,
     variables,
 )
-from octavian.cislunar import (
-    CR3BPSystem,
-    dimensionalize_state,
-    dimensionalize_time,
-    propagate_cr3bp,
-)
+from octavian.cislunar import CR3BPSystem, dimensionalize_state, dimensionalize_time
 from octavian.data.ephemeris import sample_sun_moon_positions_eci_tod
 from octavian.solvers import SolverOptions
 from octavian.viz import save_trajectory_diagnostics_html, save_trajectory_html
@@ -49,11 +45,8 @@ canonical_initial = state(
 period_tu = 2.779749966597294
 period_s = float(dimensionalize_time(period_tu, system))
 synodic_initial = dimensionalize_state(canonical_initial, system)
-synodic_history = propagate_cr3bp(
-    synodic_initial,
-    np.linspace(0.0, period_s, 241),
-    system=system,
-    max_step=300.0,
+synodic_history = propagate.cr3bp(
+    synodic_initial, np.linspace(0.0, period_s, 241), system=system, max_step=300.0
 )
 # Sample the same BSP geometry used by the perturbed dynamics. The handoff
 # below embeds the circular solution in an ephemeris-aligned rotating/pulsating
