@@ -249,7 +249,8 @@ arrays remain available for other bodies or test fields. See the
 
 ## Independent validation through Actium/Orekit
 
-The sibling `actium` project contains `validation/validate_spherical_harmonics.py`.
+The independent [Actium repository](https://github.com/GHevia/actium) provides
+[`validation/validate_spherical_harmonics.py`](https://github.com/GHevia/actium/blob/main/validation/validate_spherical_harmonics.py).
 Its installable reference package never imports Octavian. Orekit independently
 parses the same ICGEM coefficient file and evaluates Holmes–Featherstone gravity;
 the bridge then compares Octavian/ASSET and Orekit numerical propagation.
@@ -258,8 +259,9 @@ Run in the Octavian development environment after installing the Actium checkout
 and Java 11+ (or Actium's `jdk` extra):
 
 ```bash
-conda run -n octavian-dev python -m pip install -e "../actium[jdk]"
-conda run -n octavian-dev python ../actium/validation/validate_spherical_harmonics.py
+git clone https://github.com/GHevia/actium.git ../actium
+PYTHONNOUSERSITE=1 conda run -n octavian-dev python -m pip install -e "../actium[dev,jdk]"
+PYTHONNOUSERSITE=1 conda run -n octavian-dev python ../actium/validation/validate_spherical_harmonics.py
 ```
 
 The plain-Python settings choose 20×20, 100×100, and 200×200, six hours and 121
@@ -275,7 +277,8 @@ and 1e-11 m/s² same-state force disagreement.
 Both engines use identical uniform Z rotation and point mass plus static
 EGM2008 only. This validates the implemented gravity/EOM and integration; it
 does not claim equivalence to a full high-fidelity ITRF/tides/drag/SRP model.
-See Actium's validation README and saved `summary.json` for measured results.
+See [Actium’s validation guide](https://github.com/GHevia/actium/blob/main/validation/README.md)
+and the generated `summary.json` for measured results.
 
 ### Recorded six-hour EGM2008 result
 
