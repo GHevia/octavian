@@ -20,9 +20,10 @@ from octavian import (
     Spacecraft,
     constraints,
     guesses,
+    propagate,
     state,
 )
-from octavian.cislunar import CR3BPSystem, jacobi_constant, propagate_cr3bp
+from octavian.cislunar import CR3BPSystem, jacobi_constant
 from octavian.solvers import SolverOptions
 from octavian.viz import save_cr3bp_trajectory_html, save_cr3bp_trajectory_image
 
@@ -35,11 +36,8 @@ seed_state_canonical = state(
     [0.0, 0.16221305707437475, 0.0],
 )
 seed_period_tu = 2.779749966597294
-seed_trajectory = propagate_cr3bp(
-    seed_state_canonical,
-    np.linspace(0.0, seed_period_tu, 61),
-    system=system,
-    dimensional=False,
+seed_trajectory = propagate.cr3bp(
+    seed_state_canonical, np.linspace(0.0, seed_period_tu, 61), system=system, dimensional=False
 )
 
 

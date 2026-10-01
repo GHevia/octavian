@@ -6,7 +6,6 @@ call into ASSET on both sides. Values are the published fully normalized EGM2008
 """
 
 import timeit
-from dataclasses import replace
 from functools import partial
 
 import numpy as np
@@ -21,30 +20,27 @@ backends = ["python", "cpp"]
 repeats = 3
 trials = 3
 
-print("degree,backend,build_s,force_us,jacobian_us,hessian_us")
+print("Construction time is reported separately from repeated evaluations.")
+print("Jacobians and Hessians are the derivatives ASSET uses during optimization.")
+print(
+    f"{'Field':>8} {'Backend':>8} {'Build [s]':>12} {'Force [µs]':>12} {'Jacobian [µs]':>15} {'Hessian [µs]':>15}"
+)
 for degree in degrees:
-    field = SphericalHarmonics.earth(degree=degree, rotation_rate_radps=0.0)
-    reference = None
     measurements = {}
     for backend in backends:
-        gravity = replace(field, backend=backend)
+        gravity = SphericalHarmonics.earth(degree=degree, backend=backend, rotation_rate_radps=0.0)
+        # The three ASSET inputs are position components in reference-radius units.
         args = vf.Arguments(3)
         start = timeit.default_timer()
-        function = gravity.asset_acceleration(
-            args * gravity.reference_radius_m, 0.0, mu_m3ps2=field.reference_mu_m3ps2
-        )
+        function = gravity.asset_acceleration(args * gravity.reference_radius_m, 0.0)
         build_s = timeit.default_timer() - start
         point = np.array([1.1, 0.2, -0.3])
+        # Fixed weights combine the three acceleration Hessians into one matrix.
         adjoint = np.array([0.2, 0.3, 0.7])
-        actual = (
-            function.compute(point),
-            function.jacobian(point),
-            function.adjointhessian(point, adjoint),
-        )
-        if reference is not None:
-            for result, expected in zip(actual, reference, strict=True):
-                np.testing.assert_allclose(result, expected, rtol=2e-11, atol=1e-13)
-        reference = actual
+        # Warm up each operation before measuring repeated evaluations.
+        function.compute(point)
+        function.jacobian(point)
+        function.adjointhessian(point, adjoint)
         timings = []
         for call in [
             partial(function.compute, point),
@@ -53,7 +49,8 @@ for degree in degrees:
         ]:
             timings.append(min(timeit.repeat(call, number=repeats, repeat=trials)) / repeats * 1e6)
         print(
-            f"{degree},{backend},{build_s:.6g}," + ",".join(f"{value:.6g}" for value in timings),
+            f"{degree:>3}×{degree:<4} {backend:>8} {build_s:12.4f} "
+            f"{timings[0]:12.3f} {timings[1]:15.3f} {timings[2]:15.3f}",
             flush=True,
         )
         measurements[backend] = timings

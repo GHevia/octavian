@@ -23,15 +23,11 @@ from octavian import (
     constraints,
     links,
     objectives,
+    propagate,
     state,
     variables,
 )
-from octavian.cislunar import (
-    CR3BPSystem,
-    dimensionalize_state,
-    dimensionalize_time,
-    propagate_cr3bp,
-)
+from octavian.cislunar import CR3BPSystem, dimensionalize_state, dimensionalize_time
 from octavian.solvers import SolverOptions
 from octavian.viz import (
     save_cr3bp_trajectory_html,
@@ -114,13 +110,13 @@ if solution.result is None:
 
 # Propagated reference orbits make it clear where the optimized transfer starts
 # and ends. They are analysis curves, not extra optimization phases.
-l1_reference = propagate_cr3bp(
+l1_reference = propagate.cr3bp(
     l1_state_si,
     np.linspace(0.0, float(dimensionalize_time(l1_period_tu, system)), 241),
     system=system,
     max_step=300.0,
 )
-l2_reference = propagate_cr3bp(
+l2_reference = propagate.cr3bp(
     l2_state_si,
     np.linspace(0.0, float(dimensionalize_time(l2_period_tu, system)), 241),
     system=system,

@@ -21,7 +21,7 @@ from octavian import (
     state,
     variables,
 )
-from octavian.relative import cwh_rendezvous_velocity, propagate_cwh
+from octavian.relative import cwh_rendezvous_velocity
 from octavian.solvers import SolverOptions
 from octavian.viz.matplotlib import save_relative_trajectory_image
 from octavian.viz.plotly import save_relative_trajectory_html
@@ -54,11 +54,11 @@ analytic_departure_velocity = cwh_rendezvous_velocity(
     nominal_time_s,
     dynamics.model.mean_motion_radps,
 )
-analytic_arrival = propagate_cwh(
+analytic_arrival = propagate.cwh(
     np.hstack([initial_relative_state.r_m, analytic_departure_velocity]),
-    nominal_time_s,
-    dynamics.model.mean_motion_radps,
-)
+    [nominal_time_s],
+    mean_motion_radps=dynamics.model.mean_motion_radps,
+)[0, :6]
 
 rendezvous = Phase(
     name="relative_rendezvous",
@@ -95,15 +95,17 @@ print(f"Analytical CWH departure velocity: {analytic_departure_velocity} m/s")
 print(f"Analytical CWH terminal position error: {np.linalg.norm(analytic_arrival[0:3]):.3e} m")
 
 # Hold the analytical rendezvous at 1800 s to compare with the optimized time.
-reference_trajectories = [{
-    "name": "Nominal 1800 s rendezvous",
-    "traj": propagate.cwh(
-        np.hstack([initial_relative_state.r_m, analytic_departure_velocity]),
-        np.linspace(0.0, nominal_time_s, 241),
-        mean_motion_radps=dynamics.model.mean_motion_radps,
-    ),
-    "color": "#F59E0B",
-}]
+reference_trajectories = [
+    {
+        "name": "Nominal 1800 s rendezvous",
+        "traj": propagate.cwh(
+            np.hstack([initial_relative_state.r_m, analytic_departure_velocity]),
+            np.linspace(0.0, nominal_time_s, 241),
+            mean_motion_radps=dynamics.model.mean_motion_radps,
+        ),
+        "color": "#F59E0B",
+    }
+]
 
 save_relative_trajectory_html(
     solution.traj,

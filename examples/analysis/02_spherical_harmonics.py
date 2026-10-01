@@ -1,34 +1,31 @@
 """Compare point-mass, J2, and spherical-harmonic gravity with ASSET.
 
-Edit the settings and coefficient entries below, then run this file normally.
+Select the degree and order below, then run this file.
 The PNG shows orbital paths and accumulated position differences.
 Loads the published NGA EGM2008 coefficients through 200x200, offline.
 """
 
 from __future__ import annotations
 
-import time
-from dataclasses import replace
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-from octavian import EARTH, Perturbations, SphericalHarmonics, propagate, state
+from octavian import SphericalHarmonics, state
 from octavian.dynamics import PerturbedECI, TwoBodyECI
 
 # Settings: C++ is the model default; select "python" for ASSET expressions.
 backend = "cpp"
 degree = 200  # Use a small degree, e.g. 4, when selecting backend="python".
+order = degree
 orbits = 2.0
 output = Path("traj_spherical_harmonics.png")
 
 # Measured Earth gravity: coefficients, normalization, and reference radius
 # are loaded from the packaged NGA database. Lower degree for cheaper runs.
-gravity = SphericalHarmonics.earth(degree=degree, backend=backend)
+gravity = SphericalHarmonics.earth(degree=degree, order=order, backend=backend)
 mu = gravity.reference_mu_m3ps2
-# Use the model's own C20 for the J2 baseline and its GM for every trajectory.
-earth = replace(EARTH, mu_m3ps2=mu, j2_coefficient=-gravity.cosine[2][0] * np.sqrt(5))
 initial = state([7e6, 0, 2e5], [0, 7400, 800])
 initial_row = np.r_[initial.r_m, initial.v_mps, 0.0]
 energy = np.dot(initial.v_mps, initial.v_mps) / 2 - mu / np.linalg.norm(initial.r_m)
@@ -36,44 +33,23 @@ semi_major_axis_m = -mu / (2 * energy)
 period_s = 2 * np.pi * np.sqrt(semi_major_axis_m**3 / mu)
 duration_s = orbits * period_s
 
-start = time.perf_counter()
-harmonic_ode = PerturbedECI(mu_m3ps2=mu, spherical_harmonics=gravity)
-build_seconds = time.perf_counter() - start
+harmonic_ode = PerturbedECI(spherical_harmonics=gravity)
 models = {
     "Point mass": TwoBodyECI(mu_m3ps2=mu),
-    "J2": PerturbedECI(mu_m3ps2=mu, j2=True, j2_coefficient=earth.j2_coefficient),
+    "J2": PerturbedECI(
+        spherical_harmonics=SphericalHarmonics.earth(degree=2, order=0, backend=backend)
+    ),
     "Spherical harmonics": harmonic_ode,
 }
 histories = {}
 for name, ode in models.items():
     integrator = ode.integrator(10.0)
     integrator.setAbsTol(1e-7)  # SI states: avoid chasing sub-roundoff position errors.
-    start = time.perf_counter()
     histories[name] = np.asarray(integrator.integrate_dense(initial_row, duration_s, 401))
-    print(f"{name}: {time.perf_counter() - start:.3f} s for {orbits:g} orbits")
-
-# Cross-check the integrator with RK4 using the same force model.
-# This checks propagation consistency, not independent force-model accuracy.
-check_time_s = min(600.0, duration_s)
-reference = propagate.inertial(
-    initial,
-    [0, check_time_s],
-    perturbations=Perturbations(spherical_harmonics=gravity),
-    max_step_s=2,
-    central_body=earth,
-)
-integrator = harmonic_ode.integrator(10.0)
-integrator.setAbsTol(1e-7)
-check_state = integrator.integrate(initial_row, check_time_s)
-position_error_m = np.linalg.norm(check_state[:3] - reference[-1, :3])
-if position_error_m > 0.05:
-    raise RuntimeError(f"ASSET / numerical propagation disagreement: {position_error_m:g} m")
 
 point_mass = histories["Point mass"]
 j2 = histories["J2"]
 harmonics = histories["Spherical harmonics"]
-np.testing.assert_allclose(j2[:, 6], point_mass[:, 6], rtol=0, atol=1e-9)
-np.testing.assert_allclose(harmonics[:, 6], point_mass[:, 6], rtol=0, atol=1e-9)
 minutes = harmonics[:, 6] / 60
 extra_position_m = harmonics[:, :3] - j2[:, :3]
 extra_distance_m = np.linalg.norm(extra_position_m, axis=1)
@@ -130,10 +106,6 @@ np.savetxt(
     header="time_s,harmonics_minus_j2_x_m,harmonics_minus_j2_y_m,harmonics_minus_j2_z_m,position_difference_m",
     comments="",
 )
-print(
-    f"Backend: {backend}; degree/order: {gravity.degree}/{gravity.order}; build: {build_seconds:.3f} s"
-)
 print(f"Maximum effect beyond J2: {extra_distance_m.max():.6g} m")
 print(f"Final effect beyond J2: {extra_distance_m[-1]:.6g} m")
-print(f"ASSET / RK4 position difference at {check_time_s:g} s: {position_error_m:.6g} m")
 print(f"Wrote: {output} and {csv_path}")

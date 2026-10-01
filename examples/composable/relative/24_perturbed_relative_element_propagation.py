@@ -10,13 +10,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from octavian import EARTH, Perturbations, state
+from octavian import EARTH, Perturbations, propagate, state
 from octavian.astro import classical_to_cartesian
-from octavian.relative import (
-    RelativeOrbitalElements,
-    propagate_relative_elements_to_ric,
-    propagate_relative_orbital_elements,
-)
+from octavian.relative import RelativeOrbitalElements
 from octavian.viz import (
     save_relative_trajectory_html,
     save_trajectory_diagnostics_html,
@@ -45,23 +41,10 @@ initial_elements = RelativeOrbitalElements(
 times_s = np.linspace(0.0, 6.0 * 3_600.0, 145)
 force_model = Perturbations(j2=True, sun=True)
 
-two_body_elements = propagate_relative_orbital_elements(
-    initial_elements,
-    times_s,
-    chief_initial_state_eci=chief_eci,
-    mu_m3ps2=EARTH.mu_m3ps2,
-)
-perturbed_elements = propagate_relative_orbital_elements(
-    initial_elements,
-    times_s,
-    chief_initial_state_eci=chief_eci,
-    mu_m3ps2=EARTH.mu_m3ps2,
-    perturbations=force_model,
-    initial_epoch=INITIAL_EPOCH,
-    max_step_s=30.0,
-    ephemeris_step_s=300.0,
-)
-perturbed_ric = propagate_relative_elements_to_ric(
+two_body_elements = propagate.relative_elements(
+    initial_elements, times_s, chief_initial_state_eci=chief_eci, mu_m3ps2=EARTH.mu_m3ps2
+).elements
+propagation = propagate.relative_elements(
     initial_elements,
     times_s,
     chief_initial_state_eci=chief_eci,
@@ -71,6 +54,9 @@ perturbed_ric = propagate_relative_elements_to_ric(
     max_step_s=30.0,
     ephemeris_step_s=300.0,
 )
+# Both views come from the same propagated chief/deputy histories.
+perturbed_elements = propagation.elements
+perturbed_ric = propagation.ric
 
 print("Final two-body D'Amico ROEs:")
 print(two_body_elements[-1, 0:6])

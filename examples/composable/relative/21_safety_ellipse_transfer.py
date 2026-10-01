@@ -32,13 +32,13 @@ from octavian import (
     constraints,
     links,
     objectives,
+    propagate,
     state,
     variables,
 )
 from octavian.astro import classical_to_cartesian
 from octavian.relative import (
     RelativeOrbitalElements,
-    propagate_relative_numerical,
     relative_orbital_elements_to_absolute_state,
     relative_orbital_elements_to_relative_state,
 )
@@ -103,7 +103,7 @@ departure_deputy_eci = relative_orbital_elements_to_absolute_state(
     departure_elements,
     mu_m3ps2=EARTH.mu_m3ps2,
 )
-chief_history = propagate_relative_numerical(
+chief_history = propagate.relative(
     chief_eci,
     None,
     [0.0, TARGET_MISSION_TIME_GUESS_S],
@@ -182,14 +182,10 @@ if solution.result is None:
 
 print(solution.summary())
 phase_segments = solution.result.info["phase_segments"]
-selected_initial_coast_s = (
-    float(phase_segments[0]["t_end_s"])
-    - float(phase_segments[0]["t_start_s"])
+selected_initial_coast_s = float(phase_segments[0]["t_end_s"]) - float(
+    phase_segments[0]["t_start_s"]
 )
-selected_transfer_s = (
-    float(phase_segments[1]["t_end_s"])
-    - float(phase_segments[1]["t_start_s"])
-)
+selected_transfer_s = float(phase_segments[1]["t_end_s"]) - float(phase_segments[1]["t_start_s"])
 print(f"Selected initial coast: {selected_initial_coast_s:.6f} s")
 print(f"Selected transfer duration: {selected_transfer_s:.6f} s")
 print(f"Internal state layout: {solution.result.info['state_layouts'][0]}")
@@ -226,7 +222,7 @@ solved_post_burn_ric = state(
 
 pre_coast_times_s = np.linspace(-PRE_COAST_DURATION_S, 0.0, 121)
 post_coast_elapsed_s = np.linspace(0.0, POST_COAST_DURATION_S, 121)
-pre_coast = propagate_relative_numerical(
+pre_coast = propagate.relative(
     solved_initial_chief,
     None,
     pre_coast_times_s,
@@ -236,7 +232,7 @@ pre_coast = propagate_relative_numerical(
     max_step_s=30.0,
     ephemeris_step_s=300.0,
 )
-post_coast = propagate_relative_numerical(
+post_coast = propagate.relative(
     solved_final_chief,
     solved_post_burn_ric,
     post_coast_elapsed_s,
@@ -273,21 +269,15 @@ plot_phase_segments = [
     *[
         {
             **segment,
-            "t_start_s": PRE_COAST_DURATION_S
-            + float(segment["t_start_s"]),
-            "t_end_s": PRE_COAST_DURATION_S
-            + float(segment["t_end_s"]),
+            "t_start_s": PRE_COAST_DURATION_S + float(segment["t_start_s"]),
+            "t_end_s": PRE_COAST_DURATION_S + float(segment["t_end_s"]),
         }
         for segment in phase_segments
     ],
     {
         "name": "Post-burn coast from solved terminal state",
         "t_start_s": PRE_COAST_DURATION_S + mission_end_s,
-        "t_end_s": (
-            PRE_COAST_DURATION_S
-            + mission_end_s
-            + POST_COAST_DURATION_S
-        ),
+        "t_end_s": (PRE_COAST_DURATION_S + mission_end_s + POST_COAST_DURATION_S),
         "color": "#00CC96",
     },
 ]
