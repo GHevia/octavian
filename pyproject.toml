@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "octavian"
-version = "0.4.15"
+version = "0.4.17"
 description = "Trajectory optimization and astrodynamics in Python using ASSET, with mission-script APIs."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -62,6 +62,7 @@ dev = [
 include = [
   "/octavian/**/*.py",
   "/octavian/data/sun_moon_scheduled.bsp",
+  "/octavian/data/gravity/*",
   "/octavian/viz/data/*.jpg",
   "/octavian/viz/data/*.png",
   "/README.md",

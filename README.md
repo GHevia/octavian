@@ -184,3 +184,7 @@ disk.
 Release versions are published from Git tags such as `v0.1.5` by GitHub Actions.
 Maintainer steps are documented in
 [RELEASING.md](https://github.com/GHevia/octavian/blob/dev/RELEASING.md).
+
+For published Earth spherical harmonics, `SphericalHarmonics.earth()` loads
+NGA EGM2008 through 200×200 offline, using the default compiled backend.
+See [Earth gravity and independent Actium/Orekit validation](https://ghevia.github.io/octavian/tutorials/spherical-harmonics/).
