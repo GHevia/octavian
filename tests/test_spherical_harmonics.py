@@ -1,5 +1,6 @@
 """Gravity normalization, pole behavior, derivatives, and ASSET EOM regressions."""
 
+import importlib.util
 import math
 from dataclasses import replace
 
@@ -43,10 +44,19 @@ def j2_field(backend="python"):
     return SphericalHarmonics(c, np.zeros_like(c), RADIUS, backend=backend)
 
 
+def require_native():
+    # A broken binary must fail the test; only an absent optional backend skips.
+    if not any(
+        importlib.util.find_spec(name) is not None
+        for name in ("octavian.octavian_harmonics_native", "octavian_harmonics_native")
+    ):
+        pytest.skip("native backend is not installed")
+
+
 @pytest.fixture(params=["python", "cpp"])
 def backend(request):
     if request.param == "cpp":
-        pytest.importorskip("octavian_harmonics_native")
+        require_native()
     return request.param
 
 
@@ -145,7 +155,9 @@ def test_model_validation_and_config():
             "reference_radius_m": RADIUS,
         }
     }
-    assert build_perturbations(config, "perturbations").spherical_harmonics == model
+    assert build_perturbations(config, "perturbations").spherical_harmonics == replace(
+        model, backend="cpp"
+    )
     for constructor in [
         lambda: Dynamics.cwh(
             chief_orbit_radius_m=7e6, perturbations=Perturbations(spherical_harmonics=model)
@@ -207,9 +219,10 @@ def test_asset_integration_matches_numerical_propagation(backend):
     assert _is_composable_mission(Mission(phases=[phase]))
 
 
-def test_native_high_degree_derivatives_and_poles():
-    pytest.importorskip("octavian_harmonics_native")
-    model = field(50, "cpp")
+@pytest.mark.parametrize("degree", [50, 100])
+def test_native_high_degree_derivatives_and_poles(degree):
+    require_native()
+    model = field(degree, "cpp")
     for position in [[0, 0, 7e6], [0, 0, -7e6], [7e6, 1e6, -2e6]]:
         np.testing.assert_allclose(
             model.acceleration(position, mu_m3ps2=MU),
@@ -336,6 +349,41 @@ def test_missing_native_extension_has_actionable_error(monkeypatch):
 
     if ast is None:
         pytest.skip("ASSET unavailable")
+    monkeypatch.setitem(sys.modules, "octavian.octavian_harmonics_native", None)
     monkeypatch.setitem(sys.modules, "octavian_harmonics_native", None)
     with pytest.raises(RuntimeError, match="optional octavian-harmonics-native"):
         field(3, "cpp").acceleration([7e6, 0, 0], mu_m3ps2=MU)
+
+
+def test_cpp_is_default_and_python_remains_explicit():
+    model = j2_field()
+    default = SphericalHarmonics(model.cosine, model.sine, RADIUS)
+    assert default.backend == "cpp"
+    assert model.backend == "python"
+
+
+@pytest.mark.parametrize("degree", [20, 50, 100])
+def test_native_sectoral_closed_form_and_laplace_equation(degree):
+    """Independent x-axis formula for a single Cnn/Snn term at high degree."""
+    require_native()
+    c = np.zeros((degree + 1, degree + 1))
+    s = np.zeros_like(c)
+    c[degree, degree], s[degree, degree] = 1e-6, -2e-6
+    model = SphericalHarmonics(c, s, RADIUS)
+    radius = RADIUS * 1.01
+    # Pbar_nn(0), from the factorial definition (no harmonic recurrence).
+    pnn = math.exp(
+        0.5 * (math.log(2 * (2 * degree + 1)) + math.lgamma(2 * degree + 1))
+        - degree * math.log(2)
+        - math.lgamma(degree + 1)
+    )
+    scale = MU / radius**2 * (RADIUS / radius) ** degree * pnn
+    expected = scale * np.array([-(degree + 1) * c[-1, -1], degree * s[-1, -1], 0])
+    np.testing.assert_allclose(
+        model.acceleration([radius, 0, 0], mu_m3ps2=MU), expected, rtol=3e-12, atol=1e-16
+    )
+    # Exterior gravity is conservative and harmonic: symmetric gradient,
+    # zero divergence. Check away from the special axis as well.
+    jac = model._native_function.jacobian(np.array([1.01, 0.03, 0.02]))
+    np.testing.assert_allclose(jac, jac.T, rtol=2e-12, atol=1e-15)
+    assert abs(np.trace(jac)) < 2e-12 * np.linalg.norm(jac)

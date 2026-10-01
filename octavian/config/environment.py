@@ -262,6 +262,7 @@ def _build_spherical_harmonics(value: Any, path: str) -> SphericalHarmonics:
     reject_unknown(
         config,
         {
+            "model",
             "cosine",
             "sine",
             "reference_radius_m",
@@ -274,4 +275,12 @@ def _build_spherical_harmonics(value: Any, path: str) -> SphericalHarmonics:
         },
         path,
     )
+    config = dict(config)
+    model = config.pop("model", None)
+    if model is not None:
+        if model != "EGM2008":
+            raise ValueError("spherical_harmonics.model must be 'EGM2008'")
+        if any(name in config for name in ("cosine", "sine", "reference_radius_m")):
+            raise ValueError("Choose model='EGM2008' or custom coefficients, not both")
+        return SphericalHarmonics.earth(**config)
     return SphericalHarmonics(**config)

@@ -8,6 +8,9 @@ on:
       - "v*"
 
 jobs:
+  native-wheels:
+    uses: ./.github/workflows/native-wheels.yml
+
   build:
     runs-on: ubuntu-latest
 
@@ -37,7 +40,7 @@ jobs:
           path: dist/
 
   publish:
-    needs: build
+    needs: [build, native-wheels]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -49,6 +52,11 @@ jobs:
     steps:
       - name: Download distributions
         uses: actions/download-artifact@v4
+        with:
+          pattern: "*wheel*"
+          merge-multiple: true
+          path: dist/
+      - uses: actions/download-artifact@v4
         with:
           name: python-package-distributions
           path: dist/
