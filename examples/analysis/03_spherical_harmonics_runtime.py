@@ -2,7 +2,7 @@
 
 Run this file normally; edit the settings below.
 Times exclude construction, imports, and a warm-up. They include the Python
-call into ASSET on both sides. Values are synthetic, fully normalized fields.
+call into ASSET on both sides. Values are the published fully normalized EGM2008 coefficients.
 """
 
 import timeit
@@ -23,17 +23,7 @@ trials = 3
 
 print("degree,backend,build_s,force_us,jacobian_us,hessian_us")
 for degree in degrees:
-    # Deterministic nonzero tesseral/sectoral terms exercise a dense field.
-    # These are test coefficients, not geophysical observations.
-    cosine = np.zeros((degree + 1, degree + 1))
-    sine = np.zeros_like(cosine)
-    for n in range(2, degree + 1):
-        for m in range(n + 1):
-            cosine[n, m] = (-1.0) ** m * 1e-6 / (n + 1) ** 2
-            if m:
-                sine[n, m] = (-1.0) ** n * 0.5e-6 / (n + 1) ** 2
-    cosine[2, 0] = -1.08262668e-3 / np.sqrt(5)
-    field = SphericalHarmonics(cosine, sine, 6378136.3)
+    field = SphericalHarmonics.earth(degree=degree, rotation_rate_radps=0.0)
     reference = None
     measurements = {}
     for backend in backends:
@@ -41,7 +31,7 @@ for degree in degrees:
         args = vf.Arguments(3)
         start = timeit.default_timer()
         function = gravity.asset_acceleration(
-            args * gravity.reference_radius_m, 0.0, mu_m3ps2=3.986004418e14
+            args * gravity.reference_radius_m, 0.0, mu_m3ps2=field.reference_mu_m3ps2
         )
         build_s = timeit.default_timer() - start
         point = np.array([1.1, 0.2, -0.3])

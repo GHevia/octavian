@@ -33,7 +33,8 @@ class SphericalHarmonics:
     ``backend='python'`` builds ASSET expressions using the same recurrence as
     numerical evaluation. ``backend='cpp'`` (the default) uses the bundled native extension
     with analytic derivatives, without Python callbacks during integration.
-    Degree/order default to the full supplied array. No gravity data is bundled.
+    Degree/order default to the full supplied array. Use ``SphericalHarmonics.earth()``
+    to load the bundled measured EGM2008 field through 200x200.
     """
 
     cosine: tuple[tuple[float, ...], ...]
@@ -45,6 +46,46 @@ class SphericalHarmonics:
     reference_angle_rad: float = 0.0
     reference_time_s: float = 0.0
     backend: str = "cpp"
+
+    reference_mu_m3ps2: float | None = None
+    model_name: str | None = None
+    tide_system: str | None = None
+
+    @classmethod
+    def earth(
+        cls,
+        *,
+        degree: int = 200,
+        order: int | None = None,
+        backend: str = "cpp",
+        rotation_rate_radps: float = 7.292115e-5,
+        reference_angle_rad: float = 0.0,
+        reference_time_s: float = 0.0,
+    ):
+        """Load NGA EGM2008 (tide-free), offline, truncated to at most 200x200.
+
+        No coefficient calculations or downloads are needed. Pass the returned
+        ``reference_mu_m3ps2`` to the EOM so central and harmonic gravity use
+        the model's published GM. Set the prime-meridian angle at the mission
+        epoch explicitly; rotation is uniform about Z, not a full ITRF model.
+        """
+        from ._earth_gravity import earth_coefficients
+
+        cosine, sine, metadata = earth_coefficients(degree, order)
+        return cls(
+            cosine,
+            sine,
+            metadata["reference_radius_m"],
+            degree=degree,
+            order=order,
+            backend=backend,
+            rotation_rate_radps=rotation_rate_radps,
+            reference_angle_rad=reference_angle_rad,
+            reference_time_s=reference_time_s,
+            reference_mu_m3ps2=metadata["mu_m3ps2"],
+            model_name=metadata["model"],
+            tide_system=metadata["tide_system"],
+        )
 
     def __post_init__(self):
         c, s = np.asarray(self.cosine, dtype=float), np.asarray(self.sine, dtype=float)
@@ -83,6 +124,11 @@ class SphericalHarmonics:
                     + (" and positive" if name == "reference_radius_m" else "")
                 )
             object.__setattr__(self, name, value)
+        if self.reference_mu_m3ps2 is not None:
+            value = float(self.reference_mu_m3ps2)
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError("reference_mu_m3ps2 must be finite and positive")
+            object.__setattr__(self, "reference_mu_m3ps2", value)
         if self.backend not in ("python", "cpp"):
             raise ValueError("backend must be 'python' or 'cpp'")
         object.__setattr__(self, "cosine", tuple(tuple(row) for row in c))

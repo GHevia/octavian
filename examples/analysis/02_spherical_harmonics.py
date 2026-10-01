@@ -2,12 +2,13 @@
 
 Edit the settings and coefficient entries below, then run this file normally.
 The PNG shows orbital paths and accumulated position differences.
-Coefficients beyond J2 are illustrative, not a measured Earth gravity model.
+Loads the published NGA EGM2008 coefficients through 200x200, offline.
 """
 
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -18,40 +19,29 @@ from octavian.dynamics import PerturbedECI, TwoBodyECI
 
 # Settings: C++ is the model default; select "python" for ASSET expressions.
 backend = "cpp"
+degree = 200  # Use a small degree, e.g. 4, when selecting backend="python".
 orbits = 2.0
 output = Path("traj_spherical_harmonics.png")
 
-# Fully normalized dimensionless coefficients, indexed by [degree, order].
-# This explicit 4x4 example includes J2, longitude-dependent C22/S22, and
-# zonal C30/C40 terms. All unspecified terms are zero; no random data is used.
-cosine = np.zeros((5, 5))
-sine = np.zeros_like(cosine)
-cosine[2, 0] = -EARTH.j2_coefficient / np.sqrt(5)
-cosine[2, 2] = 1.5e-6
-sine[2, 2] = -0.9e-6
-cosine[3, 0] = 0.9e-6
-cosine[4, 0] = 0.5e-6
-gravity = SphericalHarmonics(
-    cosine=cosine,
-    sine=sine,
-    reference_radius_m=EARTH.mean_radius_m,
-    rotation_rate_radps=7.292115e-5,
-    reference_angle_rad=0.0,  # Prime-meridian angle at mission-relative time zero.
-    backend=backend,
-)
+# Measured Earth gravity: coefficients, normalization, and reference radius
+# are loaded from the packaged NGA database. Lower degree for cheaper runs.
+gravity = SphericalHarmonics.earth(degree=degree, backend=backend)
+mu = gravity.reference_mu_m3ps2
+# Use the model's own C20 for the J2 baseline and its GM for every trajectory.
+earth = replace(EARTH, mu_m3ps2=mu, j2_coefficient=-gravity.cosine[2][0] * np.sqrt(5))
 initial = state([7e6, 0, 2e5], [0, 7400, 800])
 initial_row = np.r_[initial.r_m, initial.v_mps, 0.0]
-energy = np.dot(initial.v_mps, initial.v_mps) / 2 - EARTH.mu_m3ps2 / np.linalg.norm(initial.r_m)
-semi_major_axis_m = -EARTH.mu_m3ps2 / (2 * energy)
-period_s = 2 * np.pi * np.sqrt(semi_major_axis_m**3 / EARTH.mu_m3ps2)
+energy = np.dot(initial.v_mps, initial.v_mps) / 2 - mu / np.linalg.norm(initial.r_m)
+semi_major_axis_m = -mu / (2 * energy)
+period_s = 2 * np.pi * np.sqrt(semi_major_axis_m**3 / mu)
 duration_s = orbits * period_s
 
 start = time.perf_counter()
-harmonic_ode = PerturbedECI(mu_m3ps2=EARTH.mu_m3ps2, spherical_harmonics=gravity)
+harmonic_ode = PerturbedECI(mu_m3ps2=mu, spherical_harmonics=gravity)
 build_seconds = time.perf_counter() - start
 models = {
-    "Point mass": TwoBodyECI(mu_m3ps2=EARTH.mu_m3ps2),
-    "J2": PerturbedECI(mu_m3ps2=EARTH.mu_m3ps2, j2=True),
+    "Point mass": TwoBodyECI(mu_m3ps2=mu),
+    "J2": PerturbedECI(mu_m3ps2=mu, j2=True, j2_coefficient=earth.j2_coefficient),
     "Spherical harmonics": harmonic_ode,
 }
 histories = {}
@@ -70,6 +60,7 @@ reference = propagate.inertial(
     [0, check_time_s],
     perturbations=Perturbations(spherical_harmonics=gravity),
     max_step_s=2,
+    central_body=earth,
 )
 integrator = harmonic_ode.integrator(10.0)
 integrator.setAbsTol(1e-7)
@@ -106,7 +97,8 @@ for name in ("J2", "Spherical harmonics"):
     separation_km = np.linalg.norm(histories[name][:, :3] - point_mass[:, :3], axis=1) / 1e3
     separation_axes.plot(minutes, separation_km, label=name, color=colors[name])
 separation_axes.set(
-    title="Accumulated departure from point-mass gravity", ylabel="Position difference [km]"
+    title="Accumulated departure from point-mass gravity",
+    ylabel="Position difference [km]",
 )
 separation_axes.legend()
 separation_axes.grid(alpha=0.25)
@@ -123,7 +115,7 @@ extra_axes.set(
 extra_axes.legend(ncols=4, fontsize=9)
 extra_axes.grid(alpha=0.25)
 figure.suptitle(
-    f"Rotating {gravity.degree}×{gravity.order} gravity field · {backend} backend\nSynthetic coefficients beyond J2; identical initial states",
+    f"Rotating {gravity.degree}×{gravity.order} gravity field · {backend} backend\nEGM2008 coefficients; identical initial states",
     fontsize=14,
 )
 output.parent.mkdir(parents=True, exist_ok=True)
