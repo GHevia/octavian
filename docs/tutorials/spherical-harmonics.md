@@ -72,6 +72,11 @@ Independent validation lives in Actium; example 02 focuses on the gravity model�
 effect on an orbit. Example 03
 compares both backends with identical EGM2008 coefficients at 4×4, 8×8, and
 10×10, including construction, force, Jacobian, and adjoint-Hessian timings.
+It also integrates one orbit with each backend's `PerturbedECI` ODE using
+identical initial states and integrator settings, reports propagation speedups,
+and checks the sampled trajectories agree. Edit `orbits`, `initial_step_s`,
+`absolute_tolerance`, and `output_points` to adjust this comparison. The field
+is static (`rotation_rate_radps=0.0`) for both evaluation and integration.
 
 ## Coefficients, units, and orientation
 
