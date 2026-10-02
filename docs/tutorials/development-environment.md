@@ -177,3 +177,13 @@ native ASSET import, and runs the full suite there. A separate Windows Conda
 job verifies the project-owned `octavian-dev` environment. This keeps Linux
 development and Windows compatibility continuously tested without requiring
 every contributor to maintain both machines.
+
+## Native gravity in editable installs
+
+`pip install -e ".[dev]"` builds Octavian's C++ spherical-harmonic backend by
+default. Source development requires Git and a compatible Clang toolchain;
+Windows additionally requires the Visual Studio C++ tools and an x64 developer
+terminal. CMake and Ninja are installed by pip's isolated build environment, and
+the build fetches pinned ASSET headers automatically. There is no separate
+native-package installation. See [native build setup](spherical-harmonics.md#editable-and-source-installations)
+for prerequisites, offline headers, rebuilding, and the explicit Python-only option.

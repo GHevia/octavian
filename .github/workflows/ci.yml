@@ -4,6 +4,12 @@ on:
   push:
   pull_request:
 
+# Python-only jobs exercise the explicit source-only option. The native matrix
+# tests default wheel and editable installs on every supported platform/Python pair.
+env:
+  OCTAVIAN_BUILD_NATIVE: '0'
+  PYTHONNOUSERSITE: '1'
+
 jobs:
   windows-asset-runtime:
     name: Windows ASSET runtime
@@ -78,6 +84,8 @@ jobs:
   linux-native-harmonics:
     name: Native spherical harmonics (Linux, pip ASSET)
     runs-on: ubuntu-latest
+    env:
+      OCTAVIAN_BUILD_NATIVE: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: conda-incubator/setup-miniconda@v3
@@ -91,15 +99,10 @@ jobs:
         run: |
           conda env create --file environment.yml
           conda install -y -n octavian-dev -c conda-forge clangxx=18 gcc_impl_linux-64=13 gxx_impl_linux-64=13 cmake ninja
-          conda run -n octavian-dev python -m pip install --no-user -e ".[dev]" scikit-build-core
-      - name: Fetch pinned ASSET headers without building ASSET
-        run: |
-          git clone --branch v0.5.1 --depth 1 https://github.com/AlabamaASRL/asset_asrl.git "$RUNNER_TEMP/asset-headers"
-          git -C "$RUNNER_TEMP/asset-headers" submodule update --init --depth 1 dep/eigen dep/pybind11 dep/fmt
-      - name: Build and validate the optional native wheel
+          conda run -n octavian-dev python -m pip install --no-user -e ".[dev]"
+      - name: Validate the bundled editable backend
         shell: bash -el {0}
         run: |
-          ASSET_SOURCE_DIR="$RUNNER_TEMP/asset-headers" conda run -n octavian-dev env CXX=clang++ python -m pip install --no-user --no-build-isolation ./native/spherical_harmonics
-          conda run -n octavian-dev python -c 'import octavian_harmonics_native'
-          conda run -n octavian-dev python -m pytest tests/test_spherical_harmonics.py -q
+          conda run -n octavian-dev python -c 'from octavian import SphericalHarmonics; print(SphericalHarmonics.earth(degree=200).acceleration([7e6, 1e6, 2e6]))'
+          conda run -n octavian-dev python -m pytest tests/test_spherical_harmonics.py tests/test_earth_gravity.py -q
           conda run -n octavian-dev python examples/analysis/02_spherical_harmonics.py

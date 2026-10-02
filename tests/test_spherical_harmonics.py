@@ -351,7 +351,7 @@ def test_missing_native_extension_has_actionable_error(monkeypatch):
         pytest.skip("ASSET unavailable")
     monkeypatch.setitem(sys.modules, "octavian.octavian_harmonics_native", None)
     monkeypatch.setitem(sys.modules, "octavian_harmonics_native", None)
-    with pytest.raises(RuntimeError, match="optional octavian-harmonics-native"):
+    with pytest.raises(RuntimeError, match="compiled spherical-harmonic extension"):
         field(3, "cpp").acceleration([7e6, 0, 0], mu_m3ps2=MU)
 
 

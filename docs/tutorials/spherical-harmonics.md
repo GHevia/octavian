@@ -159,56 +159,59 @@ ASSET expressions or installations without the extension. There is no silent
 fallback on a missing or incompatible binary. These wheels are delivered when this change is
 released; a checkout alone does not install them.
 
-A pure Python wheel and source distribution remain available. Those installations
-support the Python backend wherever pip-installed ASSET is supported. They do
-not compile native code automatically. A missing or incompatible native binary
-raises an error when `cpp` is selected.
+Source distributions and editable installations compile the same extension by
+default. There is no separate native-package installation step.
 
-## Build the optional standalone extension
+## Editable and source installations
 
-Developers can still install the separate local package
-`native/spherical_harmonics`, which builds `octavian-harmonics-native`. The loader
-prefers the bundled extension when present and otherwise uses this standalone
-package. Both use upstream
-ASSET headers and the **existing pip-installed `asset_asrl==0.5.1`** at runtime.
-It does not build ASSET, modify the wheel, or require a fork. Headers and their
-pinned Eigen, pybind11, and fmt submodules are needed only at build time.
+Install Git and a compatible C++ toolchain once:
 
-On Linux x86-64, in the project environment:
+- **Linux x86-64:** Clang 17/18 and C++ standard-library development headers
+  (the validated Conda toolchain is `clangxx=18 gcc_impl_linux-64=13 gxx_impl_linux-64=13`).
+- **Windows x64:** Visual Studio 2022 C++ Build Tools and LLVM/Clang-CL.
+  Run installation in an x64 Visual Studio developer terminal. The build hook
+  sets MSVC compatibility version 19.40 to match pip ASSET 0.5.1.
+- **Python:** the supported native matrix is 3.10–3.12. A system Python also
+  needs its development headers; Conda supplies these with Python.
+
+With the compiler available on `PATH`, a venv uses the normal installation command:
 
 ```bash
-# Create octavian-dev from environment.yml first, then install Octavian.
-conda run -n octavian-dev python -m pip install --no-user -e ".[dev]"
-conda install -n octavian-dev -c conda-forge clangxx=18 gcc_impl_linux-64=13 gxx_impl_linux-64=13 cmake ninja
-conda run -n octavian-dev python -m pip install scikit-build-core
-
-git clone --branch v0.5.1 --depth 1 https://github.com/AlabamaASRL/asset_asrl.git /tmp/asset-headers
-git -C /tmp/asset-headers submodule update --init --depth 1 dep/eigen dep/pybind11 dep/fmt
-ASSET_SOURCE_DIR=/tmp/asset-headers conda run -n octavian-dev env CXX=clang++ \
-  python -m pip install --no-user --no-build-isolation ./native/spherical_harmonics
-conda run -n octavian-dev python -m pytest tests/test_spherical_harmonics.py -q
+python -m pip install -e ".[dev]"
+python -c "from octavian import SphericalHarmonics; print(SphericalHarmonics.earth(degree=200).acceleration([7e6, 1e6, 2e6]))"
 ```
 
-The pinned ASSET tag resolves to `6cb73ac174b140ecc6ac1b9563012424f2f0a748`.
-ASSET's native ABI is not a stable public plugin ABI: use its matching headers,
-submodules, Clang/libstdc++ ABI, Python minor version, and AVX2/Eigen alignment.
-The extension checks for the registered ASSET function type on import and rejects
-an incompatible pybind11 ABI. Rebuild and revalidate after changing ASSET versions.
-The current native build targets the ASSET x86-64 AVX2 wheel configuration.
-Windows uses Clang-CL with MSVC compatibility version 19.40 (matching ASSET's
-published pybind11 ABI) and the matching MSVC runtime. The wheel workflow builds
-and tests all six platform/Python combinations against pip-installed ASSET,
-including derivatives, optimization, the propagation example, and runtime comparison. Publishing
-waits for every wheel test to pass.
+Pip supplies Hatchling, CMake, and Ninja in its isolated build environment. The
+build downloads ASSET revision `6cb73ac174b140ecc6ac1b9563012424f2f0a748`
+and its pinned Eigen, pybind11, and fmt submodules into `.native-build/`.
+Only the gravity extension is compiled; the runtime remains the existing
+`asset_asrl==0.5.1` wheel. Initial source builds require network access to GitHub.
+To use an existing checkout or build offline, set `ASSET_SOURCE_DIR` to the pinned
+ASSET source with its submodules initialized. Set `CXX` to select a compiler explicitly.
 
-Maintainers can build a bundled wheel with `OCTAVIAN_BUILD_NATIVE=1 python -m build
---wheel`, with `ASSET_SOURCE_DIR`, Clang, CMake, and Ninja configured as above.
-The build hook is opt-in; regular editable/source installations remain compiler
-free. Linux release wheels are repaired with auditwheel before installation tests.
+Editable builds place the ABI-tagged extension inside the checkout's `octavian/`
+directory. Python edits take effect immediately. After changing C++ sources,
+rerun `python -m pip install -e .`; close processes using the extension first,
+particularly on Windows. Generated binaries, license copies, and cached headers
+are ignored by Git. Use separate checkouts for environments requiring different
+native ABIs; pip uninstall does not remove an in-place editable binary.
 
-The Python backend needs no compiler or header checkout. CWH, CR3BP, and relative
-formulations other than coupled ECI reject harmonic perturbations, consistently
-with their existing force-model restrictions.
+A compiler-free developer installation is an explicit exception:
+
+```bash
+OCTAVIAN_BUILD_NATIVE=0 python -m pip install -e .
+```
+
+That configuration requires `backend="python"` for harmonic evaluation. It does
+not remove an existing in-place binary. Native build failures are errors; the
+installer never silently substitutes a Python-only build. The separately built
+legacy extension remains import-compatible, but is no longer needed for normal
+installation.
+
+Release wheels are built by the same default hook and tested outside the source
+checkout. The six Linux/Windows and Python 3.10–3.12 jobs also test default editable
+installs in fresh environments. Publishing ships those native wheels plus the
+source distribution, without a competing pure-Python wheel.
 
 ## Accuracy checks and degree limits
 

@@ -7,3 +7,11 @@ examples/**/*.png
 dist/
 site/
 .venv/
+
+# Native editable build artifacts and pinned header cache
+.native-build/
+octavian/*.so
+octavian/*.pyd
+octavian/*.so.tmp
+octavian/*.pyd.tmp
+octavian/_native_licenses/
