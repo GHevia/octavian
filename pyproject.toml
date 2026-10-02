@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling>=1.24.0"]
+requires = ["hatchling>=1.24.0", "cmake>=3.20", "ninja>=1.11"]
 build-backend = "hatchling.build"
 
 [project]
 name = "octavian"
-version = "0.4.18"
+version = "0.4.19"
 description = "Trajectory optimization and astrodynamics in Python using ASSET, with mission-script APIs."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -46,6 +46,7 @@ yaml = [
 ]
 dev = [
   "build>=1.2",
+  "hatchling>=1.24.0",
   "matplotlib>=3.7",
   "Pillow>=9.0",
   "plotly>=5.18.0",

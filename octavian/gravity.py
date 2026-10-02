@@ -165,9 +165,10 @@ class SphericalHarmonics:
                 native = import_module("octavian_harmonics_native")
         except ImportError as exc:
             raise RuntimeError(
-                "backend='cpp' requires a compatible bundled binary or the optional "
-                "octavian-harmonics-native extension. Install a supported Octavian wheel, or "
-                "select backend='python' explicitly for a compiler-free source install. "
+                "backend='cpp' requires Octavian's compiled spherical-harmonic extension. "
+                "Install a supported Octavian wheel, or reinstall the checkout with "
+                "pip install -e . after configuring the native build prerequisites. "
+                "For an explicit OCTAVIAN_BUILD_NATIVE=0 installation, select backend='python'. "
                 "See docs/tutorials/spherical-harmonics.md for build instructions."
             ) from exc
         return native.acceleration_function(self.cosine, self.sine, self.degree, self.order)
