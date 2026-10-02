@@ -2,7 +2,7 @@
 
 Run this file normally; edit the settings below.
 Times exclude construction, imports, and a warm-up. They include the Python
-call into ASSET on both sides. Values are the published fully normalized EGM2008 coefficients.
+call into ASSET on both sides. Tables show raw timings and backend speedups. Values are the published fully normalized EGM2008 coefficients.
 """
 
 import timeit
@@ -29,9 +29,14 @@ initial_row = np.array([7e6, 0.0, 2e5, 0.0, 7400.0, 800.0, 0.0])
 
 print("Construction time is reported separately from repeated evaluations.")
 print("Jacobians and Hessians are the derivatives ASSET uses during optimization.")
-print(
-    f"{'Field':>8} {'Backend':>8} {'Build [s]':>12} {'Force [µs]':>12} {'Jacobian [µs]':>15} {'Hessian [µs]':>15}"
+timing_header = (
+    f"{'Field':>8} {'Backend':>8} {'Build [s]':>12} {'Force [µs]':>12} {'Jacobian [µs]':>15} {'Hessian [µs]':>15} "
+    f"{'ODE build [s]':>15} {'Integration [s]':>17}"
 )
+print(f"Integration: {orbits:g} orbit(s), {output_points} samples per run.")
+print(timing_header)
+print("-" * len(timing_header))
+comparisons = []
 for degree in degrees:
     measurements = {}
     integration_times = {}
@@ -57,11 +62,6 @@ for degree in degrees:
             partial(function.adjointhessian, point, adjoint),
         ]:
             timings.append(min(timeit.repeat(call, number=repeats, repeat=trials)) / repeats * 1e6)
-        print(
-            f"{degree:>3}×{degree:<4} {backend:>8} {build_s:12.4f} "
-            f"{timings[0]:12.3f} {timings[1]:15.3f} {timings[2]:15.3f}",
-            flush=True,
-        )
         measurements[backend] = timings
 
         # Propagate the full six-state ODE with the same static field used above.
@@ -83,26 +83,40 @@ for degree in degrees:
         histories[backend] = history
         integration_s = min(timeit.repeat(propagate, number=1, repeat=integration_trials))
         integration_times[backend] = integration_s
+        field = f"{degree}×{degree}"
         print(
-            f"  {backend}: ODE/integrator build {ode_build_s:.4f} s; "
-            f"integrate {orbits:g} orbit(s), {output_points} samples: {integration_s:.6f} s",
+            f"{field:>8} {backend:>8} {build_s:12.4f} "
+            f"{timings[0]:12.3f} {timings[1]:15.3f} {timings[2]:15.3f} "
+            f"{ode_build_s:15.4f} {integration_s:17.6f}",
             flush=True,
         )
     if "python" in measurements and "cpp" in measurements:
         speedups = np.asarray(measurements["python"]) / measurements["cpp"]
-        print(
-            f"{degree}x{degree} speedup (force/Jacobian/Hessian): "
-            + " / ".join(f"{speedup:.1f}x" for speedup in speedups),
-            flush=True,
-        )
         position_difference_m = np.linalg.norm(histories["python"][:, :3] - histories["cpp"][:, :3], axis=1)
         velocity_difference_mps = np.linalg.norm(histories["python"][:, 3:6] - histories["cpp"][:, 3:6], axis=1)
         np.testing.assert_allclose(histories["python"][:, 6], histories["cpp"][:, 6], atol=1e-9, rtol=0)
         np.testing.assert_allclose(histories["python"][:, :6], histories["cpp"][:, :6], atol=1e-4, rtol=1e-10)
+        comparisons.append((
+            f"{degree}×{degree}",
+            speedups,
+            integration_times["python"] / integration_times["cpp"],
+            position_difference_m.max(),
+            velocity_difference_mps.max(),
+        ))
+
+if comparisons:
+    print("\nC++ speedup relative to Python; maximum trajectory differences.")
+    comparison_header = (
+        f"{'Field':>8} {'Force':>12} {'Jacobian':>15} {'Hessian':>15} "
+        f"{'Integration':>17} {'Position [m]':>15} {'Velocity [m/s]':>17}"
+    )
+    print(comparison_header)
+    print("-" * len(comparison_header))
+    for field, speedups, integration_speedup, position_difference, velocity_difference in comparisons:
         print(
-            f"{degree}x{degree} integration speedup: "
-            f"{integration_times['python'] / integration_times['cpp']:.1f}x; "
-            f"maximum trajectory difference: {position_difference_m.max():.3g} m, "
-            f"{velocity_difference_mps.max():.3g} m/s",
+            f"{field:>8} {f'{speedups[0]:.1f}x':>12} "
+            f"{f'{speedups[1]:.1f}x':>15} {f'{speedups[2]:.1f}x':>15} "
+            f"{f'{integration_speedup:.1f}x':>17} "
+            f"{position_difference:15.3g} {velocity_difference:17.3g}",
             flush=True,
         )
