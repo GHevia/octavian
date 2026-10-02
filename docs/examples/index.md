@@ -106,7 +106,9 @@ C++ is the default, with Python available explicitly.
 
 `examples/analysis/03_spherical_harmonics_runtime.py` compares backend construction,
 acceleration, Jacobian, and adjoint-Hessian runtimes for identical EGM2008
-fields, checking agreement before timing. Edit its settings at the top.
+fields. It also propagates the same initial orbit through each backend's
+`PerturbedECI` ODE, reports integration time separately from construction,
+and checks trajectory agreement. Edit its settings at the top.
 
 See the [gravity tutorial](../tutorials/spherical-harmonics.md) for coefficient
 meaning, validation coverage, degree limits, and native installation.
