@@ -168,3 +168,33 @@ from the domain-specific module layout.
 
 The complete executable overview is
 `examples/analysis/01_propagation_namespace.py`.
+
+## Native Two-Body Integration
+
+For adaptive numerical point-mass propagation, `TwoBodyECI` defaults to
+ASSET's specialized C++ Kepler ODE and integrator. Its entire integration
+loop runs in C++, with no Python force callbacks. This uses the existing
+ASSET wheel and needs no additional extension build.
+
+```python
+from octavian import EARTH
+from octavian.dynamics import TwoBodyECI
+
+ode = TwoBodyECI(mu_m3ps2=EARTH.mu_m3ps2)
+integrator = ode.integrator(10.0)  # Initial step in seconds.
+integrator.setAbsTol(1e-7)
+history = integrator.integrate_dense(
+    [7e6, 0.0, 0.0, 0.0, 7500.0, 0.0, 0.0], 6000.0, 401
+)
+```
+
+Rows contain `[r, v, time]` in SI units. Pass `backend="expression"` to
+compare against the generic ASSET expression integrator. Both are compiled;
+the specialized backend also specializes the integration loop for Kepler
+dynamics. Existing phase creation and variable groups remain available.
+`propagate.two_body` already uses ASSET's analytical C++ Cartesian Kepler
+propagation when ASSET is installed; it is useful for direct evaluation at
+arbitrary times. The numerical integrator above is a separate option.
+
+`examples/analysis/03_spherical_harmonics_runtime.py` reports raw integration
+times and checks agreement between the two numerical backends.
