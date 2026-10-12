@@ -56,6 +56,11 @@ dev = [
   "pre-commit>=3.6",
   "mkdocs>=1.6",
   "mkdocstrings[python]>=0.25",
+  # ASSET's Basemap dependency requires packaging < 26. Keep pip from
+  # backtracking into obsolete Basemap source releases during dev installs.
+  "packaging>=22,<26",
+  # mkdocstrings' renderer calls the pre-12 Highlight constructor.
+  "pymdown-extensions>=10,<12",
   "PyYAML>=6.0",
 ]
 
