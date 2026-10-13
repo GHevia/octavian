@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ._asset import oc, require_asset, vf
+from ._asset import ast, oc, require_asset, vf
 from ._control_dynamics import thrust_vector_and_rate
 from ._interpolation import bounded_query_times
 from .bodies import MOON, SUN
@@ -453,6 +453,11 @@ def _translational_acceleration(
 class TwoBodyECI(oc.ODEBase if oc is not None else object):
     """Two-body point-mass gravity in ECI.
 
+    ``backend="cpp"`` (default) uses ASSET's specialized C++ Kepler
+    integrator for propagation. ``backend="expression"`` uses the generic
+    ASSET expression integrator. Both run without Python force callbacks;
+    phase construction retains the existing expressions and variable groups.
+
     ODE state has 6 components: ``[r(3), v(3)]``.
     Time is the *phase time variable* (``ODEArguments.TVar()``), not a state component.
 
@@ -462,9 +467,15 @@ class TwoBodyECI(oc.ODEBase if oc is not None else object):
         - ``t``: phase time variable
     """
 
-    def __init__(self, *, mu_m3ps2: float) -> None:
+    def __init__(self, *, mu_m3ps2: float, backend: str = "cpp") -> None:
         _require_asset()
+        if backend not in {"cpp", "expression"}:
+            raise ValueError("TwoBodyECI backend must be 'cpp' or 'expression'")
         self.mu = float(mu_m3ps2)
+        if not np.isfinite(self.mu) or self.mu <= 0:
+            raise ValueError("mu_m3ps2 must be finite and positive")
+        self.backend = backend
+        self._native_ode = ast.Astro.Kepler.ode(self.mu) if backend == "cpp" else None
 
         XtU = oc.ODEArguments(6, 0)  # 6 states, 0 controls
         R = XtU.XVec().head(3)
@@ -482,6 +493,17 @@ class TwoBodyECI(oc.ODEBase if oc is not None else object):
         }
 
         super().__init__(ode, 6, 0, Vgroups=Vgroups)
+
+    def integrator(self, *args):
+        """Create an ASSET integrator with ``step_s`` or ``method, step_s``.
+
+        The C++ backend specializes the complete adaptive integration loop
+        for point-mass dynamics. The returned integrator supports ASSET's
+        existing tolerance controls, ``integrate``, and ``integrate_dense``.
+        """
+        if self._native_ode is not None:
+            return self._native_ode.integrator(*args)
+        return super().integrator(*args)
 
 
 class PerturbedECI(oc.ODEBase if oc is not None else object):

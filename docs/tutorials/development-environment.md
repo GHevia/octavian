@@ -187,3 +187,12 @@ terminal. CMake and Ninja are installed by pip's isolated build environment, and
 the build fetches pinned ASSET headers automatically. There is no separate
 native-package installation. See [native build setup](spherical-harmonics.md#editable-and-source-installations)
 for prerequisites, offline headers, rebuilding, and the explicit Python-only option.
+
+### Development dependency compatibility
+
+The `dev` extra constrains `packaging` below 26 to match ASSET's Basemap
+dependency. Without this constraint, pip can backtrack into old Basemap source
+releases that fail to build on Python 3.12. It also keeps `pymdown-extensions`
+below 12 because the Mkdocstrings renderer uses the earlier `Highlight`
+constructor. These constraints apply to the documented editable development
+install and CI installation commands.
