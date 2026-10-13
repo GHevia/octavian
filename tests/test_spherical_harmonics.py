@@ -351,7 +351,7 @@ def test_missing_native_extension_has_actionable_error(monkeypatch):
         pytest.skip("ASSET unavailable")
     monkeypatch.setitem(sys.modules, "octavian.octavian_harmonics_native", None)
     monkeypatch.setitem(sys.modules, "octavian_harmonics_native", None)
-    with pytest.raises(RuntimeError, match="optional octavian-harmonics-native"):
+    with pytest.raises(RuntimeError, match="compiled spherical-harmonic extension"):
         field(3, "cpp").acceleration([7e6, 0, 0], mu_m3ps2=MU)
 
 
@@ -387,3 +387,50 @@ def test_native_sectoral_closed_form_and_laplace_equation(degree):
     jac = model._native_function.jacobian(np.array([1.01, 0.03, 0.02]))
     np.testing.assert_allclose(jac, jac.T, rtol=2e-12, atol=1e-15)
     assert abs(np.trace(jac)) < 2e-12 * np.linalg.norm(jac)
+
+
+def test_native_earth_harmonics_with_sun_and_moon():
+    """Configured third-body tables and the numerical API share the same EOM."""
+    from octavian.solvers.third_bodies import build_third_body_tables
+
+    require_native()
+    if ast is None:
+        pytest.skip("ASSET unavailable")
+    gravity = SphericalHarmonics.earth(degree=8, order=8, reference_angle_rad=0.4)
+    initial = state([7e6, 0, 2e5], [0, 7400, 800])
+    forces = Perturbations(spherical_harmonics=gravity, moon=True, sun=True)
+    phase = Phase(
+        name="coast",
+        mode="coast",
+        spacecraft=Spacecraft(dry_mass_kg=100),
+        dynamics=Dynamics(
+            perturbations=forces,
+            third_body_table_step_s=60.0,
+            third_body_table_margin_s=0.0,
+        ),
+        initial_state=initial,
+        tof_bounds_s=(600, 600),
+    )
+    mission = Mission(initial_epoch="2026-01-01T00:00:00Z", phases=[phase])
+    tables = build_third_body_tables(mission, [phase], [(600, 600)])
+    assert set(tables) == {"sun", "moon"}
+    ode = PerturbedECI(spherical_harmonics=gravity, third_body_tables=tuple(tables.values()))
+    integrator = ode.integrator(10.0)
+    integrator.setAbsTol(1e-7)
+    final = integrator.integrate(np.r_[initial.r_m, initial.v_mps, 0.0], 600.0)
+    numerical = propagate.inertial(
+        initial,
+        [0, 600],
+        perturbations=forces,
+        initial_epoch=mission.initial_epoch,
+        max_step_s=1.0,
+        ephemeris_step_s=60.0,
+    )
+    np.testing.assert_allclose(final[:6], numerical[-1, :6], rtol=0, atol=1e-3)
+    earth_only = propagate.inertial(
+        initial,
+        [0, 600],
+        perturbations=Perturbations(spherical_harmonics=gravity),
+        max_step_s=1.0,
+    )
+    assert np.linalg.norm(numerical[-1, :3] - earth_only[-1, :3]) > 0.01
