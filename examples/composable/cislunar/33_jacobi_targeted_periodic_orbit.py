@@ -1,4 +1,4 @@
-"""Cislunar example 31: select a periodic orbit by Jacobi constant.
+"""Cislunar example 33: select a periodic orbit by Jacobi constant.
 
 The preceding periodic-orbit example fixes the initial x coordinate to choose
 one member of the L1 planar Lyapunov family. Here the family member is selected
@@ -8,19 +8,15 @@ position, velocity, and period while front/back equality closes the orbit.
 Saves a focused synodic XY PNG of the planar orbit alongside the HTML overview.
 
 Run:
-  python examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py
+  python examples/composable/cislunar/33_jacobi_targeted_periodic_orbit.py
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from octavian import Dynamics, Mission, Phase, Spacecraft, constraints, state
-from octavian.cislunar import (
-    CR3BPSystem,
-    jacobi_constant,
-    propagate_cr3bp,
-)
+from octavian import Dynamics, Mission, Phase, Spacecraft, constraints, propagate, state
+from octavian.cislunar import CR3BPSystem, jacobi_constant
 from octavian.solvers import SolverOptions
 from octavian.viz import (
     save_cr3bp_trajectory_html,
@@ -40,11 +36,8 @@ seed_state_canonical = state(
 seed_period_tu = 2.779749966597294
 target_jacobi_canonical = 3.16
 
-seed_history_canonical = propagate_cr3bp(
-    seed_state_canonical,
-    [0.0, seed_period_tu],
-    system=system,
-    dimensional=False,
+seed_history_canonical = propagate.cr3bp(
+    seed_state_canonical, [0.0, seed_period_tu], system=system, dimensional=False
 )
 seed_terminal_canonical = state(
     seed_history_canonical[-1, 0:3],

@@ -109,6 +109,8 @@ class Dynamics:
     characteristic units while preserving SI inputs and outputs.
     ``cr3bp_dimensional`` records whether a CR3BP phase uses SI or canonical
     variables and is set by :meth:`Dynamics.cr3bp`.
+    A spherical-harmonic field with published GM supplies ``mu_m3ps2``
+    automatically, taking precedence over general central-body constants.
     ``third_body_table_margin_s`` extends Sun/Moon and solar-geometry tables
     beyond the mission's cumulative absolute upper time bound.
     """
@@ -137,15 +139,17 @@ class Dynamics:
             self.frame = self.model.frame
             if self.scaling is None:
                 self.scaling = self.model.scaling
-        if self.central_body is None:
-            return
-        body = resolve_body(self.central_body)
-        self.central_body = body
-        self.mu_m3ps2 = body.mu_m3ps2
-        self.central_body_radius_m = body.mean_radius_m
-        self.j2_coefficient = body.j2_coefficient
-        if self.model is None and self.frame.origin != body.name:
-            self.frame = body.inertial_frame()
+        if self.central_body is not None:
+            body = resolve_body(self.central_body)
+            self.central_body = body
+            self.mu_m3ps2 = body.mu_m3ps2
+            self.central_body_radius_m = body.mean_radius_m
+            self.j2_coefficient = body.j2_coefficient
+            if self.model is None and self.frame.origin != body.name:
+                self.frame = body.inertial_frame()
+        gravity = getattr(self.active_perturbations(), "spherical_harmonics", None)
+        if gravity is not None:
+            self.mu_m3ps2 = gravity.resolve_mu(self.mu_m3ps2)
 
     @classmethod
     def for_body(cls, body: CelestialBody | str, **kwargs: Any) -> Dynamics:

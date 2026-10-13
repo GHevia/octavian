@@ -1,23 +1,21 @@
-"""Relative example 26: free-time targeting in classical relative elements.
+"""Relative example 28: free-time targeting in classical relative elements.
 
-This is the singular classical-difference counterpart to example 20's
+This is the singular classical-difference counterpart to example 22's
 quasi-nonsingular D'Amico formulation. The optimizer propagates
 ``[Δa, Δe, Δi, ΔΩ, Δω, ΔM]`` directly and selects the time at which a target
 relative mean anomaly is reached.
 
 Run:
-  python examples/composable/relative/26_classical_relative_elements.py
+  python examples/composable/relative/28_classical_relative_elements.py
 """
 
 from __future__ import annotations
 
-from octavian import EARTH, Dynamics, Mission, Phase, Spacecraft, constraints, state
+from octavian import EARTH, Dynamics, Mission, Phase, Spacecraft, constraints, propagate, state
 from octavian.astro import classical_to_cartesian
 from octavian.relative import (
     ClassicalRelativeOrbitalElements,
     classical_relative_orbital_elements_to_relative_state,
-    propagate_relative_orbital_elements,
-    propagate_two_body_state,
 )
 from octavian.solvers import SolverOptions
 
@@ -41,24 +39,21 @@ initial_elements = ClassicalRelativeOrbitalElements(
     delta_mean_anomaly_rad=-8.0e-4,
 )
 target_time_s = 1_800.0
-target_elements = propagate_relative_orbital_elements(
+target_elements = propagate.relative_elements(
     initial_elements,
     [target_time_s],
     chief_initial_state_eci=chief_eci,
     mu_m3ps2=EARTH.mu_m3ps2,
     representation="classical_elements",
-)[0, 0:6]
+).elements[0, 0:6]
 
 initial_ric = classical_relative_orbital_elements_to_relative_state(
     chief_eci,
     initial_elements,
     mu_m3ps2=EARTH.mu_m3ps2,
 )
-target_chief = propagate_two_body_state(
-    chief_eci,
-    target_time_s,
-    EARTH.mu_m3ps2,
-)
+chief_at_target = propagate.two_body(chief_eci, [target_time_s], mu_m3ps2=EARTH.mu_m3ps2)[0]
+target_chief = state(chief_at_target[:3], chief_at_target[3:6])
 target_ric_guess = classical_relative_orbital_elements_to_relative_state(
     target_chief,
     target_elements,

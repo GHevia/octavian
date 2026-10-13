@@ -2,6 +2,7 @@
 
 import gzip
 import hashlib
+import importlib.util
 import json
 from importlib.resources import files
 
@@ -71,3 +72,116 @@ def test_earth_config_and_no_mixed_custom_coefficients():
     for bad in ({"model": "unknown"}, {"model": "EGM2008", "cosine": [[1.0]]}):
         with pytest.raises(ValueError):
             build_perturbations({"spherical_harmonics": bad}, "perturbations")
+
+
+@pytest.mark.parametrize("backend", ["python", "cpp"])
+def test_published_mu_applies_to_mission_numerical_and_asset_gravity(backend):
+    from octavian import EARTH, Dynamics, Perturbations, propagate, state
+    from octavian.dynamics import PerturbedECI, gravity_acceleration_components
+
+    if backend == "cpp":
+        import importlib.util
+
+        if not any(
+            importlib.util.find_spec(name)
+            for name in ("octavian.octavian_harmonics_native", "octavian_harmonics_native")
+        ):
+            pytest.skip("native backend is not installed")
+    gravity = SphericalHarmonics.earth(degree=2, order=0, backend=backend)
+    forces = Perturbations(spherical_harmonics=gravity)
+    dynamics = Dynamics.for_body(EARTH, perturbations=forces)
+    assert dynamics.mu_m3ps2 == gravity.reference_mu_m3ps2
+    assert Dynamics(perturbations=forces).mu_m3ps2 == gravity.reference_mu_m3ps2
+    position = np.array([7e6, 1e6, 2e6])
+    expected = -gravity.reference_mu_m3ps2 * position / np.linalg.norm(
+        position
+    ) ** 3 + gravity.acceleration(position)
+    # Even a different central-body GM cannot split a published gravity model.
+    actual = gravity_acceleration_components(position, mu_m3ps2=1e14, spherical_harmonics=gravity)
+    np.testing.assert_allclose(actual, expected, rtol=2e-15)
+    ode = PerturbedECI(spherical_harmonics=gravity)
+    assert ode.mu == gravity.reference_mu_m3ps2
+    initial = state(position, [0, 7000, 200])
+    from dataclasses import replace
+
+    times = [0.0, 10.0]
+    automatic = propagate.inertial(initial, times, perturbations=forces, max_step_s=1)
+    explicit = propagate.inertial(
+        initial,
+        times,
+        perturbations=forces,
+        central_body=replace(EARTH, mu_m3ps2=gravity.reference_mu_m3ps2),
+        max_step_s=1,
+    )
+    np.testing.assert_array_equal(automatic, explicit)
+    # Coupled chief/deputy propagation must resolve the same GM as inertial propagation.
+    offset = state([100, 0, 0], [0, 0, 0])
+    relative = propagate.relative(initial, offset, times, perturbations=forces, max_step_s=1)
+    np.testing.assert_allclose(
+        relative.chief_states_eci[:, :6], automatic[:, :6], rtol=0, atol=1e-8
+    )
+
+    integrator = ode.integrator(1.0)
+    integrator.setAbsTol(1e-7)
+    asset = np.asarray(integrator.integrate(np.r_[position, initial.v_mps, 0], 10.0))
+    np.testing.assert_allclose(asset[:6], automatic[-1, :6], rtol=0, atol=1e-5)
+
+
+def test_custom_field_requires_mu_unless_it_has_model_metadata():
+    from dataclasses import replace
+
+    gravity = replace(SphericalHarmonics.earth(degree=2, backend="python"), reference_mu_m3ps2=None)
+    with pytest.raises(ValueError, match="requires a positive mu_m3ps2"):
+        gravity.acceleration([7e6, 0, 0])
+    a = gravity.acceleration([7e6, 0, 0], mu_m3ps2=1e14)
+    b = gravity.acceleration([7e6, 0, 0], mu_m3ps2=2e14)
+    np.testing.assert_allclose(b, 2 * a)
+
+
+def test_small_published_field_backends_match_derivatives_and_integration():
+    """Keep backend correctness in CI without running the timing benchmark."""
+    from octavian._asset import vf
+    from octavian.dynamics import PerturbedECI
+
+    if not any(
+        importlib.util.find_spec(name)
+        for name in ("octavian.octavian_harmonics_native", "octavian_harmonics_native")
+    ):
+        pytest.skip("native backend is not installed")
+    functions = {}
+    histories = {}
+    initial_row = np.array([7e6, 0, 2e5, 0, 7400, 800, 0])
+    for backend in ("python", "cpp"):
+        gravity = SphericalHarmonics.earth(degree=4, backend=backend, reference_angle_rad=0.4)
+        args = vf.Arguments(4)
+        functions[backend] = gravity.asset_acceleration(
+            args.head(3) * gravity.reference_radius_m, args[3]
+        )
+        integrator = PerturbedECI(spherical_harmonics=gravity).integrator(10.0)
+        integrator.setAbsTol(1e-7)
+        histories[backend] = np.asarray(integrator.integrate_dense(initial_row, 300.0, 31))
+
+    point = np.array([1.1, 0.2, -0.3, 120.0])
+    adjoint = np.array([0.2, 0.3, 0.7])
+    python, native = functions["python"], functions["cpp"]
+    np.testing.assert_allclose(native.compute(point), python.compute(point), rtol=2e-12, atol=1e-15)
+    np.testing.assert_allclose(
+        native.jacobian(point), python.jacobian(point), rtol=2e-11, atol=1e-15
+    )
+    np.testing.assert_allclose(
+        native.adjointhessian(point, adjoint),
+        python.adjointhessian(point, adjoint),
+        rtol=2e-10,
+        atol=1e-15,
+    )
+    for history in histories.values():
+        assert history.shape == (31, 7)
+        assert np.isfinite(history).all()
+        np.testing.assert_allclose(history[0], initial_row, rtol=0, atol=1e-9)
+        np.testing.assert_allclose(history[:, 6], np.linspace(0, 300, 31), rtol=0, atol=1e-9)
+    np.testing.assert_allclose(
+        histories["cpp"][:, :3], histories["python"][:, :3], rtol=0, atol=1e-4
+    )
+    np.testing.assert_allclose(
+        histories["cpp"][:, 3:6], histories["python"][:, 3:6], rtol=0, atol=1e-7
+    )

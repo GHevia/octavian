@@ -1,4 +1,4 @@
-"""Earth-centered composable example 10: coast with J2, Moon, and Sun.
+"""Earth-centered composable example 10: transfer with 8×8 Earth gravity, Moon, and Sun.
 
 Run:
   python examples/composable/earth_centered/10_sun_moon_perturbations.py
@@ -8,12 +8,23 @@ from __future__ import annotations
 
 import numpy as np
 
-from octavian import Mission, Phase, Spacecraft, Thruster, constraints, objectives, state, variables
+from octavian import (
+    Mission,
+    Phase,
+    Spacecraft,
+    SphericalHarmonics,
+    Thruster,
+    constraints,
+    objectives,
+    state,
+    variables,
+)
 from octavian.models import Dynamics, Perturbations
 from octavian.solvers import SolverOptions
 from octavian.viz.plotly import save_trajectory_html
 
-MU = 3.986004418e14
+gravity = SphericalHarmonics.earth(degree=8, order=8, reference_angle_rad=0.0)
+MU = gravity.reference_mu_m3ps2
 
 
 spacecraft = Spacecraft(
@@ -33,10 +44,13 @@ initial_state = state(
 target_position_m = np.array([-6_363_961.030678928, 2_899_711.648727294, 0.0])
 
 dynamics = Dynamics(
-    mu_m3ps2=MU,
-    perturbations=Perturbations(j2=True, moon=True, sun=True),
-    # One-hour samples are a practical default for short Earth-orbit examples.
-    third_body_table_step_s=3600.0,
+    perturbations=Perturbations(
+        spherical_harmonics=gravity,
+        moon=True,
+        sun=True,
+    ),
+    # Sample Earth-centered Sun/Moon ephemerides at ten-minute intervals.
+    third_body_table_step_s=600.0,
 )
 
 transfer = Phase(
@@ -57,7 +71,7 @@ transfer = Phase(
 )
 
 mission = Mission(
-    name="Composable: J2, Moon, and Sun perturbed coast",
+    name="Composable: 8×8 Earth gravity, Moon, and Sun transfer",
     initial_epoch="2026-01-01T00:00:00Z",
     phases=[transfer],
     objectives=[objectives.minimize_total_delta_v()],

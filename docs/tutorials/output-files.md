@@ -151,19 +151,19 @@ without a display. Saving an image closes its figure and does not open a GUI.
 | `examples/quick/01_two_impulse_free_time.py` | `traj_quick_hohmann_transfer.png` | ECI XY: equatorial Hohmann transfer with departure/arrival burns. |
 | `examples/composable/earth_centered/01_single_phase_terminal_dv_objective.py` | `traj_composable_hohmann_terminal_dv_objective.png` | ECI XY: Hohmann transfer between full circular reference orbits. |
 | `examples/composable/earth_centered/09_impulse_vs_chemical_burn.py` | `traj_composable_chemical_reference.png` | ECI XY: finite chemical burns and the corresponding impulsive Lambert transfer. |
-| `examples/composable/relative/14_cwh_relative_rendezvous.py` | `traj_composable_cwh_relative_rendezvous.png` | RIC XY: optimized rendezvous and a fixed-time analytical reference. |
+| `examples/composable/relative/16_cwh_relative_rendezvous.py` | `traj_composable_cwh_relative_rendezvous.png` | RIC XY: optimized rendezvous and a fixed-time analytical reference. |
 | `examples/composable/earth_centered/07_terminal_orbital_elements.py` | `traj_composable_terminal_orbital_elements.png` | 3D ECI: inclined two-impulse transfer with the one-impulse solution as a reference. |
-| `examples/composable/relative/21_safety_ellipse_transfer.py` | `traj_safety_ellipse_transfer.png` | 3D RIC: cross-track separation, surrounding coasts, phase colors, and burns. |
-| `examples/composable/cislunar/29_periodic_orbit_transfer.py` | `traj_L1_to_L2_periodic_orbits.png` | Synodic XY in km: planar transfer with both reference Lyapunov orbits and burns. |
-| `examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py` | `traj_jacobi_targeted_L1_periodic_orbit.png` | Synodic XY in DU: the Jacobi-selected planar Lyapunov orbit. |
+| `examples/composable/relative/23_safety_ellipse_transfer.py` | `traj_safety_ellipse_transfer.png` | 3D RIC: cross-track separation, surrounding coasts, phase colors, and burns. |
+| `examples/composable/cislunar/31_periodic_orbit_transfer.py` | `traj_L1_to_L2_periodic_orbits.png` | Synodic XY in km: planar transfer with both reference Lyapunov orbits and burns. |
+| `examples/composable/cislunar/33_jacobi_targeted_periodic_orbit.py` | `traj_jacobi_targeted_L1_periodic_orbit.png` | Synodic XY in DU: the Jacobi-selected planar Lyapunov orbit. |
 
 Choose the projection from the physical geometry: XY preserves a planar orbit's
 shape without an artificial viewing angle, while 3D reveals inclination and
-cross-track motion. Example 29 uses the same reference orbits and phase colors
-for both backends. Example 21 also preserves the pre/post-transfer coasts and
+cross-track motion. Example 31 uses the same reference orbits and phase colors
+for both backends. Example 23 also preserves the pre/post-transfer coasts and
 the shifted maneuver times in both views.
 
-Examples 29 and 31 customize the returned figure's axis limits from the
+Examples 31 and 33 customize the returned figure's axis limits from the
 trajectory bounds, with padding, to resolve the small orbits near L1/L2.
 They use `axes.set_aspect("equal", adjustable="box")` to preserve both the
 selected limits and equal spatial scales. Their HTML files retain the full

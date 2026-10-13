@@ -106,6 +106,16 @@ def test_sun_moon_perturbations_require_initial_epoch() -> None:
         third_bodies.build_third_body_tables(Mission(phases=[phase]), [phase], [(0.0, 100.0)])
 
 
+@pytest.mark.parametrize("central_body", ["sun", "moon"])
+@pytest.mark.parametrize("perturbations", [Perturbations(sun=True), Perturbations(moon=True)])
+def test_earth_ephemerides_reject_non_earth_origins(central_body, perturbations) -> None:
+    phase = _burn_phase()
+    phase.dynamics = Dynamics.for_body(central_body, perturbations=perturbations)
+
+    with pytest.raises(ValueError, match="requires an Earth central body"):
+        third_bodies.phase_third_body_names(phase)
+
+
 def test_sun_moon_table_duration_uses_time_upper_bound_and_margin() -> None:
     phase = _burn_phase()
     phase.dynamics = Dynamics(

@@ -8,12 +8,24 @@ from __future__ import annotations
 
 import numpy as np
 
-from octavian import Mission, Phase, Spacecraft, Thruster, constraints, objectives, propagate, state
+from octavian import (
+    Mission,
+    Phase,
+    Spacecraft,
+    SphericalHarmonics,
+    Thruster,
+    constraints,
+    objectives,
+    propagate,
+    state,
+)
 from octavian.models import Dynamics, Perturbations
 from octavian.solvers import SolverOptions
 from octavian.viz.plotly import save_trajectory_html
 
-MU = 3.986004418e14
+# Degree 2, order 0 retains only J2; the default backend is compiled C++.
+gravity = SphericalHarmonics.earth(degree=2, order=0)
+MU = gravity.reference_mu_m3ps2
 
 
 spacecraft = Spacecraft(
@@ -40,7 +52,7 @@ target_state = state(
     v_mps=[-3_972.32911602311, -6_395.880426811104, 0.0],
 )
 
-dynamics = Dynamics(mu_m3ps2=MU, perturbations=Perturbations(j2=True))
+dynamics = Dynamics(perturbations=Perturbations(spherical_harmonics=gravity))
 
 departure_burn = Phase(
     name="departure_burn",
