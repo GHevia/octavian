@@ -387,7 +387,7 @@ Important choices:
 | --- | --- |
 | `Perturbations(spherical_harmonics=SphericalHarmonics.earth(degree=8), moon=True, sun=True)` | Combines Earth harmonics with third-body gravity. |
 | `Mission(initial_epoch=...)` | Defines the start date for SPICE ephemeris sampling. |
-| `third_body_table_step_s=3600.0` | Sets the Sun/Moon interpolation sample spacing. |
+| `third_body_table_step_s=600.0` | Sets the Sun/Moon interpolation sample spacing. |
 | `ImpulsiveDeltaV(where="Front"/"Back")` | Lets the optimizer satisfy the endpoint geometry while reporting the required burns. |
 
 Expected output: `traj_composable_sun_moon_perturbations.html`.

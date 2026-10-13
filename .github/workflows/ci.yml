@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 # Python-only jobs exercise the explicit source-only option. The native matrix
 # tests default wheel and editable installs on every supported platform/Python pair.
 env:
@@ -105,4 +109,4 @@ jobs:
         run: |
           conda run -n octavian-dev python -c 'from octavian import SphericalHarmonics; print(SphericalHarmonics.earth(degree=200).acceleration([7e6, 1e6, 2e6]))'
           conda run -n octavian-dev python -m pytest tests/test_spherical_harmonics.py tests/test_earth_gravity.py -q
-          conda run -n octavian-dev python examples/composable/earth_centered/15_spherical_harmonics.py
+          conda run -n octavian-dev python -m pytest tests/test_executable_examples.py -q -k '08_chemical_burn_j2 or 10_sun_moon_perturbations or 14_high_fidelity_propagation or 15_spherical_harmonics'

@@ -23,7 +23,7 @@ trials = 3
 integration_trials = 1  # Full Python ODE propagations are much slower than individual calls.
 orbits = 1.0
 initial_step_s = 10.0
-absolute_tolerance = 1e-7  # SI states, as in example 02.
+absolute_tolerance = 1e-7  # SI states, as in Earth-centered example 15.
 output_points = 401
 initial_row = np.array([7e6, 0.0, 2e5, 0.0, 7400.0, 800.0, 0.0])
 
@@ -72,7 +72,9 @@ for degree in degrees:
         integrator.setAbsTol(absolute_tolerance)
         ode_build_s = timeit.default_timer() - start
         mu = gravity.reference_mu_m3ps2
-        energy = np.dot(initial_row[3:6], initial_row[3:6]) / 2 - mu / np.linalg.norm(initial_row[:3])
+        energy = np.dot(initial_row[3:6], initial_row[3:6]) / 2 - mu / np.linalg.norm(
+            initial_row[:3]
+        )
         semi_major_axis_m = -mu / (2 * energy)
         duration_s = orbits * 2 * np.pi * np.sqrt(semi_major_axis_m**3 / mu)
         propagate = partial(integrator.integrate_dense, initial_row, duration_s, output_points)
@@ -92,17 +94,27 @@ for degree in degrees:
         )
     if "python" in measurements and "cpp" in measurements:
         speedups = np.asarray(measurements["python"]) / measurements["cpp"]
-        position_difference_m = np.linalg.norm(histories["python"][:, :3] - histories["cpp"][:, :3], axis=1)
-        velocity_difference_mps = np.linalg.norm(histories["python"][:, 3:6] - histories["cpp"][:, 3:6], axis=1)
-        np.testing.assert_allclose(histories["python"][:, 6], histories["cpp"][:, 6], atol=1e-9, rtol=0)
-        np.testing.assert_allclose(histories["python"][:, :6], histories["cpp"][:, :6], atol=1e-4, rtol=1e-10)
-        comparisons.append((
-            f"{degree}×{degree}",
-            speedups,
-            integration_times["python"] / integration_times["cpp"],
-            position_difference_m.max(),
-            velocity_difference_mps.max(),
-        ))
+        position_difference_m = np.linalg.norm(
+            histories["python"][:, :3] - histories["cpp"][:, :3], axis=1
+        )
+        velocity_difference_mps = np.linalg.norm(
+            histories["python"][:, 3:6] - histories["cpp"][:, 3:6], axis=1
+        )
+        np.testing.assert_allclose(
+            histories["python"][:, 6], histories["cpp"][:, 6], atol=1e-9, rtol=0
+        )
+        np.testing.assert_allclose(
+            histories["python"][:, :6], histories["cpp"][:, :6], atol=1e-4, rtol=1e-10
+        )
+        comparisons.append(
+            (
+                f"{degree}×{degree}",
+                speedups,
+                integration_times["python"] / integration_times["cpp"],
+                position_difference_m.max(),
+                velocity_difference_mps.max(),
+            )
+        )
 
 if comparisons:
     print("\nC++ speedup relative to Python; maximum trajectory differences.")
@@ -112,7 +124,13 @@ if comparisons:
     )
     print(comparison_header)
     print("-" * len(comparison_header))
-    for field, speedups, integration_speedup, position_difference, velocity_difference in comparisons:
+    for (
+        field,
+        speedups,
+        integration_speedup,
+        position_difference,
+        velocity_difference,
+    ) in comparisons:
         print(
             f"{field:>8} {f'{speedups[0]:.1f}x':>12} "
             f"{f'{speedups[1]:.1f}x':>15} {f'{speedups[2]:.1f}x':>15} "
@@ -150,4 +168,6 @@ for backend in ["expression", "cpp"]:
 np.testing.assert_allclose(
     two_body_histories["cpp"], two_body_histories["expression"], atol=1e-4, rtol=1e-10
 )
-print(f"C++ integration speedup relative to expression: {two_body_times['expression'] / two_body_times['cpp']:.1f}x")
+print(
+    f"C++ integration speedup relative to expression: {two_body_times['expression'] / two_body_times['cpp']:.1f}x"
+)

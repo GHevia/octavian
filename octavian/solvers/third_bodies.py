@@ -54,6 +54,11 @@ def phase_perturbations(phase: Phase):
             "unsupported third bodies: "
             f"{', '.join(unsupported_bodies)}."
         )
+    if third_bodies and _central_body_name(dynamics) != "earth":
+        raise ValueError(
+            "The bundled Sun/Moon BSP is Earth-centered, so third-body gravity "
+            "requires an Earth central body."
+        )
     if perturbations.srp and _central_body_name(dynamics) != "earth":
         raise ValueError(
             "The bundled Sun BSP is Earth-centered, so SRP currently "

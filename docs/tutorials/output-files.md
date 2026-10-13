@@ -159,11 +159,11 @@ without a display. Saving an image closes its figure and does not open a GUI.
 
 Choose the projection from the physical geometry: XY preserves a planar orbit's
 shape without an artificial viewing angle, while 3D reveals inclination and
-cross-track motion. Example 29 uses the same reference orbits and phase colors
-for both backends. Example 21 also preserves the pre/post-transfer coasts and
+cross-track motion. Example 31 uses the same reference orbits and phase colors
+for both backends. Example 23 also preserves the pre/post-transfer coasts and
 the shifted maneuver times in both views.
 
-Examples 29 and 31 customize the returned figure's axis limits from the
+Examples 31 and 33 customize the returned figure's axis limits from the
 trajectory bounds, with padding, to resolve the small orbits near L1/L2.
 They use `axes.set_aspect("equal", adjustable="box")` to preserve both the
 selected limits and equal spatial scales. Their HTML files retain the full

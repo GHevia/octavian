@@ -129,7 +129,7 @@ Guidance:
   single-use helpers; use ordinary loops for repeated cases rather than wrapping
   the mission script in functions. Move reusable numerical operations into the
   package. Substantial repeated workflows such as `solve_family_member` in
-  example 32 are an intentional exception.
+  example 34 are an intentional exception.
 - Generate reference orbits by propagating boundary states with the appropriate
   force model; do not substitute hand-drawn circles for propagated histories.
 - New capabilities should usually include either a new example or an update to an existing one.

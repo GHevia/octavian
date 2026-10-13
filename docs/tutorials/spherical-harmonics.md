@@ -106,6 +106,11 @@ Examples:
 Developer timing comparisons live in
 `native/spherical_harmonics/runtime_comparison.py`. They compare Python/C++
 construction, forces, derivatives, and adaptive integration at identical settings.
+The manually triggered **Harmonics benchmark** GitHub Actions workflow runs
+the full comparison and saves its output as an artifact. Run it locally with
+`python native/spherical_harmonics/runtime_comparison.py`. PR and release CI
+keep short 4×4 backend comparisons and native high-degree correctness checks;
+they do not run repeated 8×8/10×10 Python expression benchmarks.
 
 ## Use the ODEs in your own ASSET formulation
 
@@ -120,8 +125,9 @@ from octavian.dynamics import PerturbedECI
 ode = PerturbedECI(spherical_harmonics=SphericalHarmonics.earth(degree=8))
 integrator = ode.integrator(10.0)
 integrator.setAbsTol(1e-7)
-final_row = integrator.integrate([7e6, 0, 2e5, 0, 7400, 800, 0], 600.0)
-phase = ode.phase("LGL3", [[7e6, 0, 2e5, 0, 7400, 800, 0], final_row], 20)
+initial_row = [7e6, 0, 2e5, 0, 7400, 800, 0]
+history = integrator.integrate_dense(initial_row, 600.0, 41)
+phase = ode.phase("LGL3", history, 20)
 ```
 
 States and time are SI: `[x, y, z, vx, vy, vz, time]` for coast histories.
@@ -135,6 +141,8 @@ and `asset_asrl.VectorFunctions.InterpTable1D` provide the sampling and table
 building blocks. Tables and state vectors must share the same frame, time zero,
 and time coverage. A convenience factory for configured ODEs and ephemeris
 tables would be a separate API feature; the existing ODE constructors are public.
+Composable missions reject Sun/Moon flags for a non-Earth central body because
+their bundled ephemerides are Earth-centered.
 
 ## Coefficients, units, and orientation
 

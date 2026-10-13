@@ -23,7 +23,8 @@ from octavian.models import Dynamics, Perturbations
 from octavian.solvers import SolverOptions
 from octavian.viz.plotly import save_trajectory_html
 
-MU = 3.986004418e14
+gravity = SphericalHarmonics.earth(degree=8, order=8, reference_angle_rad=0.0)
+MU = gravity.reference_mu_m3ps2
 
 
 spacecraft = Spacecraft(
@@ -43,14 +44,13 @@ initial_state = state(
 target_position_m = np.array([-6_363_961.030678928, 2_899_711.648727294, 0.0])
 
 dynamics = Dynamics(
-    mu_m3ps2=MU,
     perturbations=Perturbations(
-        spherical_harmonics=SphericalHarmonics.earth(degree=8, order=8),
+        spherical_harmonics=gravity,
         moon=True,
         sun=True,
     ),
-    # One-hour samples are a practical default for short Earth-orbit examples.
-    third_body_table_step_s=3600.0,
+    # Sample Earth-centered Sun/Moon ephemerides at ten-minute intervals.
+    third_body_table_step_s=600.0,
 )
 
 transfer = Phase(
