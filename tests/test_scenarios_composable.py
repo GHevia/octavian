@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import runpy
 from pathlib import Path
 
@@ -117,6 +118,11 @@ def _fake_solution() -> Solution:
 def test_composable_examples_run_as_scenarios(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, script_rel: str, expected_solve_calls: int
 ) -> None:
+    if script_rel.endswith("08_chemical_burn_j2.py") and not any(
+        importlib.util.find_spec(name) is not None
+        for name in ("octavian.octavian_harmonics_native", "octavian_harmonics_native")
+    ):
+        pytest.skip("The J2 reference propagation uses the native backend; covered by native CI")
     monkeypatch.chdir(tmp_path)
     missions = []
     plotted = []
