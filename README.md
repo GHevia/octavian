@@ -41,7 +41,9 @@ solver-backed workflows rely on it.
 ## Install
 
 For daily development on **Linux x86_64** (glibc 2.31 or newer), use a
-repository-local virtual environment:
+repository-local virtual environment. Source/editable installs compile the bundled
+spherical-harmonic backend. Install Git, Clang 17/18, and C++ development headers
+first; pip supplies CMake and Ninja automatically:
 
 ```bash
 python3.12 -m venv .venv
@@ -56,7 +58,8 @@ After activation, use normal commands such as
 
 For local development and ASSET-backed workflows on **Windows**, use the
 recommended Conda environment. It installs ASSET and its native runtime inside
-one isolated prefix:
+one isolated prefix. Install Visual Studio 2022 C++ Build Tools and LLVM, and
+run the editable installation from an x64 Visual Studio developer terminal:
 
 ```powershell
 conda env create --file environment.yml
@@ -77,6 +80,11 @@ python -m pip install --upgrade pip
 python -m pip install --no-user -e ".[dev]"
 python -m octavian.diagnostics
 ```
+
+Supported Linux/Windows Python 3.10–3.12 wheels include the compiled gravity
+backend; installing a wheel needs no compiler or separate native package. See
+[Native build setup](https://ghevia.github.io/octavian/tutorials/spherical-harmonics/#editable-and-source-installations)
+for source prerequisites, rebuilding C++ changes, and the explicit Python-only option.
 
 For a standard installed package with the Plotly and Matplotlib backends:
 
@@ -106,12 +114,12 @@ python examples/quick/02_two_impulse_precoast_impulsive_link.py
 python examples/composable/earth_centered/08_chemical_burn_j2.py
 python examples/composable/earth_centered/12_thrust_frames_and_attitude.py
 python examples/composable/earth_centered/13_cannonball_drag_srp.py
-python examples/analysis/01_propagation_namespace.py
-python examples/composable/relative/25_cannonball_drag_srp.py
-python examples/composable/cislunar/28_canonical_periodic_orbit.py
-python examples/composable/cislunar/29_periodic_orbit_transfer.py
-python examples/composable/cislunar/30_high_fidelity_recapture.py
-python examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py
+python examples/quick/08_propagation_models.py
+python examples/composable/relative/27_cannonball_drag_srp.py
+python examples/composable/cislunar/30_canonical_periodic_orbit.py
+python examples/composable/cislunar/31_periodic_orbit_transfer.py
+python examples/composable/cislunar/32_high_fidelity_recapture.py
+python examples/composable/cislunar/33_jacobi_targeted_periodic_orbit.py
 python examples/outputs/01_ephemeris_files.py
 python examples/outputs/02_matplotlib_plots.py
 python -m octavian.config examples/config/01_two_impulse_transfer.json
@@ -184,3 +192,7 @@ disk.
 Release versions are published from Git tags such as `v0.1.5` by GitHub Actions.
 Maintainer steps are documented in
 [RELEASING.md](https://github.com/GHevia/octavian/blob/dev/RELEASING.md).
+
+For published Earth spherical harmonics, `SphericalHarmonics.earth()` loads
+NGA EGM2008 through 200×200 offline, using the default compiled backend.
+See [Earth gravity and independent Actium/Orekit validation](https://ghevia.github.io/octavian/tutorials/spherical-harmonics/).

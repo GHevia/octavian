@@ -41,6 +41,7 @@ from .forces import (
     cannonball_drag_acceleration,
     cannonball_srp_acceleration,
 )
+from .gravity import SphericalHarmonics
 from .guesses import LowThrustSpiralGuess, TrajectoryGuess
 from .links import Link
 from .mission import Mission
@@ -86,6 +87,7 @@ __all__ = [
     "cannonball_srp_acceleration",
     "Dynamics",
     "Perturbations",
+    "SphericalHarmonics",
     "SolveConfig",
     "RunPlan",
     "RetryPolicy",

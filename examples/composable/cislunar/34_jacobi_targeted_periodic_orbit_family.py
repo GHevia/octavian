@@ -1,4 +1,4 @@
-"""Cislunar example 32: continue a family of L1 Lyapunov orbits.
+"""Cislunar example 34: continue a family of L1 Lyapunov orbits.
 
 Each solve targets a nearby canonical Jacobi constant. The preceding solved
 trajectory seeds the complete collocation mesh, a y=0 phase condition keeps
@@ -6,7 +6,7 @@ the same symmetry crossing, and narrow period bounds prevent convergence to a
 multiple-period solution or a different periodic-orbit family.
 
 Run:
-  python examples/composable/cislunar/32_jacobi_targeted_periodic_orbit_family.py
+  python examples/composable/cislunar/34_jacobi_targeted_periodic_orbit_family.py
 """
 
 from __future__ import annotations
@@ -20,9 +20,10 @@ from octavian import (
     Spacecraft,
     constraints,
     guesses,
+    propagate,
     state,
 )
-from octavian.cislunar import CR3BPSystem, jacobi_constant, propagate_cr3bp
+from octavian.cislunar import CR3BPSystem, jacobi_constant
 from octavian.solvers import SolverOptions
 from octavian.viz import save_cr3bp_trajectory_html, save_cr3bp_trajectory_image
 
@@ -35,11 +36,8 @@ seed_state_canonical = state(
     [0.0, 0.16221305707437475, 0.0],
 )
 seed_period_tu = 2.779749966597294
-seed_trajectory = propagate_cr3bp(
-    seed_state_canonical,
-    np.linspace(0.0, seed_period_tu, 61),
-    system=system,
-    dimensional=False,
+seed_trajectory = propagate.cr3bp(
+    seed_state_canonical, np.linspace(0.0, seed_period_tu, 61), system=system, dimensional=False
 )
 
 

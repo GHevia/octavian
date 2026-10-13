@@ -23,10 +23,11 @@ from octavian import (
     Spacecraft,
     constraints,
     objectives,
+    propagate,
     state,
     variables,
 )
-from octavian.astro import estimate_orbital_period_s, propagate_cartesian_rv
+from octavian.astro import estimate_orbital_period_s
 from octavian.solvers import SolverOptions
 
 INITIAL_EPOCH = "2026-01-01T00:00:00Z"
@@ -43,11 +44,9 @@ period_s = estimate_orbital_period_s(
 if period_s is None:
     raise RuntimeError("The demonstration requires a closed elliptic orbit.")
 coast_duration_s = 0.25 * period_s
-target_vector = propagate_cartesian_rv(
-    np.hstack([initial_state.r_m, initial_state.v_mps]),
-    coast_duration_s,
-    EARTH.mu_m3ps2,
-)
+target_vector = propagate.two_body(initial_state, [coast_duration_s], mu_m3ps2=EARTH.mu_m3ps2)[
+    0, :6
+]
 target_state = state(target_vector[0:3], target_vector[3:6])
 
 spacecraft = Spacecraft(

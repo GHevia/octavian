@@ -12,8 +12,8 @@ entry-point guards so the workflow reads from top to bottom.
 
 The `outputs/` examples start from a solved mission and demonstrate portable
 reporting artifacts such as STK ephemerides, CCSDS OEM, SPICE BSP, and CSV.
-The `analysis/` examples demonstrate propagators and conversions without an
-optimization solve.
+Quick example 08 demonstrates propagators and conversions without a solve.
+Earth-centered examples 14–15 demonstrate perturbed propagation and direct ASSET ODEs.
 
 ## Suggested Learning Path
 
@@ -43,20 +43,21 @@ constraints:
 - examples 08–10 — finite burns and perturbations;
 - earth-centered examples 11–13 — low-thrust orbit raising, thrust-attitude
   representations, and cannonball drag/SRP;
-- relative examples 14–15 — CWH relative motion, RIC plotting, and operational geometry;
-- relative examples 16–20 — relative representations, exact dynamics formulations,
+- earth-centered examples 14–15 — 8×8 EGM2008 with Sun/Moon gravity and model comparison;
+- relative examples 16–17 — CWH relative motion, RIC plotting, and operational geometry;
+- relative examples 18–22 — relative representations, exact dynamics formulations,
   perturbations, SPICE solar geometry, and native D'Amico targeting;
-- relative examples 21–24 — a solved safety-ellipse transfer, finite
+- relative examples 23–26 — a solved safety-ellipse transfer, finite
   burn–coast–burn chain, three-burn topology, and perturbed ROE propagation;
-- relative example 25 — differential cannonball drag/SRP;
-- relative example 26 — native classical relative-element propagation and
+- relative example 27 — differential cannonball drag/SRP;
+- relative example 28 — native classical relative-element propagation and
   targeting;
-- cislunar examples 27–31 — dimensional CR3BP fundamentals,
+- cislunar examples 29–34 — dimensional CR3BP fundamentals,
   nondimensional periodic-orbit correction, an impulsive L1-to-L2 transfer,
   perturbed inertial recapture, and Jacobi-targeted family selection.
 
 For analysis without a solve, run
-`analysis/01_propagation_namespace.py` to compare the two-body, CWH, nonlinear
+`quick/08_propagation_models.py` to compare the two-body, CWH, nonlinear
 RIC, coupled relative, relative-element, and CR3BP entry points.
 
 Mission inputs use SI units unless an API explicitly selects another
@@ -67,7 +68,7 @@ and Matplotlib PNG files are written to the current directory. Install
 The [Matplotlib example gallery](../docs/tutorials/output-files.md#matplotlib-example-gallery)
 lists static outputs: equatorial transfers and planar Lyapunov orbits in 2D,
 and inclined transfers and relative safety ellipses in 3D. The cislunar PNGs
-in examples 29 and 31 zoom to the orbits so their geometry stays readable;
+in examples 31 and 33 zoom to the orbits so their geometry stays readable;
 the companion HTML files retain the Earth–Moon overview.
 
 ## Literal Config Files

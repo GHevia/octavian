@@ -346,6 +346,7 @@ def ode_for_phase(
         if any(
             (
                 perturbations.j2,
+                perturbations.spherical_harmonics is not None,
                 perturbations.srp,
                 perturbations.drag,
                 bool(third_body_tables),
@@ -360,7 +361,13 @@ def ode_for_phase(
     if relative_model is not None:
         if is_powered_phase(phase) or carries_mass:
             raise ValueError("CWH phases do not yet support finite-thrust or mass states.")
-        if perturbations.j2 or perturbations.drag or perturbations.srp or third_body_tables:
+        if (
+            perturbations.spherical_harmonics is not None
+            or perturbations.j2
+            or perturbations.drag
+            or perturbations.srp
+            or third_body_tables
+        ):
             raise ValueError(
                 "Dynamics.cwh is an unforced linear model and cannot include "
                 "perturbations. Use Dynamics.relative(...) for exact nonlinear "
@@ -373,6 +380,7 @@ def ode_for_phase(
         has_perturbations = any(
             (
                 perturbations.j2,
+                perturbations.spherical_harmonics is not None,
                 perturbations.srp,
                 perturbations.drag,
                 bool(third_body_tables),
@@ -395,6 +403,7 @@ def ode_for_phase(
         force_options = {
             "mu_m3ps2": float(dynamics.mu_m3ps2),
             "j2": bool(perturbations.j2),
+            "spherical_harmonics": perturbations.spherical_harmonics,
             "central_body_radius_m": float(dynamics.central_body_radius_m),
             "j2_coefficient": float(dynamics.j2_coefficient),
             "third_body_tables": tuple(third_body_tables),
@@ -468,6 +477,7 @@ def ode_for_phase(
             thrust_N=float(thruster.thrust_N),
             isp_s=float(thruster.isp_s),
             j2=bool(perturbations.j2),
+            spherical_harmonics=perturbations.spherical_harmonics,
             central_body_radius_m=float(dynamics.central_body_radius_m),
             j2_coefficient=float(dynamics.j2_coefficient),
             third_body_tables=tuple(third_body_tables),
@@ -482,6 +492,7 @@ def ode_for_phase(
         return MassCoastECI(
             mu_m3ps2=float(dynamics.mu_m3ps2),
             j2=bool(perturbations.j2),
+            spherical_harmonics=perturbations.spherical_harmonics,
             central_body_radius_m=float(dynamics.central_body_radius_m),
             j2_coefficient=float(dynamics.j2_coefficient),
             third_body_tables=tuple(third_body_tables),
@@ -489,13 +500,20 @@ def ode_for_phase(
             cannonball=spacecraft.cannonball,
             **_cannonball_force_options(phase, sun_table=sun_table),
         )
-    if perturbations.j2 or perturbations.drag or perturbations.srp or third_body_tables:
+    if (
+        perturbations.spherical_harmonics is not None
+        or perturbations.j2
+        or perturbations.drag
+        or perturbations.srp
+        or third_body_tables
+    ):
         spacecraft = phase.spacecraft
         if not isinstance(spacecraft, Spacecraft):
             raise ValueError(f"Perturbed phase {phase.name!r} requires a Spacecraft object.")
         return PerturbedECI(
             mu_m3ps2=float(dynamics.mu_m3ps2),
             j2=bool(perturbations.j2),
+            spherical_harmonics=perturbations.spherical_harmonics,
             central_body_radius_m=float(dynamics.central_body_radius_m),
             j2_coefficient=float(dynamics.j2_coefficient),
             third_body_tables=tuple(third_body_tables),

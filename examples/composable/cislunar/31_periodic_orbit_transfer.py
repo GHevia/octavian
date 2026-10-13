@@ -1,4 +1,4 @@
-"""Cislunar example 29: coast-burn-transfer-burn-coast from L1 to L2.
+"""Cislunar example 31: coast-burn-transfer-burn-coast from L1 to L2.
 
 The departure and arrival states are corrected planar Lyapunov-orbit crossings
 in canonical units. The composable mission propagates along the L1 orbit,
@@ -8,7 +8,7 @@ second impulse onto the L2 orbit, and then propagates an arrival coast.
 Saves a focused synodic XY PNG with reference orbits alongside the HTML overview.
 
 Run:
-  python examples/composable/cislunar/29_periodic_orbit_transfer.py
+  python examples/composable/cislunar/31_periodic_orbit_transfer.py
 """
 
 from __future__ import annotations
@@ -23,15 +23,11 @@ from octavian import (
     constraints,
     links,
     objectives,
+    propagate,
     state,
     variables,
 )
-from octavian.cislunar import (
-    CR3BPSystem,
-    dimensionalize_state,
-    dimensionalize_time,
-    propagate_cr3bp,
-)
+from octavian.cislunar import CR3BPSystem, dimensionalize_state, dimensionalize_time
 from octavian.solvers import SolverOptions
 from octavian.viz import (
     save_cr3bp_trajectory_html,
@@ -114,13 +110,13 @@ if solution.result is None:
 
 # Propagated reference orbits make it clear where the optimized transfer starts
 # and ends. They are analysis curves, not extra optimization phases.
-l1_reference = propagate_cr3bp(
+l1_reference = propagate.cr3bp(
     l1_state_si,
     np.linspace(0.0, float(dimensionalize_time(l1_period_tu, system)), 241),
     system=system,
     max_step=300.0,
 )
-l2_reference = propagate_cr3bp(
+l2_reference = propagate.cr3bp(
     l2_state_si,
     np.linspace(0.0, float(dimensionalize_time(l2_period_tu, system)), 241),
     system=system,

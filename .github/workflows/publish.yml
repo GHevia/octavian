@@ -8,6 +8,9 @@ on:
       - "v*"
 
 jobs:
+  native-wheels:
+    uses: ./.github/workflows/native-wheels.yml
+
   build:
     runs-on: ubuntu-latest
 
@@ -17,18 +20,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Build artifacts
+      - name: Build source distribution
         run: |
           python -m pip install --upgrade pip build
-          python -m build
-
-      - name: Smoke test wheel install
-        run: |
-          python -m venv .venv-smoke
-          . .venv-smoke/bin/activate
-          python -m pip install --upgrade pip
-          python -m pip install dist/*.whl
-          python -c "import octavian; print(octavian.__name__)"
+          python -m build --sdist
 
       - name: Upload distributions
         uses: actions/upload-artifact@v4
@@ -37,7 +32,7 @@ jobs:
           path: dist/
 
   publish:
-    needs: build
+    needs: [build, native-wheels]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -49,6 +44,11 @@ jobs:
     steps:
       - name: Download distributions
         uses: actions/download-artifact@v4
+        with:
+          pattern: "*wheel*"
+          merge-multiple: true
+          path: dist/
+      - uses: actions/download-artifact@v4
         with:
           name: python-package-distributions
           path: dist/

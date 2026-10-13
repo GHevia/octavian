@@ -1,0 +1,15 @@
+{
+  "model": "EGM2008",
+  "maximum_degree": 200,
+  "normalization": "fully_normalized",
+  "tide_system": "tide_free",
+  "reference_radius_m": 6378136.3,
+  "mu_m3ps2": 398600441500000.0,
+  "source_url": "https://earth-info.nga.mil/php/download.php?file=egm-08spherical",
+  "source_archive_sha256": "65a9072f337f156e8cbd76ffd773f536e6fb0de18697ea6726ecdb790fac0fbd",
+  "source_member": "EGM2008_to2190_TideFree",
+  "uncompressed_subset_sha256": "458603c388d28b4654d352cf060f27a77fc227a94054956f6fe972add89a787f",
+  "citation": "Pavlis, Holmes, Kenyon & Factor (2012), The development and evaluation of the Earth Gravitational Model 2008 (EGM2008)",
+  "doi": "https://doi.org/10.1029/2011JB008916",
+  "processing": "Retain degrees 2 through 200 unchanged; add conventional C00=1 and zero degree-one terms; convert Fortran D exponents to E; add ICGEM header. Reference constants verified against NGA hsynth_WGS84.f and ICGEM EGM2008 header."
+}

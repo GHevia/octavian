@@ -174,3 +174,16 @@ def test_propagate_namespace_includes_cr3bp() -> None:
         np.tile(history[0, 0:6], (2, 1)),
         atol=1.0e-15,
     )
+
+
+@pytest.mark.parametrize("inclination", [0.0, 0.7, np.pi])
+def test_two_body_circular_orbit_has_finite_quarter_period_state(inclination):
+    radius = 7e6
+    speed = np.sqrt(EARTH.mu_m3ps2 / radius)
+    initial = state([radius, 0, 0], [0, speed * np.cos(inclination), speed * np.sin(inclination)])
+    quarter_period = np.pi / 2 * radius / speed
+    history = propagate.two_body(initial, [0, quarter_period], mu_m3ps2=EARTH.mu_m3ps2)
+    np.testing.assert_allclose(
+        history[-1, :3], [0, radius * np.cos(inclination), radius * np.sin(inclination)], atol=1e-7
+    )
+    np.testing.assert_allclose(history[-1, 3:6], [-speed, 0, 0], atol=1e-8)

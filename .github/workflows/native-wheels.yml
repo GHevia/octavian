@@ -1,0 +1,84 @@
+name: Native wheels
+
+on:
+  workflow_call:
+  pull_request:
+  push:
+    branches:
+      - 'agent/**'
+
+jobs:
+  wheels:
+    name: Wheel (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022]
+        python: ['3.10', '3.11', '3.12']
+    env:
+      PYTHONNOUSERSITE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: ${{ runner.os == 'Windows' && '19.1.7' || '17.0' }}
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+        with:
+          arch: x64
+      - name: Configure compiler
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            echo 'CXX=clang-cl' >> "$GITHUB_ENV"
+            echo 'CXXFLAGS=-fms-compatibility-version=19.40' >> "$GITHUB_ENV"
+          else
+            echo 'CXX=clang++' >> "$GITHUB_ENV"
+          fi
+      - name: Build native wheel
+        run: |
+          python -m pip install --upgrade pip build cmake ninja
+          python -m build --wheel
+      - name: Repair Linux wheel
+        if: runner.os == 'Linux'
+        run: |
+          python -m pip install auditwheel patchelf
+          auditwheel repair --plat manylinux_2_34_x86_64 --wheel-dir wheelhouse dist/*.whl
+      - name: Collect Windows wheel
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir wheelhouse
+          cp dist/*.whl wheelhouse/
+      - name: Install and test the distributed wheel outside the checkout
+        shell: bash
+        run: |
+          python -m pip install wheelhouse/*.whl pytest matplotlib
+          mkdir -p "$RUNNER_TEMP/wheel-tests"
+          cp tests/test_earth_gravity.py "$RUNNER_TEMP/wheel-tests/"
+          cp tests/test_spherical_harmonics.py "$RUNNER_TEMP/wheel-tests/"
+          cp examples/composable/earth_centered/15_spherical_harmonics.py "$RUNNER_TEMP/wheel-tests/"
+          cd "$RUNNER_TEMP/wheel-tests"
+          python -c 'import octavian.octavian_harmonics_native as native; print(native.__file__)'
+          python -m pytest test_spherical_harmonics.py test_earth_gravity.py -q
+          python 15_spherical_harmonics.py
+      - name: Test a default editable install in a clean environment
+        shell: bash
+        run: |
+          python -m venv .venv-editable
+          if [ "$RUNNER_OS" = Windows ]; then
+            EDITABLE_PYTHON=.venv-editable/Scripts/python
+          else
+            EDITABLE_PYTHON=.venv-editable/bin/python
+          fi
+          "$EDITABLE_PYTHON" -m pip install -e . pytest
+          "$EDITABLE_PYTHON" -c 'from octavian import SphericalHarmonics; import octavian.octavian_harmonics_native as native; print(native.__file__); print(SphericalHarmonics.earth(degree=200).acceleration([7e6, 1e6, 2e6]))'
+          "$EDITABLE_PYTHON" -m pytest tests/test_earth_gravity.py tests/test_spherical_harmonics.py -q
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-wheel-${{ matrix.os }}-${{ matrix.python }}
+          path: wheelhouse/*.whl

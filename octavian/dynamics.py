@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ._asset import oc, require_asset, vf
+from ._asset import ast, oc, require_asset, vf
 from ._control_dynamics import thrust_vector_and_rate
 from ._interpolation import bounded_query_times
 from .bodies import MOON, SUN
@@ -30,6 +30,7 @@ from .forces import (
     cannonball_drag_acceleration,
     cannonball_srp_acceleration,
 )
+from .gravity import SphericalHarmonics
 
 SUN_MU_M3PS2 = SUN.mu_m3ps2
 MOON_MU_M3PS2 = MOON.mu_m3ps2
@@ -166,6 +167,7 @@ def gravity_acceleration_components(
     time_s: float = 0.0,
     mu_m3ps2: float,
     include_j2: bool = False,
+    spherical_harmonics: SphericalHarmonics | None = None,
     central_body_radius_m: float = 6_378_136.3,
     j2_coefficient: float = 1.08262668e-3,
     third_body_tables: Sequence[ThirdBodyTable] = (),
@@ -181,7 +183,11 @@ def gravity_acceleration_components(
     radius = float(np.linalg.norm(position))
     if radius <= 0.0:
         raise ValueError("position_m must have non-zero norm")
+    if spherical_harmonics is not None:
+        mu_m3ps2 = spherical_harmonics.resolve_mu(mu_m3ps2)
     acceleration = -float(mu_m3ps2) * position / radius**3
+    if include_j2 and spherical_harmonics is not None:
+        raise ValueError("Choose spherical_harmonics or J2, not both")
     if include_j2:
         acceleration = acceleration + np.asarray(
             j2_acceleration_components(
@@ -192,6 +198,8 @@ def gravity_acceleration_components(
             ),
             dtype=float,
         )
+    if spherical_harmonics is not None:
+        acceleration += spherical_harmonics.acceleration(position, mu_m3ps2=mu_m3ps2, time_s=time_s)
     for body in third_body_tables:
         acceleration = acceleration + np.asarray(
             third_body_acceleration_components(
@@ -212,6 +220,7 @@ def translational_acceleration_components(
     mass_kg: float,
     mu_m3ps2: float,
     include_j2: bool = False,
+    spherical_harmonics: SphericalHarmonics | None = None,
     central_body_radius_m: float = 6_378_136.3,
     j2_coefficient: float = 1.08262668e-3,
     third_body_tables: Sequence[ThirdBodyTable] = (),
@@ -235,6 +244,7 @@ def translational_acceleration_components(
         mass_kg: Instantaneous spacecraft mass.
         mu_m3ps2: Central-body gravitational parameter.
         include_j2: Include central-body J2.
+        spherical_harmonics: Optional normalized gravity field, mutually exclusive with J2.
         central_body_radius_m: Central-body radius.
         j2_coefficient: Central-body J2 coefficient.
         third_body_tables: Gravity ephemeris tables.
@@ -255,6 +265,7 @@ def translational_acceleration_components(
         time_s=time_s,
         mu_m3ps2=mu_m3ps2,
         include_j2=include_j2,
+        spherical_harmonics=spherical_harmonics,
         central_body_radius_m=central_body_radius_m,
         j2_coefficient=j2_coefficient,
         third_body_tables=third_body_tables,
@@ -303,6 +314,7 @@ def _gravity_acceleration(
     *,
     mu_m3ps2: float,
     include_j2: bool = False,
+    spherical_harmonics: SphericalHarmonics | None = None,
     central_body_radius_m: float = 6_378_136.3,
     j2_coefficient: float = 1.08262668e-3,
     time_var=None,
@@ -314,13 +326,21 @@ def _gravity_acceleration(
     to query each body's interpolated Earth-centered position at the current
     mission-relative phase time.
     """
+    if spherical_harmonics is not None:
+        mu_m3ps2 = spherical_harmonics.resolve_mu(mu_m3ps2)
     acceleration = _point_mass_acceleration(position_vec, mu_m3ps2)
+    if include_j2 and spherical_harmonics is not None:
+        raise ValueError("Choose spherical_harmonics or J2, not both")
     if include_j2:
         acceleration = acceleration + _j2_acceleration(
             position_vec,
             mu_m3ps2=mu_m3ps2,
             radius_m=central_body_radius_m,
             j2=j2_coefficient,
+        )
+    if spherical_harmonics is not None:
+        acceleration = acceleration + spherical_harmonics.asset_acceleration(
+            position_vec, time_var, mu_m3ps2=mu_m3ps2
         )
     if third_body_tables:
         if time_var is None:
@@ -392,6 +412,7 @@ def _translational_acceleration(
     *,
     mu_m3ps2: float,
     include_j2: bool = False,
+    spherical_harmonics: SphericalHarmonics | None = None,
     central_body_radius_m: float = 6_378_136.3,
     j2_coefficient: float = 1.08262668e-3,
     time_var=None,
@@ -408,6 +429,7 @@ def _translational_acceleration(
         position_vec,
         mu_m3ps2=mu_m3ps2,
         include_j2=include_j2,
+        spherical_harmonics=spherical_harmonics,
         central_body_radius_m=central_body_radius_m,
         j2_coefficient=j2_coefficient,
         time_var=time_var,
@@ -431,6 +453,11 @@ def _translational_acceleration(
 class TwoBodyECI(oc.ODEBase if oc is not None else object):
     """Two-body point-mass gravity in ECI.
 
+    ``backend="cpp"`` (default) uses ASSET's specialized C++ Kepler
+    integrator for propagation. ``backend="expression"`` uses the generic
+    ASSET expression integrator. Both run without Python force callbacks;
+    phase construction retains the existing expressions and variable groups.
+
     ODE state has 6 components: ``[r(3), v(3)]``.
     Time is the *phase time variable* (``ODEArguments.TVar()``), not a state component.
 
@@ -440,9 +467,15 @@ class TwoBodyECI(oc.ODEBase if oc is not None else object):
         - ``t``: phase time variable
     """
 
-    def __init__(self, *, mu_m3ps2: float) -> None:
+    def __init__(self, *, mu_m3ps2: float, backend: str = "cpp") -> None:
         _require_asset()
+        if backend not in {"cpp", "expression"}:
+            raise ValueError("TwoBodyECI backend must be 'cpp' or 'expression'")
         self.mu = float(mu_m3ps2)
+        if not np.isfinite(self.mu) or self.mu <= 0:
+            raise ValueError("mu_m3ps2 must be finite and positive")
+        self.backend = backend
+        self._native_ode = ast.Astro.Kepler.ode(self.mu) if backend == "cpp" else None
 
         XtU = oc.ODEArguments(6, 0)  # 6 states, 0 controls
         R = XtU.XVec().head(3)
@@ -461,12 +494,23 @@ class TwoBodyECI(oc.ODEBase if oc is not None else object):
 
         super().__init__(ode, 6, 0, Vgroups=Vgroups)
 
+    def integrator(self, *args):
+        """Create an ASSET integrator with ``step_s`` or ``method, step_s``.
+
+        The C++ backend specializes the complete adaptive integration loop
+        for point-mass dynamics. The returned integrator supports ASSET's
+        existing tolerance controls, ``integrate``, and ``integrate_dense``.
+        """
+        if self._native_ode is not None:
+            return self._native_ode.integrator(*args)
+        return super().integrator(*args)
+
 
 class PerturbedECI(oc.ODEBase if oc is not None else object):
     """Point-mass gravity with optional perturbation accelerations.
 
     Currently implemented perturbations:
-        - J2 zonal harmonic
+        - J2 zonal harmonic or a fully normalized spherical-harmonic field
         - Sun and Moon third-body point-mass gravity through interpolation tables
         - Exponential-atmosphere cannonball drag
         - Cannonball solar radiation pressure
@@ -479,8 +523,9 @@ class PerturbedECI(oc.ODEBase if oc is not None else object):
     def __init__(
         self,
         *,
-        mu_m3ps2: float,
+        mu_m3ps2: float = 3.986004418e14,
         j2: bool = False,
+        spherical_harmonics: SphericalHarmonics | None = None,
         central_body_radius_m: float = 6_378_136.3,
         j2_coefficient: float = 1.08262668e-3,
         third_body_tables: Sequence[ThirdBodyTable] = (),
@@ -493,7 +538,11 @@ class PerturbedECI(oc.ODEBase if oc is not None else object):
         solar_pressure_at_1au_Npm2: float = SOLAR_PRESSURE_AT_1_AU_NPM2,
     ) -> None:
         _require_asset()
-        self.mu = float(mu_m3ps2)
+        self.mu = (
+            spherical_harmonics.resolve_mu(mu_m3ps2)
+            if spherical_harmonics is not None
+            else float(mu_m3ps2)
+        )
 
         XtU = oc.ODEArguments(6, 0)
         R = XtU.XVec().head(3)
@@ -505,6 +554,7 @@ class PerturbedECI(oc.ODEBase if oc is not None else object):
             float(spacecraft_mass_kg),
             mu_m3ps2=self.mu,
             include_j2=bool(j2),
+            spherical_harmonics=spherical_harmonics,
             central_body_radius_m=float(central_body_radius_m),
             j2_coefficient=float(j2_coefficient),
             time_var=XtU.TVar(),
@@ -541,8 +591,9 @@ class MassCoastECI(oc.ODEBase if oc is not None else object):
     def __init__(
         self,
         *,
-        mu_m3ps2: float,
+        mu_m3ps2: float = 3.986004418e14,
         j2: bool = False,
+        spherical_harmonics: SphericalHarmonics | None = None,
         central_body_radius_m: float = 6_378_136.3,
         j2_coefficient: float = 1.08262668e-3,
         third_body_tables: Sequence[ThirdBodyTable] = (),
@@ -555,7 +606,11 @@ class MassCoastECI(oc.ODEBase if oc is not None else object):
         solar_pressure_at_1au_Npm2: float = SOLAR_PRESSURE_AT_1_AU_NPM2,
     ) -> None:
         _require_asset()
-        self.mu = float(mu_m3ps2)
+        self.mu = (
+            spherical_harmonics.resolve_mu(mu_m3ps2)
+            if spherical_harmonics is not None
+            else float(mu_m3ps2)
+        )
         control_config = thrust_control or ThrustControl.vector()
         carries_attitude = control_config.carries_attitude
 
@@ -580,6 +635,7 @@ class MassCoastECI(oc.ODEBase if oc is not None else object):
             M,
             mu_m3ps2=self.mu,
             include_j2=bool(j2),
+            spherical_harmonics=spherical_harmonics,
             central_body_radius_m=float(central_body_radius_m),
             j2_coefficient=float(j2_coefficient),
             time_var=XtU.TVar(),
@@ -626,10 +682,11 @@ class FiniteThrustECI(oc.ODEBase if oc is not None else object):
     def __init__(
         self,
         *,
-        mu_m3ps2: float,
+        mu_m3ps2: float = 3.986004418e14,
         thrust_N: float,
         isp_s: float,
         j2: bool = False,
+        spherical_harmonics: SphericalHarmonics | None = None,
         central_body_radius_m: float = 6_378_136.3,
         j2_coefficient: float = 1.08262668e-3,
         third_body_tables: Sequence[ThirdBodyTable] = (),
@@ -643,7 +700,11 @@ class FiniteThrustECI(oc.ODEBase if oc is not None else object):
         solar_pressure_at_1au_Npm2: float = SOLAR_PRESSURE_AT_1_AU_NPM2,
     ) -> None:
         _require_asset()
-        self.mu = float(mu_m3ps2)
+        self.mu = (
+            spherical_harmonics.resolve_mu(mu_m3ps2)
+            if spherical_harmonics is not None
+            else float(mu_m3ps2)
+        )
         self.thrust_N = float(thrust_N)
         self.isp_s = float(isp_s)
         self.g0_mps2 = float(g0_mps2)
@@ -675,6 +736,7 @@ class FiniteThrustECI(oc.ODEBase if oc is not None else object):
             M,
             mu_m3ps2=self.mu,
             include_j2=bool(j2),
+            spherical_harmonics=spherical_harmonics,
             central_body_radius_m=float(central_body_radius_m),
             j2_coefficient=float(j2_coefficient),
             time_var=XtU.TVar(),

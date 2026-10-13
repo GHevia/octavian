@@ -15,6 +15,7 @@ from .bodies import CelestialBody
 from .bodies import resolve as resolve_body
 from .coordinates import EARTH_INERTIAL, CoordinateFrame, SolverScaling
 from .forces import SOLAR_PRESSURE_AT_1_AU_NPM2, ExponentialAtmosphere
+from .gravity import SphericalHarmonics
 from .spacecraft import Spacecraft
 from .specs import BoundaryState
 
@@ -38,13 +39,15 @@ class Perturbations:
     """Perturbation flags for translational dynamics.
 
     The composable ASSET backend supports the core Earth-orbit perturbations:
-    J2, lunar and solar third-body gravity, exponential-atmosphere cannonball
+    J2 or a spherical-harmonic field, lunar and solar third-body gravity,
+    exponential-atmosphere cannonball
     drag, and cannonball solar radiation pressure. ``moon`` and ``sun`` are
     convenience flags; ``third_bodies=("moon", "sun")`` remains accepted for
     scripts that prefer a body list.
 
     Args:
         j2: Enable central-body J2.
+        spherical_harmonics: Fully normalized gravity field; mutually exclusive with j2.
         moon: Enable lunar third-body gravity.
         sun: Enable solar third-body gravity.
         srp: Enable cannonball solar radiation pressure. This does not
@@ -65,8 +68,16 @@ class Perturbations:
     third_bodies: tuple[str, ...] = ()
     atmosphere: ExponentialAtmosphere | None = None
     solar_pressure_at_1au_Npm2: float = SOLAR_PRESSURE_AT_1_AU_NPM2
+    spherical_harmonics: SphericalHarmonics | None = None
 
     def __post_init__(self) -> None:
+        if self.spherical_harmonics is not None:
+            if not isinstance(self.spherical_harmonics, SphericalHarmonics):
+                raise TypeError("spherical_harmonics must be a SphericalHarmonics model")
+            if self.j2:
+                raise ValueError(
+                    "Choose spherical_harmonics or j2; a harmonic field already includes C20"
+                )
         pressure = float(self.solar_pressure_at_1au_Npm2)
         if not math.isfinite(pressure) or pressure <= 0.0:
             raise ValueError("solar_pressure_at_1au_Npm2 must be finite and positive")
@@ -98,6 +109,8 @@ class Dynamics:
     characteristic units while preserving SI inputs and outputs.
     ``cr3bp_dimensional`` records whether a CR3BP phase uses SI or canonical
     variables and is set by :meth:`Dynamics.cr3bp`.
+    A spherical-harmonic field with published GM supplies ``mu_m3ps2``
+    automatically, taking precedence over general central-body constants.
     ``third_body_table_margin_s`` extends Sun/Moon and solar-geometry tables
     beyond the mission's cumulative absolute upper time bound.
     """
@@ -126,15 +139,17 @@ class Dynamics:
             self.frame = self.model.frame
             if self.scaling is None:
                 self.scaling = self.model.scaling
-        if self.central_body is None:
-            return
-        body = resolve_body(self.central_body)
-        self.central_body = body
-        self.mu_m3ps2 = body.mu_m3ps2
-        self.central_body_radius_m = body.mean_radius_m
-        self.j2_coefficient = body.j2_coefficient
-        if self.model is None and self.frame.origin != body.name:
-            self.frame = body.inertial_frame()
+        if self.central_body is not None:
+            body = resolve_body(self.central_body)
+            self.central_body = body
+            self.mu_m3ps2 = body.mu_m3ps2
+            self.central_body_radius_m = body.mean_radius_m
+            self.j2_coefficient = body.j2_coefficient
+            if self.model is None and self.frame.origin != body.name:
+                self.frame = body.inertial_frame()
+        gravity = getattr(self.active_perturbations(), "spherical_harmonics", None)
+        if gravity is not None:
+            self.mu_m3ps2 = gravity.resolve_mu(self.mu_m3ps2)
 
     @classmethod
     def for_body(cls, body: CelestialBody | str, **kwargs: Any) -> Dynamics:
@@ -173,6 +188,7 @@ class Dynamics:
         if any(
             (
                 perturbations.j2,
+                getattr(perturbations, "spherical_harmonics", None) is not None,
                 perturbations.srp,
                 perturbations.drag,
                 bool(perturbations.active_third_bodies()),
@@ -275,6 +291,7 @@ class Dynamics:
         if any(
             (
                 perturbations.j2,
+                getattr(perturbations, "spherical_harmonics", None) is not None,
                 perturbations.srp,
                 perturbations.drag,
                 bool(perturbations.active_third_bodies()),
