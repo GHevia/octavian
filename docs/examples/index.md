@@ -110,7 +110,9 @@ fields. It also propagates the same initial orbit through each backend's
 `PerturbedECI` ODE, reports integration time separately from construction,
 and checks trajectory agreement. Aligned tables show raw evaluation times in
 microseconds, build and integration times in seconds, backend speedups, and
-maximum trajectory differences. Edit its settings at the top.
+maximum trajectory differences. A separate two-body baseline compares ASSET's
+specialized C++ Kepler integrator with the generic expression integrator.
+Edit its settings at the top.
 
 See the [gravity tutorial](../tutorials/spherical-harmonics.md) for coefficient
 meaning, validation coverage, degree limits, and native installation.

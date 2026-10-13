@@ -10,9 +10,9 @@ from functools import partial
 
 import numpy as np
 
-from octavian import SphericalHarmonics
+from octavian import EARTH, SphericalHarmonics
 from octavian._asset import vf
-from octavian.dynamics import PerturbedECI
+from octavian.dynamics import PerturbedECI, TwoBodyECI
 
 # Compare identical fields and states. Python expressions become expensive
 # around 10x10; choose backends=["cpp"] for larger degrees such as 20, 50, 100.
@@ -120,3 +120,34 @@ if comparisons:
             f"{position_difference:15.3g} {velocity_difference:17.3g}",
             flush=True,
         )
+
+# Pure point-mass baseline: specialized C++ and generic expression integrators.
+print("\nTwo-body baseline (no spherical-harmonic corrections).")
+two_body_header = f"{'Backend':>12} {'ODE build [s]':>15} {'Integration [s]':>17}"
+print(two_body_header)
+print("-" * len(two_body_header))
+mu = EARTH.mu_m3ps2
+energy = np.dot(initial_row[3:6], initial_row[3:6]) / 2 - mu / np.linalg.norm(initial_row[:3])
+semi_major_axis_m = -mu / (2 * energy)
+duration_s = orbits * 2 * np.pi * np.sqrt(semi_major_axis_m**3 / mu)
+two_body_histories = {}
+two_body_times = {}
+for backend in ["expression", "cpp"]:
+    start = timeit.default_timer()
+    ode = TwoBodyECI(mu_m3ps2=mu, backend=backend)
+    integrator = ode.integrator(initial_step_s)
+    integrator.setAbsTol(absolute_tolerance)
+    build_s = timeit.default_timer() - start
+    propagate = partial(integrator.integrate_dense, initial_row, duration_s, output_points)
+    history = np.asarray(propagate())
+    if history.shape != (output_points, 7) or not np.isfinite(history).all():
+        raise RuntimeError(f"Invalid two-body integration history for {backend}")
+    np.testing.assert_allclose(history[[0, -1], 6], [0.0, duration_s], atol=1e-9, rtol=0)
+    two_body_histories[backend] = history
+    integration_s = min(timeit.repeat(propagate, number=1, repeat=integration_trials))
+    two_body_times[backend] = integration_s
+    print(f"{backend:>12} {build_s:15.4f} {integration_s:17.6f}", flush=True)
+np.testing.assert_allclose(
+    two_body_histories["cpp"], two_body_histories["expression"], atol=1e-4, rtol=1e-10
+)
+print(f"C++ integration speedup relative to expression: {two_body_times['expression'] / two_body_times['cpp']:.1f}x")
