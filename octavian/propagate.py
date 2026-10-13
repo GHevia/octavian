@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from ._asset import ast
+from .astro import propagate_cartesian_rv
 from .bodies import EARTH, CelestialBody
 from .data.ephemeris import DEFAULT_EPHEMERIS_BSP
 from .models import Perturbations
@@ -79,7 +81,8 @@ def inertial(
         initial_state: Central-body inertial position/velocity at time zero.
         times_s: Strictly monotonic elapsed seconds, with zero at either end.
             Forward and backward propagation are supported.
-        central_body: Gravity/J2 constants; defaults to Earth.
+        central_body: Gravity/J2 defaults; defaults to Earth. A harmonic field
+            with published GM takes precedence for central and harmonic gravity.
         perturbations: Optional spherical harmonics or J2, Moon/Sun gravity, drag, and SRP.
         initial_epoch: UTC or SPICE ET at time zero, required for third-body
             gravity or SRP. Ephemeris positions use the Earth-centered TOD frame.
@@ -184,13 +187,20 @@ def two_body(
     """
     times = _finite_times(times_s)
     history = np.empty((times.size, 7), dtype=float)
+    initial = np.hstack([initial_state.r_m, initial_state.v_mps])
     for index, time_s in enumerate(times):
-        propagated = propagate_two_body_state(
-            initial_state,
-            float(time_s),
-            float(mu_m3ps2),
-        )
-        history[index] = np.hstack([propagated.r_m, propagated.v_mps, float(time_s)])
+        if ast is not None:
+            # Cartesian Kepler propagation avoids circular/equatorial element singularities.
+            propagated = propagate_cartesian_rv(initial, float(time_s), float(mu_m3ps2))
+            history[index] = np.hstack([propagated, float(time_s)])
+        else:
+            propagated_state = propagate_two_body_state(
+                initial_state, float(time_s), float(mu_m3ps2)
+            )
+            history[index] = np.hstack(
+                [propagated_state.r_m, propagated_state.v_mps, float(time_s)]
+            )
+
     return history
 
 

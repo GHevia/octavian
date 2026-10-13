@@ -32,7 +32,7 @@ j2_reference = propagate.inertial(
 ```
 
 The default force is point-mass gravity. Optional forces share the existing
-relative propagator's implementation: J2, Moon/Sun gravity, cannonball drag,
+relative propagator's implementation: spherical harmonics or J2, Moon/Sun gravity, cannonball drag,
 and cannonball SRP. Moon/Sun gravity or SRP requires `initial_epoch` and uses
 Earth-centered TOD ephemerides; supply the initial state in that frame.
 Drag/SRP also requires `spacecraft` with mass and positive corresponding
@@ -53,7 +53,7 @@ close after that time. See the [reference plotting guide](output-files.md#refere
 
 | Call | Model | Return |
 | --- | --- | --- |
-| `propagate.inertial(...)` | Cartesian RK4 with optional J2, third-body gravity, drag, and SRP | `[r, v, time]` array |
+| `propagate.inertial(...)` | Cartesian RK4 with optional harmonics or J2, third-body gravity, drag, and SRP | `[r, v, time]` array |
 | `propagate.two_body(...)` | Elliptic point-mass inertial motion | `[r, v, time]` array |
 | `propagate.cwh(...)` | Linear circular-chief CWH | `[RIC state, time]` array |
 | `propagate.nonlinear_ric(...)` | Exact circular-chief RIC before linearization | `[RIC state, time]` array |
@@ -167,4 +167,34 @@ The umbrella namespace is additive. Existing imports such as
 from the domain-specific module layout.
 
 The complete executable overview is
-`examples/analysis/01_propagation_namespace.py`.
+`examples/quick/08_propagation_models.py`.
+
+## Native Two-Body Integration
+
+For adaptive numerical point-mass propagation, `TwoBodyECI` defaults to
+ASSET's specialized C++ Kepler ODE and integrator. Its entire integration
+loop runs in C++, with no Python force callbacks. This uses the existing
+ASSET wheel and needs no additional extension build.
+
+```python
+from octavian import EARTH
+from octavian.dynamics import TwoBodyECI
+
+ode = TwoBodyECI(mu_m3ps2=EARTH.mu_m3ps2)
+integrator = ode.integrator(10.0)  # Initial step in seconds.
+integrator.setAbsTol(1e-7)
+history = integrator.integrate_dense(
+    [7e6, 0.0, 0.0, 0.0, 7500.0, 0.0, 0.0], 6000.0, 401
+)
+```
+
+Rows contain `[r, v, time]` in SI units. Pass `backend="expression"` to
+compare against the generic ASSET expression integrator. Both are compiled;
+the specialized backend also specializes the integration loop for Kepler
+dynamics. Existing phase creation and variable groups remain available.
+`propagate.two_body` already uses ASSET's analytical C++ Cartesian Kepler
+propagation when ASSET is installed; it is useful for direct evaluation at
+arbitrary times. The numerical integrator above is a separate option.
+
+`native/spherical_harmonics/runtime_comparison.py` reports raw integration
+times and checks agreement between the two numerical backends.
