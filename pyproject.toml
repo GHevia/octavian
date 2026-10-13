@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling>=1.24.0"]
+requires = ["hatchling>=1.24.0", "cmake>=3.20", "ninja>=1.11"]
 build-backend = "hatchling.build"
 
 [project]
 name = "octavian"
-version = "0.4.18"
+version = "0.4.20"
 description = "Trajectory optimization and astrodynamics in Python using ASSET, with mission-script APIs."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -46,6 +46,7 @@ yaml = [
 ]
 dev = [
   "build>=1.2",
+  "hatchling>=1.24.0",
   "matplotlib>=3.7",
   "Pillow>=9.0",
   "plotly>=5.18.0",
@@ -55,6 +56,11 @@ dev = [
   "pre-commit>=3.6",
   "mkdocs>=1.6",
   "mkdocstrings[python]>=0.25",
+  # ASSET's Basemap dependency requires packaging < 26. Keep pip from
+  # backtracking into obsolete Basemap source releases during dev installs.
+  "packaging>=22,<26",
+  # mkdocstrings' renderer calls the pre-12 Highlight constructor.
+  "pymdown-extensions>=10,<12",
   "PyYAML>=6.0",
 ]
 

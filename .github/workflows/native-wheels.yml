@@ -17,7 +17,6 @@ jobs:
         os: [ubuntu-22.04, windows-2022]
         python: ['3.10', '3.11', '3.12']
     env:
-      OCTAVIAN_BUILD_NATIVE: '1'
       PYTHONNOUSERSITE: '1'
     steps:
       - uses: actions/checkout@v4
@@ -31,12 +30,6 @@ jobs:
         if: runner.os == 'Windows'
         with:
           arch: x64
-      - name: Fetch pinned ASSET headers
-        shell: bash
-        run: |
-          git clone --branch v0.5.1 --depth 1 https://github.com/AlabamaASRL/asset_asrl.git "$RUNNER_TEMP/asset-headers"
-          git -C "$RUNNER_TEMP/asset-headers" submodule update --init --depth 1 dep/eigen dep/pybind11 dep/fmt
-          echo "ASSET_SOURCE_DIR=$(cygpath -m "$RUNNER_TEMP/asset-headers" 2>/dev/null || echo "$RUNNER_TEMP/asset-headers")" >> "$GITHUB_ENV"
       - name: Configure compiler
         shell: bash
         run: |
@@ -75,6 +68,18 @@ jobs:
           python -m pytest test_spherical_harmonics.py test_earth_gravity.py -q
           python 02_spherical_harmonics.py
           python 03_spherical_harmonics_runtime.py
+      - name: Test a default editable install in a clean environment
+        shell: bash
+        run: |
+          python -m venv .venv-editable
+          if [ "$RUNNER_OS" = Windows ]; then
+            EDITABLE_PYTHON=.venv-editable/Scripts/python
+          else
+            EDITABLE_PYTHON=.venv-editable/bin/python
+          fi
+          "$EDITABLE_PYTHON" -m pip install -e . pytest
+          "$EDITABLE_PYTHON" -c 'from octavian import SphericalHarmonics; import octavian.octavian_harmonics_native as native; print(native.__file__); print(SphericalHarmonics.earth(degree=200).acceleration([7e6, 1e6, 2e6]))'
+          "$EDITABLE_PYTHON" -m pytest tests/test_earth_gravity.py tests/test_spherical_harmonics.py -q
       - uses: actions/upload-artifact@v4
         with:
           name: native-wheel-${{ matrix.os }}-${{ matrix.python }}

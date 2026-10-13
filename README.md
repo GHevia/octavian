@@ -41,7 +41,9 @@ solver-backed workflows rely on it.
 ## Install
 
 For daily development on **Linux x86_64** (glibc 2.31 or newer), use a
-repository-local virtual environment:
+repository-local virtual environment. Source/editable installs compile the bundled
+spherical-harmonic backend. Install Git, Clang 17/18, and C++ development headers
+first; pip supplies CMake and Ninja automatically:
 
 ```bash
 python3.12 -m venv .venv
@@ -56,7 +58,8 @@ After activation, use normal commands such as
 
 For local development and ASSET-backed workflows on **Windows**, use the
 recommended Conda environment. It installs ASSET and its native runtime inside
-one isolated prefix:
+one isolated prefix. Install Visual Studio 2022 C++ Build Tools and LLVM, and
+run the editable installation from an x64 Visual Studio developer terminal:
 
 ```powershell
 conda env create --file environment.yml
@@ -77,6 +80,11 @@ python -m pip install --upgrade pip
 python -m pip install --no-user -e ".[dev]"
 python -m octavian.diagnostics
 ```
+
+Supported Linux/Windows Python 3.10–3.12 wheels include the compiled gravity
+backend; installing a wheel needs no compiler or separate native package. See
+[Native build setup](https://ghevia.github.io/octavian/tutorials/spherical-harmonics/#editable-and-source-installations)
+for source prerequisites, rebuilding C++ changes, and the explicit Python-only option.
 
 For a standard installed package with the Plotly and Matplotlib backends:
 
