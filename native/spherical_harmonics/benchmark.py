@@ -1,11 +1,11 @@
-"""Run the plain-Python runtime comparison from its examples location."""
+"""Run the plain-Python runtime comparison for native backend development."""
 
 import runpy
 from pathlib import Path
 
 runpy.run_path(
     str(
-        Path(__file__).resolve().parents[2] / "examples/analysis/03_spherical_harmonics_runtime.py"
+        Path(__file__).resolve().parents[2] / "native/spherical_harmonics/runtime_comparison.py"
     ),
     run_name="__main__",
 )

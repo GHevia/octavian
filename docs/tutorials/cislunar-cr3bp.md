@@ -244,17 +244,17 @@ reference periodic orbits, color phase segments, and mark maneuvers.
 
 Run the executable progression:
 
-- `examples/composable/cislunar/27_earth_moon_cr3bp.py` — dimensional
+- `examples/composable/cislunar/29_earth_moon_cr3bp.py` — dimensional
   propagation, invariant check, frame conversion, and focused plotting;
-- `examples/composable/cislunar/28_canonical_periodic_orbit.py` — canonical
+- `examples/composable/cislunar/30_canonical_periodic_orbit.py` — canonical
   L1 periodic-orbit correction;
-- `examples/composable/cislunar/29_periodic_orbit_transfer.py` — L1-to-L2
+- `examples/composable/cislunar/31_periodic_orbit_transfer.py` — L1-to-L2
   coast/impulse/transfer/impulse/coast mission;
-- `examples/composable/cislunar/30_high_fidelity_recapture.py` — BSP-aligned
+- `examples/composable/cislunar/32_high_fidelity_recapture.py` — BSP-aligned
   handoff to inertial J2, Sun/Moon, and SRP dynamics.
-- `examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py` —
+- `examples/composable/cislunar/33_jacobi_targeted_periodic_orbit.py` —
   periodic-orbit correction with a canonical Jacobi family target.
-- `examples/composable/cislunar/32_jacobi_targeted_periodic_orbit_family.py` —
+- `examples/composable/cislunar/34_jacobi_targeted_periodic_orbit_family.py` —
   robust Jacobi continuation across neighboring L1 Lyapunov members.
 
 The [cislunar example guide](../examples/cislunar.md) explains the design

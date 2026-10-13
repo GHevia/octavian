@@ -58,25 +58,83 @@ The [ICGEM model database](https://icgem.gfz.de/tom_longtime) provides other
 published models; automatic network fetching and a generic model-file importer
 are not part of this API. Custom arrays still work through the constructor.
 
-The examples are plain Python scripts with settings near the top:
+## Propagation, optimization, and third bodies
 
-```bash
-python examples/analysis/02_spherical_harmonics.py
-python examples/analysis/03_spherical_harmonics_runtime.py
+Harmonics combine with Sun/Moon **point-mass third-body gravity** in the
+same force model:
+
+```python
+from octavian import Perturbations, SphericalHarmonics, propagate, state
+
+forces = Perturbations(
+    spherical_harmonics=SphericalHarmonics.earth(degree=8, order=8),
+    sun=True,
+    moon=True,
+)
+history = propagate.inertial(
+    state([7e6, 0, 2e5], [0, 7400, 800]),
+    [0, 600, 1200],
+    perturbations=forces,
+    initial_epoch="2026-01-01T00:00:00Z",
+)
 ```
 
-Install `octavian[viz]` for plotting. Example 02 compares point-mass, model-matched
-J2, and measured EGM2008 gravity, saving PNG/CSV outputs. Edit `degree`, `backend`,
-`orbits`, and `output`; use a small degree such as 4 for Python ASSET expressions.
-Independent validation lives in Actium; example 02 focuses on the gravity model’s
-effect on an orbit. Example 03
-compares both backends with identical EGM2008 coefficients at 4×4, 8×8, and
-10×10, including construction, force, Jacobian, and adjoint-Hessian timings.
-It also integrates one orbit with each backend's `PerturbedECI` ODE using
-identical initial states and integrator settings, reports propagation speedups,
-and checks the sampled trajectories agree. Edit `orbits`, `initial_step_s`,
-`absolute_tolerance`, and `output_points` to adjust this comparison. The field
-is static (`rotation_rate_radps=0.0`) for both evaluation and integration.
+This is the quick propagation entry point: no `Mission`, `Phase`, or solver
+is needed. It uses fixed-step RK4; set `max_step_s` and check step convergence
+for your accuracy needs. C++ evaluates the harmonic force, while Python drives
+the numerical integration. For ASSET adaptive integration use the ODEs below.
+Pass the same `forces` to `Dynamics(perturbations=forces)` for optimization.
+Set `Mission.initial_epoch` for Sun/Moon tables, and set the gravity field's
+prime-meridian angle independently.
+
+These flags do not add the Sun's or Moon's own spherical harmonics. Custom
+central-body coefficient arrays are accepted, but the bundled field is Earth
+only. General non-Earth third-body ephemerides, arbitrary body poles, and
+body-fixed frame transformations need separate features.
+
+Examples:
+
+- `examples/composable/earth_centered/08_chemical_burn_j2.py`: C++ degree
+  2/order 0 J2-only finite burns and coast.
+- `examples/composable/earth_centered/10_sun_moon_perturbations.py`: optimized
+  transfer with 8×8 EGM2008 and Sun/Moon gravity.
+- `examples/composable/earth_centered/14_high_fidelity_propagation.py`: six-hour
+  propagation through the short public API.
+- `examples/composable/earth_centered/15_spherical_harmonics.py`: direct ASSET
+  integration of point-mass, J2, and 8×8 EGM2008, saving PNG/CSV outputs.
+
+Developer timing comparisons live in
+`native/spherical_harmonics/runtime_comparison.py`. They compare Python/C++
+construction, forces, derivatives, and adaptive integration at identical settings.
+
+## Use the ODEs in your own ASSET formulation
+
+`octavian.dynamics` exposes `TwoBodyECI`, `PerturbedECI`, `MassCoastECI`,
+`FiniteThrustECI`, and `ThirdBodyTable`. These are ASSET `ODEBase` objects;
+use their `integrator` and `phase` methods without an Octavian mission:
+
+```python
+from octavian import SphericalHarmonics
+from octavian.dynamics import PerturbedECI
+
+ode = PerturbedECI(spherical_harmonics=SphericalHarmonics.earth(degree=8))
+integrator = ode.integrator(10.0)
+integrator.setAbsTol(1e-7)
+final_row = integrator.integrate([7e6, 0, 2e5, 0, 7400, 800, 0], 600.0)
+phase = ode.phase("LGL3", [[7e6, 0, 2e5, 0, 7400, 800, 0], final_row], 20)
+```
+
+States and time are SI: `[x, y, z, vx, vy, vz, time]` for coast histories.
+The ODE has six states; time is ASSET's independent variable. Powered ODEs
+add mass and thrust controls; consult their docstrings for layouts. No mission
+compiler scaling is applied when constructing these ODEs directly.
+For Sun/Moon in a direct ASSET formulation, pass `third_body_tables` containing
+`ThirdBodyTable` objects with Earth-centered positions in meters as functions
+of elapsed seconds. `octavian.data.ephemeris.sample_sun_moon_positions_eci_tod`
+and `asset_asrl.VectorFunctions.InterpTable1D` provide the sampling and table
+building blocks. Tables and state vectors must share the same frame, time zero,
+and time coverage. A convenience factory for configured ODEs and ephemeris
+tables would be a separate API feature; the existing ODE constructors are public.
 
 ## Coefficients, units, and orientation
 

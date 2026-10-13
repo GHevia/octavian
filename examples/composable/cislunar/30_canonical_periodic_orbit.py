@@ -1,4 +1,4 @@
-"""Cislunar example 28: solve a canonical L1 planar Lyapunov orbit.
+"""Cislunar example 30: solve a canonical L1 planar Lyapunov orbit.
 
 CR3BP literature normally publishes states in distance units (DU), velocity
 units (VU), and time units (TU). ``Dynamics.cr3bp(dimensional=False)`` keeps
@@ -6,7 +6,7 @@ those canonical variables all the way through the ASSET solve and the
 frame-aware plotting helpers.
 
 Run:
-  python examples/composable/cislunar/28_canonical_periodic_orbit.py
+  python examples/composable/cislunar/30_canonical_periodic_orbit.py
 """
 
 from __future__ import annotations

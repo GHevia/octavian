@@ -20,7 +20,7 @@ The files are grouped into three folders:
 
 The scripts read sequentially from configuration through solve and reporting.
 Short, single-use helpers are inlined; repeated cases use ordinary loops.
-Example 32 retains `solve_family_member` for its substantial continuation solve.
+Example 34 retains `solve_family_member` for its substantial continuation solve.
 
 Earth-centered examples 01, 02, 03, 05, 06, 08, and 11 use `propagate.inertial`
 to overlay departure and target reference orbits. The history spans one nominal
@@ -300,7 +300,7 @@ Capability showcased:
 - Finite chemical burn phases.
 - Mass depletion state.
 - Three thrust-direction controls.
-- J2 perturbation enabled in every phase.
+- C++ EGM2008 degree 2/order 0 (J2 only) in every coast and burn phase.
 - Explicit propellant objective and powered-phase mass reporting.
 
 The compiler does not require this exact three-phase shape. A finite-thrust
@@ -365,7 +365,7 @@ Screenshot placeholders:
 - `docs/assets/screenshots/composable-09-impulse-reference.png`.
 - `docs/assets/screenshots/composable-09-chemical-reference.png`.
 
-## 10: J2, Moon, And Sun Perturbations
+## 10: 8×8 Earth Gravity, Moon, And Sun
 
 Path: `examples/composable/earth_centered/10_sun_moon_perturbations.py`
 
@@ -377,7 +377,7 @@ python examples/composable/earth_centered/10_sun_moon_perturbations.py
 
 Capability showcased:
 
-- Coast EOM with J2, Moon, and Sun perturbations enabled together.
+- Optimized transfer with C++ 8×8 EGM2008, Moon, and Sun gravity.
 - `Mission.initial_epoch` driving Sun/Moon ephemeris table generation.
 - The bundled reduced DE440 Earth-centered Sun/Moon BSP in the `ECI_TOD` frame.
 
@@ -385,7 +385,7 @@ Important choices:
 
 | Code | Purpose |
 | --- | --- |
-| `Perturbations(j2=True, moon=True, sun=True)` | Enables the three core Earth-orbit perturbations. |
+| `Perturbations(spherical_harmonics=SphericalHarmonics.earth(degree=8), moon=True, sun=True)` | Combines Earth harmonics with third-body gravity. |
 | `Mission(initial_epoch=...)` | Defines the start date for SPICE ephemeris sampling. |
 | `third_body_table_step_s=3600.0` | Sets the Sun/Moon interpolation sample spacing. |
 | `ImpulsiveDeltaV(where="Front"/"Back")` | Lets the optimizer satisfy the endpoint geometry while reporting the required burns. |
@@ -436,14 +436,34 @@ Expected outputs:
 - `traj_inertial_cannonball_drag_srp.html`
 - `diagnostics_inertial_cannonball_drag_srp.html`
 
-## 14: CWH Relative Rendezvous
+## 14: High-Fidelity Propagation
 
-Path: `examples/composable/relative/14_cwh_relative_rendezvous.py`
+Path: `examples/composable/earth_centered/14_high_fidelity_propagation.py`
+
+Propagate six hours with C++ 8×8 EGM2008 and Sun/Moon gravity using
+`propagate.inertial`. No optimization setup is needed. The script explicitly
+sets the epoch, Earth prime-meridian angle, integration step, and ephemeris
+spacing, then saves `traj_composable_high_fidelity_propagation.html`.
+Earth orientation is uniform Z rotation; this example does not include tides,
+drag, SRP, or a full terrestrial frame transform.
+
+## 15: Compare Earth Gravity Models
+
+Path: `examples/composable/earth_centered/15_spherical_harmonics.py`
+
+Use the public `TwoBodyECI` and `PerturbedECI` ASSET ODEs directly to compare
+point-mass, J2-only, and 8×8 EGM2008 propagation. The figure and CSV show how
+higher-degree terms change the orbit. Edit the degree/order to explore the
+packaged field through 200×200.
+
+## 16: CWH Relative Rendezvous
+
+Path: `examples/composable/relative/16_cwh_relative_rendezvous.py`
 
 Run:
 
 ```bash
-conda run -n octavian-dev python examples/composable/relative/14_cwh_relative_rendezvous.py
+conda run -n octavian-dev python examples/composable/relative/16_cwh_relative_rendezvous.py
 ```
 
 Capability showcased:
@@ -469,14 +489,14 @@ a chief marker at the origin, and the optimized impulse markers. A dashed
 analytical rendezvous at the nominal 1800-second duration provides a spatial
 comparison with the free-time optimized transfer.
 
-## 15: CWH Safety Corridor
+## 17: CWH Safety Corridor
 
-Path: `examples/composable/relative/15_cwh_safety_corridor.py`
+Path: `examples/composable/relative/17_cwh_safety_corridor.py`
 
 Run:
 
 ```bash
-conda run -n octavian-dev python examples/composable/relative/15_cwh_safety_corridor.py
+conda run -n octavian-dev python examples/composable/relative/17_cwh_safety_corridor.py
 ```
 
 Capability showcased:
@@ -491,9 +511,9 @@ constraint therefore moves the optimized transfer to the cone boundary,
 demonstrating that the geometry changes the solution rather than only checking
 it afterward.
 
-## 16: Relative Representations
+## 18: Relative Representations
 
-Path: `examples/composable/relative/16_relative_representations.py`
+Path: `examples/composable/relative/18_relative_representations.py`
 
 This optimizer-free example builds a chief ECI state and deputy RIC state,
 converts RIC to absolute ECI and back, and moves between D'Amico and classical
@@ -501,9 +521,9 @@ relative orbital elements. It also demonstrates vectorized absolute/RIC
 history conversion and the chief frame's RIC angular velocity. It is the
 representation layer used by both CWH and nonlinear missions.
 
-## 17: Nonlinear Relative Rendezvous
+## 19: Nonlinear Relative Rendezvous
 
-Path: `examples/composable/relative/17_nonlinear_relative_rendezvous.py`
+Path: `examples/composable/relative/19_nonlinear_relative_rendezvous.py`
 
 `Dynamics.relative(..., propagation_mode="coupled_eci")` propagates chief and deputy as two exact
 central-gravity states. CWH supplies only the initial guess. Public boundary
@@ -515,11 +535,11 @@ Expected outputs:
 - `traj_composable_nonlinear_relative_rendezvous.html`
 - `diagnostics_composable_nonlinear_relative_rendezvous.html`
 
-## 18: Perturbed Relative Solar Geometry
+## 20: Perturbed Relative Solar Geometry
 
-Path: `examples/composable/relative/18_perturbed_relative_solar.py`
+Path: `examples/composable/relative/20_perturbed_relative_solar.py`
 
-This extends example 17 with differential J2 and solar gravity. The
+This extends example 19 with differential J2 and solar gravity. The
 solar-phase constraint uses the SPICE BSP at `Mission.initial_epoch`; it is
 evaluated from the propagated chief/deputy state and the actual chief-to-Sun
 line. The diagnostics file includes solar phase angle over time.
@@ -530,9 +550,9 @@ line. The diagnostics file includes solar phase angle over time.
 | `Perturbations(j2=True, sun=True)` | Applies the same force model independently to chief and deputy. |
 | `constraints.solar_phase_angle(...)` | Bounds the changing relative-position/Sun angle. |
 
-## 19: Exact RIC Formulations
+## 21: Exact RIC Formulations
 
-Path: `examples/composable/relative/19_exact_ric_formulations.py`
+Path: `examples/composable/relative/21_exact_ric_formulations.py`
 
 This optimizer-free comparison propagates the exact six-state circular-chief
 RIC equations and an independent coupled chief/deputy two-body model. It also
@@ -541,9 +561,9 @@ The first is the nonlinear equation from which CWH is linearized; the second
 stacks a propagated chief ECI state with the deputy's RIC state and also
 supports eccentric chiefs.
 
-## 20: Native D'Amico Free-Time Target
+## 22: Native D'Amico Free-Time Target
 
-Path: `examples/composable/relative/20_damico_free_time_target.py`
+Path: `examples/composable/relative/22_damico_free_time_target.py`
 
 This phase propagates D'Amico relative orbital elements directly. A six-element
 Front constraint fixes the initial orbit, while a scalar `delta_lambda` Back
@@ -559,9 +579,9 @@ Expected outputs:
 - `traj_composable_damico_free_time.html`
 - `diagnostics_composable_damico_free_time.html`
 
-## 21: Safety-Ellipse ROE Transfer
+## 23: Safety-Ellipse ROE Transfer
 
-Path: `examples/composable/relative/21_safety_ellipse_transfer.py`
+Path: `examples/composable/relative/23_safety_ellipse_transfer.py`
 
 This example defines both boundary orbits with D'Amico relative orbital
 elements and converts them to RIC seed/target states at nominal chief epochs.
@@ -583,9 +603,9 @@ Expected outputs:
 - `traj_safety_ellipse_transfer.html`
 - `diagnostics_safety_ellipse_transfer.html`
 
-## 22: Relative Finite Burn–Coast–Burn
+## 24: Relative Finite Burn–Coast–Burn
 
-Path: `examples/composable/relative/22_relative_finite_burn_coast.py`
+Path: `examples/composable/relative/24_relative_finite_burn_coast.py`
 
 This example composes two exact deputy finite burns around a five-minute
 relative coast. `Dynamics.relative(..., propagation_mode="coupled_eci")`
@@ -598,9 +618,9 @@ Expected outputs:
 - `traj_composable_relative_finite_burn_coast.html`
 - `diagnostics_composable_relative_finite_burn_coast.html`
 
-## 23: Relative Three-Burn Transfer
+## 25: Relative Three-Burn Transfer
 
-Path: `examples/composable/relative/23_relative_three_burn_transfer.py`
+Path: `examples/composable/relative/25_relative_three_burn_transfer.py`
 
 This example exposes the phase topology used for a three-burn design: an
 initial natural coast, a departure impulse, a free intermediate impulse at a
@@ -617,9 +637,9 @@ Expected outputs:
 - `traj_composable_relative_three_burn.html`
 - `diagnostics_composable_relative_three_burn.html`
 
-## 24: Perturbed Relative-Element Propagation
+## 26: Perturbed Relative-Element Propagation
 
-Path: `examples/composable/relative/24_perturbed_relative_element_propagation.py`
+Path: `examples/composable/relative/26_perturbed_relative_element_propagation.py`
 
 This optimizer-free example starts from D'Amico relative orbital elements and
 compares analytical two-body drift with numerical J2 and solar propagation.
@@ -635,9 +655,9 @@ Expected outputs:
 - `traj_perturbed_relative_elements.html`
 - `diagnostics_perturbed_relative_elements.html`
 
-## 25: Differential Cannonball Drag And SRP
+## 27: Differential Cannonball Drag And SRP
 
-Path: `examples/composable/relative/25_cannonball_drag_srp.py`
+Path: `examples/composable/relative/27_cannonball_drag_srp.py`
 
 This optimizer-free example assigns different drag and optical properties to
 the chief and deputy, then propagates D'Amico initial conditions with J2,
@@ -654,11 +674,11 @@ Expected outputs:
 - `traj_cannonball_drag_srp.html`
 - `diagnostics_cannonball_drag_srp.html`
 
-## 26: Classical Relative-Element Targeting
+## 28: Classical Relative-Element Targeting
 
-Path: `examples/composable/relative/26_classical_relative_elements.py`
+Path: `examples/composable/relative/28_classical_relative_elements.py`
 
-This is example 20's classical-difference counterpart. The optimizer
+This is example 22's classical-difference counterpart. The optimizer
 propagates `[Δa, Δe, Δi, ΔΩ, Δω, ΔM]` as its native layout, fixes all six
 initial relative elements, leaves time free, and directly targets terminal
 relative mean anomaly without converting the constraint to an absolute state.
@@ -668,9 +688,9 @@ Expected outputs:
 - `traj_classical_relative_elements.html`
 - `diagnostics_classical_relative_elements.html`
 
-## 27: Earth–Moon CR3BP
+## 29: Earth–Moon CR3BP
 
-Path: `examples/composable/cislunar/27_earth_moon_cr3bp.py`
+Path: `examples/composable/cislunar/29_earth_moon_cr3bp.py`
 
 This example builds the dimensional Earth–Moon CR3BP system, propagates near
 L1, reports Jacobi drift, converts the terminal state to Earth-centered
@@ -681,9 +701,9 @@ Expected output:
 
 - `traj_composable_earth_moon_cr3bp.html`
 
-## 28: Canonical L1 Periodic Orbit
+## 30: Canonical L1 Periodic Orbit
 
-Path: `examples/composable/cislunar/28_canonical_periodic_orbit.py`
+Path: `examples/composable/cislunar/30_canonical_periodic_orbit.py`
 
 This example starts from a conventional nondimensional L1 planar Lyapunov
 seed and selects `Dynamics.cr3bp(dimensional=False)`, so ASSET evaluates the
@@ -699,9 +719,9 @@ Expected outputs:
 - `traj_canonical_L1_periodic_orbit.png` (synodic XY projection)
 - `diagnostics_canonical_L1_periodic_orbit.html`
 
-## 29: Transfer Between Periodic Orbits
+## 31: Transfer Between Periodic Orbits
 
-Path: `examples/composable/cislunar/29_periodic_orbit_transfer.py`
+Path: `examples/composable/cislunar/31_periodic_orbit_transfer.py`
 
 The mission is an explicit three-phase L1 coast, free-time transfer, and L2
 coast. Impulsive links create the departure and insertion maneuvers, and the
@@ -713,9 +733,9 @@ Expected outputs:
 - `traj_L1_to_L2_periodic_orbits.html`
 - `diagnostics_L1_to_L2_periodic_orbits.html`
 
-## 30: Perturbed Inertial Recapture
+## 32: Perturbed Inertial Recapture
 
-Path: `examples/composable/cislunar/30_high_fidelity_recapture.py`
+Path: `examples/composable/cislunar/32_high_fidelity_recapture.py`
 
 This example samples the BSP Moon throughout the nominal arc and embeds the
 CR3BP solution in its three-dimensional rotating/pulsating geometry. The
@@ -729,9 +749,9 @@ Expected outputs:
 - `traj_high_fidelity_cislunar_recapture.html`
 - `diagnostics_high_fidelity_cislunar_recapture.html`
 
-## 31: Jacobi-Targeted Periodic Orbit
+## 33: Jacobi-Targeted Periodic Orbit
 
-Path: `examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py`
+Path: `examples/composable/cislunar/33_jacobi_targeted_periodic_orbit.py`
 
 This example selects an L1 planar Lyapunov family member by canonical Jacobi
 constant instead of fixing its initial x coordinate. Direct ASSET front/back
@@ -744,9 +764,9 @@ Expected outputs:
 - `traj_jacobi_targeted_L1_periodic_orbit.html`
 - `diagnostics_jacobi_targeted_L1_periodic_orbit.html`
 
-## 32: Jacobi-Targeted L1 Family
+## 34: Jacobi-Targeted L1 Family
 
-Path: `examples/composable/cislunar/32_jacobi_targeted_periodic_orbit_family.py`
+Path: `examples/composable/cislunar/34_jacobi_targeted_periodic_orbit_family.py`
 
 This continuation example traces neighboring planar L1 Lyapunov orbits. Each
 target uses the preceding solved history through `guesses.trajectory(...)`,

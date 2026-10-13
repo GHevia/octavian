@@ -35,7 +35,7 @@ recovered_canonical = nondimensionalize_state(initial_si, system)
 ```
 
 By default, `Phase`, `Mission`, and `Solution` use meters, meters per second,
-and seconds. Example 28 instead selects canonical equations explicitly:
+and seconds. Example 30 instead selects canonical equations explicitly:
 
 ```python
 dynamics = Dynamics.cr3bp(dimensional=False)
@@ -48,7 +48,7 @@ whose inputs and outputs are merely converted.
 
 ## Correct A Periodic Orbit
 
-Example 28 starts from a published-style canonical L1 seed. Its essential
+Example 30 starts from a published-style canonical L1 seed. Its essential
 ASSET declarations are:
 
 ```python
@@ -80,7 +80,7 @@ separately fixed.
 
 ## Select The Orbit By Jacobi Constant
 
-Example 31 replaces example 28's fixed initial x coordinate with a target
+Example 33 replaces example 30's fixed initial x coordinate with a target
 invariant:
 
 ```python
@@ -106,7 +106,7 @@ compiler evaluates the constraint in canonical units for conditioning. An
 optional `tolerance` produces symmetric upper and lower bounds; without one,
 the target is an equality.
 
-Example 32 applies that target repeatedly. Each member uses the preceding
+Example 34 applies that target repeatedly. Each member uses the preceding
 solved trajectory through `guesses.trajectory(...)`, retains the front `y=0`
 phase condition, and restricts the next period to a narrow neighborhood of the
 last one. Those three continuation choices prevent a locally successful solve
@@ -114,7 +114,7 @@ from jumping to another periodic family or an integer multiple of the orbit.
 
 ## Transfer Between Periodic Orbits
 
-Example 29 expresses the trajectory architecture directly as three ASSET
+Example 31 expresses the trajectory architecture directly as three ASSET
 phases:
 
 ```text
@@ -138,7 +138,7 @@ and `link` pattern.
 
 ## Hand Off To A Perturbed Model
 
-Example 30 demonstrates a model transition without pretending the circular
+Example 32 demonstrates a model transition without pretending the circular
 model and ephemeris model are the same system:
 
 1. Propagate one nominal L1 orbit in the CR3BP synodic frame.
@@ -165,7 +165,7 @@ problem.
 - J2, third-body gravity, drag, and SRP belong to the inertial force model,
   not to the canonical CR3BP equations.
 - Synodic/inertial transforms implement circular CR3BP geometry and accept an
-  optional inclined epoch basis. Example 30 goes further by explicitly using
+  optional inclined epoch basis. Example 32 goes further by explicitly using
   the BSP Moon's time-varying direction, distance, and angular rate for its
   model-handoff seed.
 - Two-body osculating-element constraints are not meaningful as direct
@@ -177,13 +177,13 @@ clearly instead of appearing to provide a fidelity it does not have.
 ## Run The Progression
 
 ```bash
-python examples/composable/cislunar/27_earth_moon_cr3bp.py
-python examples/composable/cislunar/28_canonical_periodic_orbit.py
-python examples/composable/cislunar/29_periodic_orbit_transfer.py
-python examples/composable/cislunar/30_high_fidelity_recapture.py
-python examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py
-python examples/composable/cislunar/32_jacobi_targeted_periodic_orbit_family.py
+python examples/composable/cislunar/29_earth_moon_cr3bp.py
+python examples/composable/cislunar/30_canonical_periodic_orbit.py
+python examples/composable/cislunar/31_periodic_orbit_transfer.py
+python examples/composable/cislunar/32_high_fidelity_recapture.py
+python examples/composable/cislunar/33_jacobi_targeted_periodic_orbit.py
+python examples/composable/cislunar/34_jacobi_targeted_periodic_orbit_family.py
 ```
 
 Each script prints solver and model diagnostics and writes an interactive
-trajectory plot. Examples 28–31 also write time-history diagnostics.
+trajectory plot. Examples 30–33 also write time-history diagnostics.

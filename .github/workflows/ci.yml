@@ -105,4 +105,4 @@ jobs:
         run: |
           conda run -n octavian-dev python -c 'from octavian import SphericalHarmonics; print(SphericalHarmonics.earth(degree=200).acceleration([7e6, 1e6, 2e6]))'
           conda run -n octavian-dev python -m pytest tests/test_spherical_harmonics.py tests/test_earth_gravity.py -q
-          conda run -n octavian-dev python examples/analysis/02_spherical_harmonics.py
+          conda run -n octavian-dev python examples/composable/earth_centered/15_spherical_harmonics.py

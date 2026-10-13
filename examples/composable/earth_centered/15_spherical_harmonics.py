@@ -1,4 +1,4 @@
-"""Compare point-mass, J2, and spherical-harmonic gravity with ASSET.
+"""Earth-centered example 15: compare point-mass, J2, and EGM2008 gravity.
 
 Select the degree and order below, then run this file.
 The PNG shows orbital paths and accumulated position differences.
@@ -17,7 +17,7 @@ from octavian.dynamics import PerturbedECI, TwoBodyECI
 
 # Settings: C++ is the model default; select "python" for ASSET expressions.
 backend = "cpp"
-degree = 200  # Use a small degree, e.g. 4, when selecting backend="python".
+degree = 8  # Use a small degree, e.g. 4, when selecting backend="python".
 order = degree
 orbits = 2.0
 output = Path("traj_spherical_harmonics.png")
