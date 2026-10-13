@@ -4,10 +4,6 @@ on:
   push:
   pull_request:
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
-
 # Python-only jobs exercise the explicit source-only option. The native matrix
 # tests default wheel and editable installs on every supported platform/Python pair.
 env:

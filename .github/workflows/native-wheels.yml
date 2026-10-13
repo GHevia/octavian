@@ -7,10 +7,6 @@ on:
     branches:
       - 'agent/**'
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
-
 jobs:
   wheels:
     name: Wheel (${{ matrix.os }}, Python ${{ matrix.python }})
