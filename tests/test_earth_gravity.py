@@ -2,6 +2,7 @@
 
 import gzip
 import hashlib
+import importlib.util
 import json
 from importlib.resources import files
 
@@ -135,3 +136,52 @@ def test_custom_field_requires_mu_unless_it_has_model_metadata():
     a = gravity.acceleration([7e6, 0, 0], mu_m3ps2=1e14)
     b = gravity.acceleration([7e6, 0, 0], mu_m3ps2=2e14)
     np.testing.assert_allclose(b, 2 * a)
+
+
+def test_small_published_field_backends_match_derivatives_and_integration():
+    """Keep backend correctness in CI without running the timing benchmark."""
+    from octavian._asset import vf
+    from octavian.dynamics import PerturbedECI
+
+    if not any(
+        importlib.util.find_spec(name)
+        for name in ("octavian.octavian_harmonics_native", "octavian_harmonics_native")
+    ):
+        pytest.skip("native backend is not installed")
+    functions = {}
+    histories = {}
+    initial_row = np.array([7e6, 0, 2e5, 0, 7400, 800, 0])
+    for backend in ("python", "cpp"):
+        gravity = SphericalHarmonics.earth(degree=4, backend=backend, reference_angle_rad=0.4)
+        args = vf.Arguments(4)
+        functions[backend] = gravity.asset_acceleration(
+            args.head(3) * gravity.reference_radius_m, args[3]
+        )
+        integrator = PerturbedECI(spherical_harmonics=gravity).integrator(10.0)
+        integrator.setAbsTol(1e-7)
+        histories[backend] = np.asarray(integrator.integrate_dense(initial_row, 300.0, 31))
+
+    point = np.array([1.1, 0.2, -0.3, 120.0])
+    adjoint = np.array([0.2, 0.3, 0.7])
+    python, native = functions["python"], functions["cpp"]
+    np.testing.assert_allclose(native.compute(point), python.compute(point), rtol=2e-12, atol=1e-15)
+    np.testing.assert_allclose(
+        native.jacobian(point), python.jacobian(point), rtol=2e-11, atol=1e-15
+    )
+    np.testing.assert_allclose(
+        native.adjointhessian(point, adjoint),
+        python.adjointhessian(point, adjoint),
+        rtol=2e-10,
+        atol=1e-15,
+    )
+    for history in histories.values():
+        assert history.shape == (31, 7)
+        assert np.isfinite(history).all()
+        np.testing.assert_allclose(history[0], initial_row, rtol=0, atol=1e-9)
+        np.testing.assert_allclose(history[:, 6], np.linspace(0, 300, 31), rtol=0, atol=1e-9)
+    np.testing.assert_allclose(
+        histories["cpp"][:, :3], histories["python"][:, :3], rtol=0, atol=1e-4
+    )
+    np.testing.assert_allclose(
+        histories["cpp"][:, 3:6], histories["python"][:, 3:6], rtol=0, atol=1e-7
+    )

@@ -1,4 +1,4 @@
-"""Relative example 25: differential cannonball drag and SRP.
+"""Relative example 27: differential cannonball drag and SRP.
 
 Chief and deputy use different constant projected areas.  The analysis API
 converts D'Amico elements to absolute states, propagates both spacecraft with

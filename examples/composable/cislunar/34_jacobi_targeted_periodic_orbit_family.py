@@ -1,4 +1,4 @@
-"""Cislunar example 32: continue a family of L1 Lyapunov orbits.
+"""Cislunar example 34: continue a family of L1 Lyapunov orbits.
 
 Each solve targets a nearby canonical Jacobi constant. The preceding solved
 trajectory seeds the complete collocation mesh, a y=0 phase condition keeps
@@ -6,7 +6,7 @@ the same symmetry crossing, and narrow period bounds prevent convergence to a
 multiple-period solution or a different periodic-orbit family.
 
 Run:
-  python examples/composable/cislunar/32_jacobi_targeted_periodic_orbit_family.py
+  python examples/composable/cislunar/34_jacobi_targeted_periodic_orbit_family.py
 """
 
 from __future__ import annotations

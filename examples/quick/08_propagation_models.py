@@ -1,4 +1,4 @@
-"""Analysis example 1: one namespace for Octavian propagators.
+"""Quick example 08: one namespace for Octavian propagators.
 
 The specialized functions remain available in their scientific subpackages.
 For ordinary analysis scripts, ``octavian.propagate`` makes the available

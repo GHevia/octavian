@@ -1,4 +1,4 @@
-"""Cislunar example 31: select a periodic orbit by Jacobi constant.
+"""Cislunar example 33: select a periodic orbit by Jacobi constant.
 
 The preceding periodic-orbit example fixes the initial x coordinate to choose
 one member of the L1 planar Lyapunov family. Here the family member is selected
@@ -8,7 +8,7 @@ position, velocity, and period while front/back equality closes the orbit.
 Saves a focused synodic XY PNG of the planar orbit alongside the HTML overview.
 
 Run:
-  python examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py
+  python examples/composable/cislunar/33_jacobi_targeted_periodic_orbit.py
 """
 
 from __future__ import annotations

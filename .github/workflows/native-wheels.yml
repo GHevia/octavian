@@ -61,13 +61,11 @@ jobs:
           mkdir -p "$RUNNER_TEMP/wheel-tests"
           cp tests/test_earth_gravity.py "$RUNNER_TEMP/wheel-tests/"
           cp tests/test_spherical_harmonics.py "$RUNNER_TEMP/wheel-tests/"
-          cp examples/analysis/03_spherical_harmonics_runtime.py "$RUNNER_TEMP/wheel-tests/"
-          cp examples/analysis/02_spherical_harmonics.py "$RUNNER_TEMP/wheel-tests/"
+          cp examples/composable/earth_centered/15_spherical_harmonics.py "$RUNNER_TEMP/wheel-tests/"
           cd "$RUNNER_TEMP/wheel-tests"
           python -c 'import octavian.octavian_harmonics_native as native; print(native.__file__)'
           python -m pytest test_spherical_harmonics.py test_earth_gravity.py -q
-          python 02_spherical_harmonics.py
-          python 03_spherical_harmonics_runtime.py
+          python 15_spherical_harmonics.py
       - name: Test a default editable install in a clean environment
         shell: bash
         run: |

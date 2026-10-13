@@ -114,12 +114,12 @@ python examples/quick/02_two_impulse_precoast_impulsive_link.py
 python examples/composable/earth_centered/08_chemical_burn_j2.py
 python examples/composable/earth_centered/12_thrust_frames_and_attitude.py
 python examples/composable/earth_centered/13_cannonball_drag_srp.py
-python examples/analysis/01_propagation_namespace.py
-python examples/composable/relative/25_cannonball_drag_srp.py
-python examples/composable/cislunar/28_canonical_periodic_orbit.py
-python examples/composable/cislunar/29_periodic_orbit_transfer.py
-python examples/composable/cislunar/30_high_fidelity_recapture.py
-python examples/composable/cislunar/31_jacobi_targeted_periodic_orbit.py
+python examples/quick/08_propagation_models.py
+python examples/composable/relative/27_cannonball_drag_srp.py
+python examples/composable/cislunar/30_canonical_periodic_orbit.py
+python examples/composable/cislunar/31_periodic_orbit_transfer.py
+python examples/composable/cislunar/32_high_fidelity_recapture.py
+python examples/composable/cislunar/33_jacobi_targeted_periodic_orbit.py
 python examples/outputs/01_ephemeris_files.py
 python examples/outputs/02_matplotlib_plots.py
 python -m octavian.config examples/config/01_two_impulse_transfer.json
