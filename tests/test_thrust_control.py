@@ -285,6 +285,17 @@ def test_control_representation_compiles_and_solves(
     assert solution.result.info["state_layouts"] == [expected_layout]
     assert solution.result.info["thrust_controls"][0]["frame"] == "ric"
     assert len(solution.phase_control_trajectories) == 1
+    history = solution.phase_control_trajectories[0]
+    thrust = solution.phase_thrust_trajectories[0]
+    expected_throttle = (
+        np.linalg.norm(history[:, 1:4], axis=1)
+        if control.representation == "vector"
+        else history[:, 1]
+    )
+    np.testing.assert_allclose(thrust[:, 1], expected_throttle)
+    np.testing.assert_allclose(
+        thrust[:, 2], _spacecraft().thrusters[0].thrust_N * expected_throttle
+    )
     if control.carries_attitude:
         assert len(solution.attitude_phase_trajectories) == 1
         attitude = solution.attitude_phase_trajectories[0]

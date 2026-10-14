@@ -92,3 +92,67 @@ def low_thrust_spiral(
 def trajectory(rows: ArrayLike) -> TrajectoryGuess:
     """Create an explicit dense trajectory seed declaration."""
     return TrajectoryGuess(rows)
+
+
+@dataclass(frozen=True, slots=True)
+class LowThrustQLawGuess:
+    """Equinoctial proximity-quotient steering for a two-body orbit seed.
+
+    Targets the orbit of ``Phase.final_state`` (including its plane), leaving
+    orbital phase free. The quotient uses analytic gradients and sampled maximum
+    Gauss element rates, without periapsis penalties or efficiency coasting.
+    It supports elliptic orbits away from the retrograde equinoctial singularity.
+    ``averaged=True`` time-averages Gauss rates for many-revolution seeds.
+    ``steps_per_orbit`` controls only osculating integration; ``orbit_samples``
+    controls maximum-rate sampling and the averaged quadrature.
+    Tolerances terminate seed steering; they do not impose solver constraints.
+    """
+
+    averaged: bool = False
+    throttle: float = 0.8
+    steps_per_orbit: int = 120
+    orbit_samples: int = 32
+    semi_major_axis_rtol: float = 0.001
+    eccentricity_tol: float = 0.005
+    plane_tol_deg: float = 0.1
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.averaged, bool):
+            raise ValueError("LowThrustQLawGuess.averaged must be a boolean.")
+        if not isfinite(self.throttle) or not 0.0 < self.throttle <= 1.0:
+            raise ValueError("LowThrustQLawGuess.throttle must be in (0, 1].")
+        for name, minimum in (("steps_per_orbit", 20), ("orbit_samples", 16)):
+            value = getattr(self, name)
+            if not isinstance(value, (int, np.integer)) or value < minimum:
+                raise ValueError(f"LowThrustQLawGuess.{name} must be an integer >= {minimum}.")
+        for name in ("semi_major_axis_rtol", "eccentricity_tol", "plane_tol_deg"):
+            value = getattr(self, name)
+            if not isfinite(value) or value <= 0.0:
+                raise ValueError(f"LowThrustQLawGuess.{name} must be finite and positive.")
+
+
+def low_thrust_qlaw(
+    *,
+    averaged: bool = False,
+    throttle: float = 0.8,
+    steps_per_orbit: int = 120,
+    orbit_samples: int = 32,
+    semi_major_axis_rtol: float = 0.001,
+    eccentricity_tol: float = 0.005,
+    plane_tol_deg: float = 0.1,
+) -> LowThrustQLawGuess:
+    """Seed simultaneous orbit-size, eccentricity-vector, and plane changes.
+
+    Use on a single inertial ``low_thrust`` phase with vector thrust control.
+    Specify the desired orbit using ``final_state`` and independently declare
+    terminal constraints; this guess does not constrain the optimized orbit.
+    """
+    return LowThrustQLawGuess(
+        averaged=averaged,
+        throttle=throttle,
+        steps_per_orbit=steps_per_orbit,
+        orbit_samples=orbit_samples,
+        semi_major_axis_rtol=semi_major_axis_rtol,
+        eccentricity_tol=eccentricity_tol,
+        plane_tol_deg=plane_tol_deg,
+    )

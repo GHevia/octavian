@@ -218,6 +218,18 @@ def build_initial_guess(value: Any, path: str) -> Any:
     """Build a supported phase initial-guess declaration."""
     config = mapping(value, path)
     guess_type = normalized_type(required(config, "type", path))
+    if guess_type == "low_thrust_qlaw":
+        keys = {
+            "averaged",
+            "throttle",
+            "steps_per_orbit",
+            "orbit_samples",
+            "semi_major_axis_rtol",
+            "eccentricity_tol",
+            "plane_tol_deg",
+        }
+        reject_unknown(config, keys | {"type"}, path)
+        return guesses.low_thrust_qlaw(**{key: config[key] for key in keys if key in config})
     if guess_type != "low_thrust_spiral":
         raise MissionConfigError(f"{path}.type has unsupported value {guess_type!r}.")
     reject_unknown(
@@ -263,6 +275,7 @@ def build_solver_options(value: Any) -> SolverOptions:
     allowed = {
         "print_level",
         "max_ls_iters",
+        "transcription_mode",
         "qp_ordering_mode",
         "enable_auto_scaling",
         "enable_adaptive_mesh",
@@ -276,6 +289,7 @@ def build_solver_options(value: Any) -> SolverOptions:
     return SolverOptions(
         print_level=int(config.get("print_level", 0)),
         max_ls_iters=int(config.get("max_ls_iters", 2)),
+        transcription_mode=str(config.get("transcription_mode", "LGL3")),
         qp_ordering_mode=str(config.get("qp_ordering_mode", "MINDEG")),
         enable_auto_scaling=boolean(
             config.get("enable_auto_scaling", True), f"{path}.enable_auto_scaling"

@@ -2,7 +2,8 @@
 
 Every example is an executable mission or analysis script. Treat one as a
 starting configuration: copy it, change the states or declarations, and run
-the file directly. The examples intentionally avoid application-style
+the file directly. Lettered companions (such as earth-centered 11b) stay
+beside their numbered topic in the same folder. The examples intentionally avoid application-style
 entry-point guards so the workflow reads from top to bottom.
 
 1. define the physical constants and boundary states;
@@ -41,6 +42,9 @@ constraints:
   expressed as vehicle, dynamics, phase, constraints, variables, and objective;
 - examples 02–07 — phase links, path constraints, and orbital targeting;
 - examples 08–10 — finite burns and perturbations;
+- `composable/earth_centered/11b_low_thrust_plane_change.py` — Q-law seeding
+  for a 100 mN small-satellite orbit raise with inclination change, throttle
+  coloring, and firing intervals;
 - earth-centered examples 11–13 — low-thrust orbit raising, thrust-attitude
   representations, and cannonball drag/SRP;
 - earth-centered examples 14–15 — 8×8 EGM2008 with Sun/Moon gravity and model comparison;
