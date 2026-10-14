@@ -169,12 +169,38 @@ even though the seed steers toward the anchor's particular plane.
 This is a numerical equinoctial proximity-quotient variant of Q-law: squared
 errors in `[p, f, g, h, k]` are normalized by their maximum Gauss element rates
 per unit acceleration, sampled around the current orbit. Thrust minimizes the
-instantaneous derivative of that quotient. Numerical differentiation includes
-changes in the rate normalization. Circular and equatorial orbits are supported;
+instantaneous derivative of that quotient. The analytic gradient includes
+changes in the rate normalization and averages subgradients at tied maxima,
+which avoids selecting an arbitrary thrust bias at circularity. Circular and equatorial orbits are supported;
 retrograde-equatorial and unbound orbits are rejected. This variant has no
 periapsis penalty or efficiency-based coasting. See the
 [NASA comparison of Q-law guidance](https://ntrs.nasa.gov/api/citations/20140011269/downloads/20140011269.pdf)
 for the original classical-element formulation.
+
+The default seed integrates osculating equinoctial elements, avoiding secular
+Cartesian energy drift on long arcs. Cartesian positions and velocities are
+resampled together with Hermite interpolation rather than cutting across
+orbital arcs with straight lines. Step sizes decrease near the target to
+avoid repeatedly overshooting tight arrival tolerances.
+
+For many-revolution, small-acceleration transfers, explicitly choose an
+orbit-averaged guess:
+
+```python
+initial_guess = guesses.low_thrust_qlaw(averaged=True, orbit_samples=64)
+```
+
+This time-averages the Gauss rates using Keplerian residence-time weights and
+propagates mean longitude, with at most a quarter-orbit step. It reconstructs
+Cartesian samples by solving Kepler's equation. `orbit_samples` controls both
+the maximum-rate sampling and the averaging quadrature; `steps_per_orbit`
+controls only the default osculating integration. Averaging neglects short-period
+oscillations and produces an approximate seed, so use the osculating mode when
+those oscillations matter. The subsequent direct solver still uses the full
+phase dynamics and needs sufficient mesh resolution for every revolution;
+fast seed generation does not remove that optimization cost.
+`seed_averaged`, `seed_control_evaluations`, and `seed_estimated_revolutions`
+identify the computation performed in the guess metadata.
 
 The seed propagates **two-body** dynamics with constant thrust and Isp. It is
 currently available for a single inertial `low_thrust` phase using vector
@@ -207,6 +233,12 @@ for throttle. Explicit coast phases have zero thrust. These plots show the
 sampled/interpolated solved control, not an independently validated switching
 schedule.
 
-See `examples/variations/11_low_thrust_plane_change.py` for an
-orbit raise with a five-degree inclination change, reference orbits, and both
-throttle and firing views.
+See `examples/composable/earth_centered/11b_low_thrust_plane_change.py` for an
+100 mN, 23 kg small-satellite orbit raise from 7,000 to 7,200 km with a
+two-degree inclination change, reference orbits, and both throttle and firing
+views. It uses a scheduled 30–30.2 hour arrival window and a fixed mesh for a
+quick tutorial. Broad free-time searches, larger changes, and lower
+thrust-to-mass ratios require longer trajectories and larger direct solves.
+An ASSET feasibility recovery can return a constraint-satisfying trajectory
+without establishing optimality; inspect the optimizer output when judging
+fuel optimality.

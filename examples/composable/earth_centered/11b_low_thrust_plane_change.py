@@ -1,9 +1,11 @@
-"""Example 11 variation: raise an orbit and change its inclination with Q-law.
+"""Earth-centered example 11b: a 100 mN small-satellite plane-change transfer.
 
-Run: python examples/variations/11_low_thrust_plane_change.py
+Run: python examples/composable/earth_centered/11b_low_thrust_plane_change.py
 """
 
 from __future__ import annotations
+
+from time import perf_counter
 
 import numpy as np
 
@@ -22,15 +24,18 @@ from octavian import (
 from octavian.solvers import SolverOptions
 from octavian.viz.plotly import save_trajectory_html
 
+started = perf_counter()
+
 MU = 3.986004418e14
 INITIAL_RADIUS_M = 7_000_000.0
-TARGET_RADIUS_M = 8_000_000.0
-TARGET_INCLINATION_DEG = 5.0
+TARGET_RADIUS_M = 7_200_000.0
+TARGET_INCLINATION_DEG = 2.0
 
+# A 20 kg dry bus carrying 3 kg of electric-propulsion propellant.
 spacecraft = Spacecraft(
-    name="Electric plane-change vehicle",
-    dry_mass_kg=500.0,
-    thrusters=[Thruster(name="main", thrust_N=5.0, isp_s=1800.0, propellant_mass_kg=60.0)],
+    name="Small electric plane-change vehicle",
+    dry_mass_kg=20.0,
+    thrusters=[Thruster(name="main", thrust_N=0.1, isp_s=1800.0, propellant_mass_kg=3.0)],
 )
 initial = state([INITIAL_RADIUS_M, 0.0, 0.0], [0.0, np.sqrt(MU / INITIAL_RADIUS_M), 0.0])
 inclination = np.deg2rad(TARGET_INCLINATION_DEG)
@@ -48,7 +53,9 @@ transfer = Phase(
     initial_state=initial,
     # Defines the Q-law target orbit, not a fixed arrival position.
     final_state=target,
-    tof_bounds_s=(14.0 * 3600.0, 3.0 * 86400.0),
+    # A scheduled arrival window keeps this small-satellite tutorial quick.
+    # Wide free-time, many-revolution searches are substantially larger solves.
+    tof_bounds_s=(30.0 * 3600.0, 30.2 * 3600.0),
     initial_guess=guesses.low_thrust_qlaw(throttle=0.85, plane_tol_deg=0.05),
     constraints=[
         constraints.state(initial, where="Front"),
@@ -63,12 +70,15 @@ mission = Mission(
     name="Low-thrust orbit raise with inclination change",
     phases=[transfer],
     objectives=[objectives.minimize_propellant()],
-    mesh_nsegs_transfer=200,
-    solver_options=SolverOptions(max_ls_iters=5, enable_adaptive_mesh=True, asset_threads=(1, 1)),
+    mesh_nsegs_transfer=160,
+    solver_options=SolverOptions(max_ls_iters=5, enable_adaptive_mesh=False, asset_threads=(1, 1)),
 )
+# The fuel objective is retained. A successful feasibility recovery satisfies
+# the constraints; optimizer convergence is needed to establish a local optimum.
 solution = mission.solve()
 if not solution.ok or solution.result is None:
     raise RuntimeError("The low-thrust plane-change mission did not converge.")
+print(f"Solve runtime: {perf_counter() - started:.2f} s")
 print(solution.result.summary())
 print("Q-law seed:", solution.result.info["phase_guess_info"][0])
 for row in solution.result.info["constraint_report"]:

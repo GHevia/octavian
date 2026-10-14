@@ -22,25 +22,33 @@ def test_examples_are_flat_mission_scripts() -> None:
 def test_composable_examples_are_grouped_by_frame() -> None:
     """Composable scripts should live in a discoverable topical folder."""
     assert list(COMPOSABLE_DIR.glob("*.py")) == []
-    categories = {
-        path.parent.name
-        for path in COMPOSABLE_DIR.rglob("*.py")
-    }
+    categories = {path.parent.name for path in COMPOSABLE_DIR.rglob("*.py")}
     assert categories == {"cislunar", "earth_centered", "relative"}
 
 
 def test_composable_example_numbers_are_unique_and_grouped() -> None:
-    """Each regime owns one contiguous range in the global progression."""
+    """Numbered topics are contiguous; lettered companion scripts share a topic."""
     ordered_categories = ("earth_centered", "relative", "cislunar")
     grouped_numbers = []
+    prefixes = set()
     for category in ordered_categories:
-        numbers = sorted(
-            int(path.name.split("_", 1)[0])
-            for path in (COMPOSABLE_DIR / category).glob("*.py")
-        )
-        assert numbers == list(range(numbers[0], numbers[-1] + 1))
-        grouped_numbers.extend(numbers)
-
+        numbers = set()
+        companions = set()
+        anchors = set()
+        for path in (COMPOSABLE_DIR / category).glob("*.py"):
+            prefix = path.name.split("_", 1)[0]
+            match = re.fullmatch(r"(\d+)([a-z]?)", prefix)
+            assert match is not None, f"Invalid example prefix: {path.name}"
+            number = int(match[1])
+            key = (number, match[2])
+            assert key not in prefixes, f"Duplicate example prefix: {prefix}"
+            prefixes.add(key)
+            numbers.add(number)
+            (companions if match[2] else anchors).add(number)
+        assert companions <= anchors, "Companion examples require a numbered main example"
+        ordered = sorted(numbers)
+        assert ordered == list(range(ordered[0], ordered[-1] + 1))
+        grouped_numbers.extend(ordered)
     assert grouped_numbers == list(range(1, len(grouped_numbers) + 1))
 
 

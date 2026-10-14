@@ -99,12 +99,16 @@ class LowThrustQLawGuess:
     """Equinoctial proximity-quotient steering for a two-body orbit seed.
 
     Targets the orbit of ``Phase.final_state`` (including its plane), leaving
-    orbital phase free. This numerical Q-law variant uses sampled maximum
+    orbital phase free. The quotient uses analytic gradients and sampled maximum
     Gauss element rates, without periapsis penalties or efficiency coasting.
     It supports elliptic orbits away from the retrograde equinoctial singularity.
+    ``averaged=True`` time-averages Gauss rates for many-revolution seeds.
+    ``steps_per_orbit`` controls only osculating integration; ``orbit_samples``
+    controls maximum-rate sampling and the averaged quadrature.
     Tolerances terminate seed steering; they do not impose solver constraints.
     """
 
+    averaged: bool = False
     throttle: float = 0.8
     steps_per_orbit: int = 120
     orbit_samples: int = 32
@@ -113,6 +117,8 @@ class LowThrustQLawGuess:
     plane_tol_deg: float = 0.1
 
     def __post_init__(self) -> None:
+        if not isinstance(self.averaged, bool):
+            raise ValueError("LowThrustQLawGuess.averaged must be a boolean.")
         if not isfinite(self.throttle) or not 0.0 < self.throttle <= 1.0:
             raise ValueError("LowThrustQLawGuess.throttle must be in (0, 1].")
         for name, minimum in (("steps_per_orbit", 20), ("orbit_samples", 16)):
@@ -127,6 +133,7 @@ class LowThrustQLawGuess:
 
 def low_thrust_qlaw(
     *,
+    averaged: bool = False,
     throttle: float = 0.8,
     steps_per_orbit: int = 120,
     orbit_samples: int = 32,
@@ -141,6 +148,7 @@ def low_thrust_qlaw(
     terminal constraints; this guess does not constrain the optimized orbit.
     """
     return LowThrustQLawGuess(
+        averaged=averaged,
         throttle=throttle,
         steps_per_orbit=steps_per_orbit,
         orbit_samples=orbit_samples,

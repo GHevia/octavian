@@ -220,6 +220,7 @@ def build_initial_guess(value: Any, path: str) -> Any:
     guess_type = normalized_type(required(config, "type", path))
     if guess_type == "low_thrust_qlaw":
         keys = {
+            "averaged",
             "throttle",
             "steps_per_orbit",
             "orbit_samples",

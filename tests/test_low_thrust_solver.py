@@ -102,15 +102,25 @@ def test_low_thrust_orbit_raise_converges_from_spiral_seed() -> None:
 def test_qlaw_plane_change_converges_and_reports_physical_thrust() -> None:
     mission = _low_thrust_orbit_raise_mission()
     phase = mission.phases[0]
-    angle = np.deg2rad(3.0)
-    speed = np.sqrt(MU / 8_000_000.0)
+    angle = np.deg2rad(2.0)
+    speed = np.sqrt(MU / 7_200_000.0)
     phase.final_state = state(
-        [8_000_000.0, 0, 0], [0, speed * np.cos(angle), speed * np.sin(angle)]
+        [7_200_000.0, 0, 0], [0, speed * np.cos(angle), speed * np.sin(angle)]
+    )
+    phase.spacecraft = Spacecraft(
+        dry_mass_kg=20, thrusters=[Thruster(thrust_N=0.1, isp_s=1800, propellant_mass_kg=3)]
     )
     phase.initial_guess = guesses.low_thrust_qlaw(throttle=0.85, plane_tol_deg=0.05)
-    phase.tof_bounds_s = (14 * 3600.0, 48 * 3600.0)
-    phase.constraints.append(constraints.inclination_deg(3.0, where="Back", tol_deg=0.05))
-    mission.mesh_nsegs_transfer = 200
+    phase.tof_bounds_s = (30 * 3600.0, 30.2 * 3600.0)
+    phase.constraints = [
+        constraints.state(phase.initial_state, where="Front"),
+        constraints.min_radius(6_900_000),
+        constraints.semi_major_axis(7_200_000.0, where="Back", tol_m=10_000),
+        constraints.eccentricity(0.005, where="Back", tol=0.0049),
+        constraints.inclination_deg(2.0, where="Back", tol_deg=0.05),
+    ]
+    mission.mesh_nsegs_transfer = 160
+    mission.solver_options.enable_adaptive_mesh = False
     solution = mission.solve()
     assert solution.ok and solution.result is not None
     assert solution.result.info["phase_guess_info"][0]["guess_kind"] == "low_thrust_qlaw"
@@ -118,10 +128,10 @@ def test_qlaw_plane_change_converges_and_reports_physical_thrust() -> None:
     thrust = solution.phase_thrust_trajectories[0]
     np.testing.assert_allclose(thrust[:, 0], controls[:, 0])
     np.testing.assert_allclose(thrust[:, 1], np.linalg.norm(controls[:, 1:4], axis=1))
-    np.testing.assert_allclose(thrust[:, 2], 5 * thrust[:, 1])
+    np.testing.assert_allclose(thrust[:, 2], 0.1 * thrust[:, 1])
     report = next(
         row
         for row in solution.result.info["constraint_report"]
         if row["constraint"] == "inclination_deg"
     )
-    assert report["satisfied"] and abs(report["actual"] - 3.0) < 0.05
+    assert report["satisfied"] and abs(report["actual"] - 2) < 0.05
