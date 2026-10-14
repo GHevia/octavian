@@ -46,6 +46,7 @@ trajectory stay in CR3BP distance, velocity, and time units.
 | Compare impulses with finite burns | `examples/composable/earth_centered/09_impulse_vs_chemical_burn.py` | Model-fidelity comparison. |
 | Add ephemeris third bodies | `examples/composable/earth_centered/10_sun_moon_perturbations.py` | 8×8 Earth harmonics, BSP-driven Sun/Moon gravity, and epoch handling. |
 | Raise an orbit with low thrust | `examples/composable/earth_centered/11_low_thrust_orbit_raise.py` | Low-thrust seed, throttle, propellant objective. |
+| Raise an orbit and change its plane | `examples/variations/11_low_thrust_plane_change.py` | Equinoctial Q-law seed, inclination target, throttle/firing coloring. |
 | Choose thrust frames and attitude coordinates | `examples/composable/earth_centered/12_thrust_frames_and_attitude.py` | Free vector, fixed direction, Euler angles, slew limits. |
 | Add cannonball drag and SRP | `examples/composable/earth_centered/13_cannonball_drag_srp.py` | J2, exponential atmosphere, cannonball properties, BSP Sun. |
 

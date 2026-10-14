@@ -41,6 +41,8 @@ constraints:
   expressed as vehicle, dynamics, phase, constraints, variables, and objective;
 - examples 02–07 — phase links, path constraints, and orbital targeting;
 - examples 08–10 — finite burns and perturbations;
+- `variations/11_low_thrust_plane_change.py` — Q-law seeding
+  for orbit raising with inclination change, throttle coloring, and firing intervals;
 - earth-centered examples 11–13 — low-thrust orbit raising, thrust-attitude
   representations, and cannonball drag/SRP;
 - earth-centered examples 14–15 — 8×8 EGM2008 with Sun/Moon gravity and model comparison;

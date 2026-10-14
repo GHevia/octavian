@@ -218,6 +218,17 @@ def build_initial_guess(value: Any, path: str) -> Any:
     """Build a supported phase initial-guess declaration."""
     config = mapping(value, path)
     guess_type = normalized_type(required(config, "type", path))
+    if guess_type == "low_thrust_qlaw":
+        keys = {
+            "throttle",
+            "steps_per_orbit",
+            "orbit_samples",
+            "semi_major_axis_rtol",
+            "eccentricity_tol",
+            "plane_tol_deg",
+        }
+        reject_unknown(config, keys | {"type"}, path)
+        return guesses.low_thrust_qlaw(**{key: config[key] for key in keys if key in config})
     if guess_type != "low_thrust_spiral":
         raise MissionConfigError(f"{path}.type has unsupported value {guess_type!r}.")
     reject_unknown(

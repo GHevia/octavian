@@ -97,3 +97,31 @@ def test_low_thrust_orbit_raise_converges_from_spiral_seed() -> None:
         rel=1e-8,
     )
     assert all(row["satisfied"] for row in result.info["constraint_report"])
+
+
+def test_qlaw_plane_change_converges_and_reports_physical_thrust() -> None:
+    mission = _low_thrust_orbit_raise_mission()
+    phase = mission.phases[0]
+    angle = np.deg2rad(3.0)
+    speed = np.sqrt(MU / 8_000_000.0)
+    phase.final_state = state(
+        [8_000_000.0, 0, 0], [0, speed * np.cos(angle), speed * np.sin(angle)]
+    )
+    phase.initial_guess = guesses.low_thrust_qlaw(throttle=0.85, plane_tol_deg=0.05)
+    phase.tof_bounds_s = (14 * 3600.0, 48 * 3600.0)
+    phase.constraints.append(constraints.inclination_deg(3.0, where="Back", tol_deg=0.05))
+    mission.mesh_nsegs_transfer = 200
+    solution = mission.solve()
+    assert solution.ok and solution.result is not None
+    assert solution.result.info["phase_guess_info"][0]["guess_kind"] == "low_thrust_qlaw"
+    controls = solution.phase_control_trajectories[0]
+    thrust = solution.phase_thrust_trajectories[0]
+    np.testing.assert_allclose(thrust[:, 0], controls[:, 0])
+    np.testing.assert_allclose(thrust[:, 1], np.linalg.norm(controls[:, 1:4], axis=1))
+    np.testing.assert_allclose(thrust[:, 2], 5 * thrust[:, 1])
+    report = next(
+        row
+        for row in solution.result.info["constraint_report"]
+        if row["constraint"] == "inclination_deg"
+    )
+    assert report["satisfied"] and abs(report["actual"] - 3.0) < 0.05
