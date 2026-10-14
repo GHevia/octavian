@@ -275,6 +275,7 @@ def build_solver_options(value: Any) -> SolverOptions:
     allowed = {
         "print_level",
         "max_ls_iters",
+        "transcription_mode",
         "qp_ordering_mode",
         "enable_auto_scaling",
         "enable_adaptive_mesh",
@@ -288,6 +289,7 @@ def build_solver_options(value: Any) -> SolverOptions:
     return SolverOptions(
         print_level=int(config.get("print_level", 0)),
         max_ls_iters=int(config.get("max_ls_iters", 2)),
+        transcription_mode=str(config.get("transcription_mode", "LGL3")),
         qp_ordering_mode=str(config.get("qp_ordering_mode", "MINDEG")),
         enable_auto_scaling=boolean(
             config.get("enable_auto_scaling", True), f"{path}.enable_auto_scaling"

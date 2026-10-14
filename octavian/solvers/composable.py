@@ -497,6 +497,13 @@ def _build_guess_single_phase_low_thrust(
             npts=int(nsegs) + 1,
             config=config,
         )
+        # The vector norm in mass flow is nondifferentiable at zero. Give
+        # coast nodes a tiny warm-start vector, without constraining the solve.
+        seed_control_floor = 1e-4
+        for row in rows:
+            if np.linalg.norm(row[8:11]) < seed_control_floor:
+                row[8:11] = seed_control_floor * row[3:6] / np.linalg.norm(row[3:6])
+        info["seed_optimizer_throttle_floor"] = seed_control_floor
         if control.frame == "ric":
             from ..relative.transforms import ric_basis
 
@@ -2051,6 +2058,8 @@ def solve_composable_mission(
     adaptive_mesh_enabled = bool(opts.enable_adaptive_mesh and not nonlinear_ephemeris_phase)
 
     for b in built:
+        if opts.transcription_mode != "LGL3":
+            b.asset_phase.switchTranscriptionMode(opts.transcription_mode)
         b.asset_phase.setAutoScaling(bool(opts.enable_auto_scaling))
         nonlinear_model = _nonlinear_relative_model(b.ph)
         if nonlinear_model is not None:
@@ -2634,6 +2643,7 @@ def solve_composable_mission(
         last_obj=float(getattr(ocp.optimizer, "LastObjVal", np.nan)),
         info={
             "backend": "asset_composable",
+            "transcription_mode": opts.transcription_mode,
             "optimizer_converged": bool(converged),
             "reported_constraints_satisfied": reported_constraints_satisfied,
             "nphases": len(built),

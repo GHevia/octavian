@@ -55,7 +55,7 @@ transfer = Phase(
     final_state=target,
     # A scheduled arrival window keeps this small-satellite tutorial quick.
     # Wide free-time, many-revolution searches are substantially larger solves.
-    tof_bounds_s=(30.0 * 3600.0, 30.2 * 3600.0),
+    tof_bounds_s=(32.0 * 3600.0, 32.2 * 3600.0),
     initial_guess=guesses.low_thrust_qlaw(throttle=0.85, plane_tol_deg=0.05),
     constraints=[
         constraints.state(initial, where="Front"),
@@ -70,8 +70,13 @@ mission = Mission(
     name="Low-thrust orbit raise with inclination change",
     phases=[transfer],
     objectives=[objectives.minimize_propellant()],
-    mesh_nsegs_transfer=160,
-    solver_options=SolverOptions(max_ls_iters=5, enable_adaptive_mesh=False, asset_threads=(1, 1)),
+    mesh_nsegs_transfer=120,
+    solver_options=SolverOptions(
+        max_ls_iters=5,
+        transcription_mode="LGL5",
+        enable_adaptive_mesh=False,
+        asset_threads=(1, 1),
+    ),
 )
 # The fuel objective is retained. A successful feasibility recovery satisfies
 # the constraints; optimizer convergence is needed to establish a local optimum.

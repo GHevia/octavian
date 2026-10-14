@@ -208,7 +208,11 @@ controls in either the inertial or RIC frame. The optimized phase still uses
 its declared force model and constraints. Seed tolerances determine when
 steering ends, not solver accuracy. If arrival precedes the minimum duration,
 the seed coasts to that minimum. If the maximum duration is reached first, the
-partial seed is returned with `seed_target_reached=False`. Propellant exhaustion
+partial seed is returned with `seed_target_reached=False`. When compiling a
+vector-control seed, coast nodes receive a `1e-4` throttle warm-start vector
+because the mass-flow norm is nondifferentiable at zero. The floor is recorded
+as `seed_optimizer_throttle_floor`; it does not constrain optimized throttle
+and is not applied to the standalone propagated seed. Propellant exhaustion
 raises an error. Inspect `result.info["phase_guess_info"]` for arrival errors.
 
 To show actual throttle or firing intervals, including coasts **inside** a
@@ -233,11 +237,13 @@ for throttle. Explicit coast phases have zero thrust. These plots show the
 sampled/interpolated solved control, not an independently validated switching
 schedule.
 
-See `examples/composable/earth_centered/11b_low_thrust_plane_change.py` for an
+See `examples/composable/earth_centered/11b_low_thrust_plane_change.py` for a
 100 mN, 23 kg small-satellite orbit raise from 7,000 to 7,200 km with a
 two-degree inclination change, reference orbits, and both throttle and firing
-views. It uses a scheduled 30–30.2 hour arrival window and a fixed mesh for a
-quick tutorial. Broad free-time searches, larger changes, and lower
+views. It uses a scheduled 32–32.2 hour arrival window and 120 fixed LGL5 segments for a
+quick tutorial. Select the collocation order explicitly with
+`SolverOptions(transcription_mode="LGL5")`; LGL3 remains the default and LGL7
+is also available. The configuration-file key is `transcription_mode`. Broad free-time searches, larger changes, and lower
 thrust-to-mass ratios require longer trajectories and larger direct solves.
 An ASSET feasibility recovery can return a constraint-satisfying trajectory
 without establishing optimality; inspect the optimizer output when judging
