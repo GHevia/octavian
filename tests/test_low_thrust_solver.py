@@ -115,9 +115,9 @@ def test_qlaw_plane_change_converges_and_reports_physical_thrust() -> None:
     phase.constraints = [
         constraints.state(phase.initial_state, where="Front"),
         constraints.min_radius(6_900_000),
-        constraints.semi_major_axis(7_200_000.0, where="Back", tol_m=10_000),
+        constraints.semi_major_axis(7_200_000.0, where="Back"),
         constraints.eccentricity(0.005, where="Back", tol=0.0049),
-        constraints.inclination_deg(2.0, where="Back", tol_deg=0.05),
+        constraints.inclination_deg(2.0, where="Back"),
     ]
     mission.mesh_nsegs_transfer = 120
     mission.solver_options.transcription_mode = "LGL5"
@@ -176,5 +176,5 @@ def test_qlaw_plane_change_converges_and_reports_physical_thrust() -> None:
     momentum = np.cross(position, velocity)
     axis = 1 / (2 / np.linalg.norm(position) - velocity @ velocity / MU)
     inclination = np.rad2deg(np.arccos(momentum[2] / np.linalg.norm(momentum)))
-    assert abs(axis - 7_200_000) < 10_000
-    assert abs(inclination - 2) < 0.05
+    assert abs(axis - 7_200_000) < 100
+    assert abs(inclination - 2) < 0.001

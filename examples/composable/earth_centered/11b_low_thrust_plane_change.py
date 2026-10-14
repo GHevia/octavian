@@ -60,10 +60,10 @@ transfer = Phase(
     constraints=[
         constraints.state(initial, where="Front"),
         constraints.min_radius(6_900_000.0),
-        constraints.semi_major_axis(TARGET_RADIUS_M, where="Back", tol_m=10_000.0),
+        constraints.semi_major_axis(TARGET_RADIUS_M, where="Back"),
         constraints.eccentricity(0.005, where="Back", tol=0.0049),
         # Arrival phase and ascending node remain free in the optimization.
-        constraints.inclination_deg(TARGET_INCLINATION_DEG, where="Back", tol_deg=0.05),
+        constraints.inclination_deg(TARGET_INCLINATION_DEG, where="Back"),
     ],
 )
 mission = Mission(

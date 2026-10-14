@@ -240,7 +240,8 @@ schedule.
 See `examples/composable/earth_centered/11b_low_thrust_plane_change.py` for a
 100 mN, 23 kg small-satellite orbit raise from 7,000 to 7,200 km with a
 two-degree inclination change, reference orbits, and both throttle and firing
-views. It uses a scheduled 32–32.2 hour arrival window and 120 fixed LGL5 segments for a
+views. Semi-major axis and inclination are equality targets, while arrival
+phase and ascending node remain free. It uses a scheduled 32–32.2 hour arrival window and 120 fixed LGL5 segments for a
 quick tutorial. Select the collocation order explicitly with
 `SolverOptions(transcription_mode="LGL5")`; LGL3 remains the default and LGL7
 is also available. The configuration-file key is `transcription_mode`. Broad free-time searches, larger changes, and lower
