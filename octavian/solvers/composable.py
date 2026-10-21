@@ -333,10 +333,22 @@ def _explicit_trajectory_guesses(
                 "guesses.trajectory(...), guesses.low_thrust_spiral(...), or guesses.low_thrust_qlaw(...)."
             )
         rows = np.asarray(config.rows, dtype=float)
+        if config.time_column != 6:
+            layout = phase_compiler.layout_for_phase(
+                phase, carries_mass=index in _mass_state_phase_indices(phases)
+            )
+            if (
+                config.time_column != layout.time_column
+                or rows.shape[1] != layout.state_dim + 1 + layout.control_dim
+            ):
+                raise ValueError(
+                    f"Explicit trajectory for phase {phase.name!r} must match "
+                    f"the {layout.name} state/time/control layout."
+                )
         guesses[index] = [row.copy() for row in rows]
         info[index] = {
             "guess_kind": "explicit_trajectory",
-            "seed_duration": float(rows[-1, 6] - rows[0, 6]),
+            "seed_duration": float(rows[-1, config.time_column] - rows[0, config.time_column]),
             "seed_samples": int(len(rows)),
         }
     return guesses, info
@@ -1682,8 +1694,13 @@ def solve_composable_mission(
 
     guesses: dict[int, list[np.ndarray]] = {}
     guess_info: dict[int, dict[str, float | int | bool | str]] = {}
+    explicit_guesses, explicit_guess_info = _explicit_trajectory_guesses(phases)
 
-    if cr3bp_system is not None:
+    if len(explicit_guesses) == len(phases):
+        # A solved-trajectory continuation already supplies every phase. Do
+        # not construct an unrelated Lambert/Q-law guess just to discard it.
+        pass
+    elif cr3bp_system is not None:
         cr3bp_guesses, cr3bp_info = _build_guess_multi_phase_cr3bp(
             phases,
             abs_bounds=abs_bounds,
@@ -1777,7 +1794,6 @@ def solve_composable_mission(
         guesses[0] = ig0
         guesses[1] = ig1
 
-    explicit_guesses, explicit_guess_info = _explicit_trajectory_guesses(phases)
     guesses.update(explicit_guesses)
     guess_info.update(explicit_guess_info)
 
@@ -1794,8 +1810,13 @@ def solve_composable_mission(
         # determine guess
         if idx in guesses:
             ig = guesses[idx]
-            # infer nsegs from guess length - 1
-            nsegs = len(ig) - 1
+            # Dense solved histories contain multiple collocation nodes per
+            # segment. Reusing one must not multiply the requested mesh size.
+            nsegs = (
+                (nsegs0 if idx == 0 and len(phases) > 1 else nsegs1)
+                if isinstance(ph.initial_guess, TrajectoryGuess)
+                else len(ig) - 1
+            )
         else:
             nsegs = nsegs0 if idx == 0 else nsegs1
             if idx == 0:
@@ -2706,6 +2727,8 @@ def solve_composable_mission(
             "phase_control_trajectories": [
                 trajectory.tolist() for trajectory in phase_control_trajectories
             ],
+            "phase_solver_trajectories": [trajectory.tolist() for trajectory in raw_trajs],
+            "phase_time_columns": [build.layout.time_column for build in built],
             "attitude_phase_trajectories": [
                 trajectory.tolist() for trajectory in attitude_phase_trajectories
             ],

@@ -246,6 +246,59 @@ as `seed_optimizer_throttle_floor`; it does not constrain optimized throttle
 and is not applied to the standalone propagated seed. Propellant exhaustion
 raises an error. Inspect `result.info["phase_guess_info"]` for arrival errors.
 
+## Continue a solved low-thrust trajectory with perturbations
+
+Q-law guesses currently propagate two-body dynamics even when the phase enables
+perturbations. The subsequent optimizer uses the phase's declared dynamics,
+including Earth harmonics and Sun/Moon gravity. To reduce the initial mismatch,
+solve a simpler model first and reuse its complete phase history:
+
+```python
+nominal = mission.solve()
+phase.initial_guess = nominal.trajectory_guess(phase_index=0)
+phase.dynamics = Dynamics(
+    perturbations=Perturbations(
+        spherical_harmonics=SphericalHarmonics.earth(degree=8, order=8),
+        sun=True,
+        moon=True,
+    ),
+)
+mission.initial_epoch = "2026-01-01T00:00:00Z"
+perturbed = mission.solve()
+```
+
+`Solution.trajectory_guess()` preserves mass, time, attitude states, and controls
+in the compiler's input conventions. In contrast, `solution.traj` is a plotting
+history `[R,V,t]` and omits mass and controls. For manually supplied complete
+Cartesian mass/thrust rows `[R,V,M,t,U]`, use
+`guesses.trajectory(rows, time_column=7)`. Full-history time columns and widths
+must match the destination layout; keep the coordinate frame, control frame,
+vehicle, and time origin consistent. Euler slew controls in a reusable guess
+retain their solver normalization; the reporting accessor continues to return
+physical rates. The configured mission mesh is respected, independently of the
+number of collocation samples in the preceding solution. This transfers a
+primal trajectory, not optimizer multipliers or a solver factorization.
+
+Example
+[`11c_low_thrust_perturbation_continuation.py`](https://github.com/GHevia/octavian/blob/dev/examples/composable/earth_centered/11c_low_thrust_perturbation_continuation.py)
+uses four solves of the same 100 mN transfer: two-body, J2, 8×8 Earth gravity,
+then 8×8 plus Sun/Moon gravity. Every stage reuses the preceding solved history
+and retains the same epoch, central GM, vehicle, targets, and time window. These
+are successive model refinements, not consecutive flight phases. Large model
+changes may require additional intermediate stages; continuation does not
+guarantee convergence. Arrival element constraints refer to osculating elements
+at the final epoch, not a mean orbit or long-term station-keeping condition.
+
+Prefer the structured `Dynamics(perturbations=Perturbations(...))` interface.
+When present, that object **replaces all** top-level perturbation flags. For
+example, `Dynamics(sun=True, perturbations=Perturbations(moon=True))` enables only
+lunar gravity; an empty `Perturbations()` disables all perturbations regardless
+of the top-level flags. Without the object, the top-level flags remain supported.
+Within `Perturbations`, `sun`/`moon` and `third_bodies` combine and deduplicate.
+Solar radiation pressure is controlled independently through `srp`.
+
+## Throttle and firing plots
+
 To show actual throttle or firing intervals, including coasts **inside** a
 powered phase:
 

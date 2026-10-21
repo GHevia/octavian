@@ -47,6 +47,7 @@ trajectory stay in CR3BP distance, velocity, and time units.
 | Add ephemeris third bodies | `examples/composable/earth_centered/10_sun_moon_perturbations.py` | 8×8 Earth harmonics, BSP-driven Sun/Moon gravity, and epoch handling. |
 | Raise an orbit with low thrust | `examples/composable/earth_centered/11_low_thrust_orbit_raise.py` | Low-thrust seed, throttle, propellant objective. |
 | Raise an orbit and change its plane | `examples/composable/earth_centered/11b_low_thrust_plane_change.py` | Equinoctial Q-law seed, inclination target, throttle/firing coloring. |
+| Continue low thrust with perturbations | `examples/composable/earth_centered/11c_low_thrust_perturbation_continuation.py` | Reuse solved mass/control histories through J2, 8×8 gravity, and Sun/Moon stages. |
 | Choose thrust frames and attitude coordinates | `examples/composable/earth_centered/12_thrust_frames_and_attitude.py` | Free vector, fixed direction, Euler angles, slew limits. |
 | Add cannonball drag and SRP | `examples/composable/earth_centered/13_cannonball_drag_srp.py` | J2, exponential atmosphere, cannonball properties, BSP Sun. |
 
