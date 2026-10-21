@@ -99,7 +99,7 @@ def test_low_thrust_orbit_raise_converges_from_spiral_seed() -> None:
     assert all(row["satisfied"] for row in result.info["constraint_report"])
 
 
-def test_qlaw_plane_change_converges_and_reports_physical_thrust() -> None:
+def test_qlaw_plane_change_converges_and_reports_physical_thrust(monkeypatch) -> None:
     mission = _low_thrust_orbit_raise_mission()
     phase = mission.phases[0]
     angle = np.deg2rad(2.0)
@@ -178,3 +178,34 @@ def test_qlaw_plane_change_converges_and_reports_physical_thrust() -> None:
     inclination = np.rad2deg(np.arccos(momentum[2] / np.linalg.norm(momentum)))
     assert abs(axis - 7_200_000) < 100
     assert abs(inclination - 2) < 0.001
+
+    # Continue the same flight under J2/Sun/Moon gravity. Preserve the solved
+    # mass and controls, avoid unrelated Lambert seeding, and honor the new
+    # mesh rather than interpreting every dense sample as a segment boundary.
+    from octavian import Perturbations
+    from octavian.solvers import composable
+
+    guess = solution.trajectory_guess()
+    np.testing.assert_allclose(guess.rows[:, 8:11], controls[:, 1:4])
+    np.testing.assert_allclose(guess.rows[:, 7], solution.traj[:, 6])
+    phase.initial_guess = guess
+    phase.dynamics = Dynamics(
+        mu_m3ps2=MU,
+        perturbations=Perturbations(j2=True, sun=True, moon=True),
+        third_body_table_step_s=600,
+    )
+    mission.initial_epoch = "2026-01-01T00:00:00Z"
+    mission.mesh_nsegs_transfer = 160
+
+    def unrelated_seed(*args, **kwargs):
+        raise AssertionError("A full solved history should bypass automatic seeding")
+
+    monkeypatch.setattr(composable, "_build_guess_single_phase_terminal_position", unrelated_seed)
+    perturbed = mission.solve()
+    assert perturbed.ok and perturbed.result is not None
+    assert perturbed.result.info["phase_guess_info"][0]["guess_kind"] == "explicit_trajectory"
+    assert perturbed.result.info["phase_guess_info"][0]["seed_duration"] == pytest.approx(
+        controls[-1, 0] - controls[0, 0]
+    )
+    assert len(perturbed.traj) == 2 * 160 + 1
+    assert all(row["satisfied"] for row in perturbed.result.info["constraint_report"])
