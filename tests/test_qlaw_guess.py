@@ -182,11 +182,17 @@ def test_plane_change_steering_reverses_normal_thrust_at_opposite_nodes():
     assert qlaw_direction(-initial, elements, MU, 32)[2] < -0.9
 
 
-def test_analytic_quotient_gradient_matches_independent_finite_differences():
+@pytest.mark.parametrize(
+    "elements,target",
+    [
+        ([7.3e6, 0.035, 0.021, 0.12, -0.07], [8e6, 0.01, -0.015, 0.08, 0.02]),
+        ([7.3e6, 0.2, -0.1, 1.7, -0.5], [8e6, -0.03, 0.1, -0.4, 0.2]),
+    ],
+)
+def test_analytic_quotient_gradient_matches_independent_finite_differences(elements, target):
     from octavian.solvers.compiler.qlaw_guessing import proximity_quotient_gradient
 
-    elements = np.array([7.3e6, 0.035, 0.021, 0.12, -0.07])
-    target = np.array([8e6, 0.01, -0.015, 0.08, 0.02])
+    elements, target = np.array(elements), np.array(target)
     _, gradient = proximity_quotient_gradient(elements, target, MU, 64)
     for i, step in enumerate([10.0, 1e-6, 1e-6, 1e-6, 1e-6]):
         plus, minus = elements.copy(), elements.copy()
@@ -197,6 +203,110 @@ def test_analytic_quotient_gradient_matches_independent_finite_differences():
             - proximity_quotient_gradient(minus, target, MU, 64)[0]
         ) / (2 * step)
         assert gradient[i] == pytest.approx(numerical, rel=1e-6)
+
+
+def test_quotient_cannot_reduce_plane_error_cost_by_inflating_the_orbit():
+    from octavian.solvers.compiler.qlaw_guessing import proximity_quotient_gradient
+
+    target = np.array([7e6, 0, 0, np.tan(np.deg2rad(40) / 2), 0])
+    values = []
+    for scale in (1, 2, 5, 10, 100):
+        current = np.array([7e6 * scale, 0, 0, 0, 0])
+        value, gradient = proximity_quotient_gradient(current, target, MU, 64)
+        values.append(value)
+        assert gradient[0] >= 0
+    assert np.all(np.diff(values) > 0)
+
+
+@pytest.mark.parametrize("inclination", [40, 120, 170])
+def test_plane_only_steering_does_not_raise_the_orbit_or_turn_toward_retrograde(inclination):
+    from octavian.solvers.compiler.qlaw_guessing import (
+        equinoctial_to_cartesian,
+        qlaw_direction,
+    )
+
+    equatorial = np.array([7e6, 0, 0, 0, 0])
+    inclined = np.array([7e6, 0, 0, np.tan(np.deg2rad(inclination) / 2), 0])
+    for current, target, sign in ((equatorial, inclined, 1), (inclined, equatorial, -1)):
+        direction = qlaw_direction(equinoctial_to_cartesian(current, 0, MU), target, MU, 64)
+        np.testing.assert_allclose(direction, [0, 0, sign], atol=1e-10)
+
+
+@pytest.mark.parametrize("averaged", [False, True])
+@pytest.mark.parametrize(
+    "inc0,inc1,node0,node1,a0,a1,e0,e1",
+    [
+        (0, 40, 0, 0, 40e6, 42e6, 0, 0),
+        (0, 60, 0, 0, 40e6, 42e6, 0, 0),
+        (0, 120, 0, 0, 40e6, 42e6, 0, 0),
+        (120, 0, 0, 0, 42e6, 40e6, 0, 0),
+        (0, 170, 0, 0, 40e6, 40e6, 0, 0),
+        (0, 180, 0, 0, 40e6, 40e6, 0, 0),
+        (180, 0, 0, 0, 40e6, 40e6, 0, 0),
+        (80, 80, 0, 120, 40e6, 42e6, 0, 0),
+        # The short plane rotation passes through the inertial chart's pole.
+        (170, 170, 0, 180, 40e6, 40e6, 0, 0),
+        # Exactly antipodal normals require choosing a nonzero descent direction.
+        (90, 90, 0, 180, 40e6, 40e6, 0, 0),
+        (30, 90, 10, 80, 42e6, 40e6, 0.1, 0.2),
+    ],
+)
+def test_large_plane_change_seeds_reach_the_physical_target(
+    averaged, inc0, inc1, node0, node1, a0, a1, e0, e1
+):
+    from octavian.astro import classical_to_cartesian
+
+    def cartesian(a, e, inc, node):
+        return np.concatenate(
+            classical_to_cartesian(
+                a_m=a,
+                e=e,
+                inc_deg=inc,
+                raan_deg=node,
+                argp_deg=17,
+                true_anomaly_deg=11,
+                mu_m3ps2=MU,
+            )
+        )
+
+    initial, target = cartesian(a0, e0, inc0, node0), cartesian(a1, e1, inc1, node1)
+    rows, info = build_low_thrust_qlaw_seed(
+        initial_rv=initial,
+        target_rv=target,
+        mu_m3ps2=MU,
+        initial_mass_kg=23,
+        dry_mass_kg=5,
+        thrust_N=0.1,
+        isp_s=3000,
+        time_bounds_s=(0, 75 * 86400),
+        npts=1601,
+        config=guesses.low_thrust_qlaw(
+            averaged=averaged, throttle=0.8, plane_tol_deg=0.1, orbit_samples=64
+        ),
+    )
+    rows = np.asarray(rows)
+    assert info["seed_target_reached"]
+    assert info["seed_tof_s"] < 75 * 86400
+    assert 1600 / info["seed_estimated_revolutions"] >= 16
+    assert np.all(np.isfinite(rows))
+    np.testing.assert_allclose(rows[0, :6], initial, rtol=1e-12, atol=1e-7)
+    assert np.all(np.diff(rows[:, 7]) > 0)
+    assert np.all(np.diff(rows[:, 6]) <= 1e-12)
+    assert rows[-1, 6] > 5
+    assert np.max(np.linalg.norm(rows[:, 8:11], axis=1)) <= 0.8 + 1e-12
+    # Check the returned inertial state independently of the seed's metadata.
+    r, v = rows[-1, :3], rows[-1, 3:6]
+    momentum = np.cross(r, v)
+    target_momentum = np.cross(target[:3], target[3:6])
+    cosine = momentum @ target_momentum / np.linalg.norm(momentum) / np.linalg.norm(target_momentum)
+    assert np.rad2deg(np.arccos(np.clip(cosine, -1, 1))) <= 0.1 + 1e-8
+    final_a = 1 / (2 / np.linalg.norm(r) - v @ v / MU)
+    assert abs(final_a / a1 - 1) <= 0.001
+    eccentricity = np.cross(v, momentum) / MU - r / np.linalg.norm(r)
+    target_eccentricity = np.cross(target[3:6], target_momentum) / MU - target[:3] / np.linalg.norm(
+        target[:3]
+    )
+    assert np.linalg.norm(eccentricity - target_eccentricity) <= 0.005
 
 
 @pytest.mark.parametrize("eccentricity", [0, 0.1, 0.7])

@@ -166,14 +166,25 @@ Declare terminal constraints separately, for example semi-major axis,
 eccentricity, and inclination. Constraints may leave the ascending node free
 even though the seed steers toward the anchor's particular plane.
 
-This is a numerical equinoctial proximity-quotient variant of Q-law: squared
-errors in `[p, f, g, h, k]` are normalized by their maximum Gauss element rates
-per unit acceleration, sampled around the current orbit. Thrust minimizes the
-instantaneous derivative of that quotient. The analytic gradient includes
-changes in the rate normalization and averages subgradients at tied maxima,
-which avoids selecting an arbitrary thrust bias at circularity. Circular and equatorial orbits are supported;
-retrograde-equatorial and unbound orbits are rejected. This variant has no
-periapsis penalty or efficiency-based coasting. See the
+This is a numerical equinoctial proximity-quotient variant of Q-law. Squared
+errors in `[p, f, g]` are normalized by maximum Gauss element rates per unit
+acceleration, sampled around the **target** orbit. The plane term is the squared
+angle between the current and target angular-momentum normals, normalized by
+the target orbit's maximum plane-rotation rate per unit acceleration. All
+reference rates stay fixed during steering. This prevents reducing the error
+metric merely by raising the orbit or approaching the equinoctial coordinate
+singularity while leaving a large plane error unchanged. It also makes the
+plane error independent of ascending-node wrapping.
+
+Thrust minimizes the instantaneous derivative of that quotient using analytic
+gradients. A working frame centered on the two orbit normals keeps the short
+plane-change path away from the equinoctial chart's pole; returned states and
+controls remain in the input inertial frame. Exactly opposed normals have
+multiple equally short paths, so the seed chooses one deterministically.
+Circular, equatorial, and retrograde-equatorial input orbits are supported;
+unbound input orbits are rejected. This variant has no periapsis penalty or
+efficiency-based coasting and does not reproduce the original classical-element
+quotient. See the
 [NASA comparison of Q-law guidance](https://ntrs.nasa.gov/api/citations/20140011269/downloads/20140011269.pdf)
 for the original classical-element formulation.
 
@@ -201,6 +212,26 @@ phase dynamics and needs sufficient mesh resolution for every revolution;
 fast seed generation does not remove that optimization cost.
 `seed_averaged`, `seed_control_evaluations`, and `seed_estimated_revolutions`
 identify the computation performed in the guess metadata.
+
+Neither seed mode solves a fuel-minimization problem. Q-law applies the
+specified fixed throttle while steering toward the target, then stops thrusting
+when the target tolerances are met. A larger plane change may require more time
+or propellant; the seed does not increase throttle automatically to meet a
+deadline. The later ASSET solve uses the objectives declared on the mission.
+For a fixed departure mass, `objectives.minimize_propellant()` minimizes consumed
+propellant by maximizing arrival mass. It does not minimize spacecraft dry mass
+or choose the propellant load. A successful feasibility recovery alone does not
+establish that the fuel objective has converged to a local optimum.
+
+Large-angle regression cases cover 40°, 60°, 120°, 170°, and 180° inclination changes,
+inclination decreases, large ascending-node changes, antipodal normals, and
+combined eccentricity/plane changes in both seed modes. These tests supply
+adequate thrust duration, propellant, and at least 16 output intervals per
+revolution. They establish seed targeting for those cases, not convergence for
+every orbit or every subsequent optimization. Direct collocation also needs
+sufficient segments per revolution, with accuracy checked by mesh refinement
+or independent propagation; `nsegs + 1` sparse seed samples cannot reconstruct
+a spiral containing hundreds of revolutions.
 
 The seed propagates **two-body** dynamics with constant thrust and Isp. It is
 currently available for a single inertial `low_thrust` phase using vector
