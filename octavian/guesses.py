@@ -13,14 +13,17 @@ from numpy.typing import ArrayLike, NDArray
 class TrajectoryGuess:
     """Provide an explicit dense state/time history to seed a phase.
 
-    Rows contain at least ``[x, y, z, vx, vy, vz, time]``. Extra columns are
-    retained for phase formulations that carry additional states or controls.
-    Times must be strictly increasing.
+    Rows normally contain ``[x, y, z, vx, vy, vz, time]``. For a complete
+    solver-layout history, set ``time_column`` to its time index (7 for
+    Cartesian mass/thrust). States and controls are retained without reordering.
+    Times must be strictly increasing. Prefer ``Solution.trajectory_guess()``
+    when reusing a solved powered phase.
     """
 
     rows: NDArray[np.float64]
+    time_column: int = 6
 
-    def __init__(self, rows: ArrayLike) -> None:
+    def __init__(self, rows: ArrayLike, *, time_column: int = 6) -> None:
         trajectory = np.asarray(rows, dtype=float)
         if trajectory.ndim != 2 or trajectory.shape[0] < 2 or trajectory.shape[1] < 7:
             raise ValueError(
@@ -29,9 +32,16 @@ class TrajectoryGuess:
             )
         if not np.all(np.isfinite(trajectory)):
             raise ValueError("TrajectoryGuess rows must be finite.")
-        if not np.all(np.diff(trajectory[:, 6]) > 0.0):
+        if (
+            isinstance(time_column, (bool, np.bool_))
+            or not isinstance(time_column, (int, np.integer))
+            or not 0 <= time_column < trajectory.shape[1]
+        ):
+            raise ValueError("TrajectoryGuess.time_column must index a trajectory column.")
+        if not np.all(np.diff(trajectory[:, time_column]) > 0.0):
             raise ValueError("TrajectoryGuess times must be strictly increasing.")
         object.__setattr__(self, "rows", trajectory.copy())
+        object.__setattr__(self, "time_column", int(time_column))
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,9 +99,14 @@ def low_thrust_spiral(
     )
 
 
-def trajectory(rows: ArrayLike) -> TrajectoryGuess:
-    """Create an explicit dense trajectory seed declaration."""
-    return TrajectoryGuess(rows)
+def trajectory(rows: ArrayLike, *, time_column: int = 6) -> TrajectoryGuess:
+    """Create a dense seed, optionally in a complete solver layout.
+
+    ``time_column=7`` accepts Cartesian ``[R,V,M,t,U]`` rows, preserving mass
+    and controls. The default remains ``[R,V,t]``. A complete history must match
+    the destination phase's state/control layout and coordinate conventions.
+    """
+    return TrajectoryGuess(rows, time_column=time_column)
 
 
 @dataclass(frozen=True, slots=True)

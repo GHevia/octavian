@@ -65,6 +65,12 @@ def _fake_solution() -> Solution:
                     "equivalent_dv_mps": 143.98885710585398,
                 }
             ],
+            "phase_solver_trajectories": [
+                np.column_stack(
+                    [traj[:, :6], [23, 22.5, 22], traj[:, 6], np.zeros((3, 3))]
+                ).tolist()
+            ],
+            "phase_time_columns": [7],
             "phase_guess_info": {
                 0: {
                     "seed_tof_s": 3_600.0,
@@ -96,6 +102,7 @@ def _fake_solution() -> Solution:
         ("examples/composable/earth_centered/08_chemical_burn_j2.py", 1),
         ("examples/composable/earth_centered/10_sun_moon_perturbations.py", 1),
         ("examples/composable/earth_centered/11_low_thrust_orbit_raise.py", 1),
+        ("examples/composable/earth_centered/11c_low_thrust_perturbation_continuation.py", 4),
         ("examples/composable/earth_centered/12_thrust_frames_and_attitude.py", 1),
         ("examples/composable/earth_centered/13_cannonball_drag_srp.py", 1),
         ("examples/composable/relative/16_cwh_relative_rendezvous.py", 1),
@@ -250,6 +257,29 @@ def test_composable_examples_run_as_scenarios(
         assert plotted == [
             "traj_composable_low_thrust_orbit_raise.html",
             "diagnostics_composable_low_thrust_orbit_raise.html",
+        ]
+    elif script_rel.endswith("11c_low_thrust_perturbation_continuation.py"):
+        from octavian.guesses import LowThrustQLawGuess, TrajectoryGuess
+
+        forces = [mission.phases[0].dynamics.active_perturbations() for mission in missions]
+        assert not forces[0].j2 and forces[0].spherical_harmonics is None
+        assert forces[1].j2
+        assert forces[2].spherical_harmonics.degree == forces[2].spherical_harmonics.order == 8
+        assert forces[2].active_third_bodies() == ()
+        assert forces[3].active_third_bodies() == ("moon", "sun")
+        assert isinstance(missions[0].phases[0].initial_guess, LowThrustQLawGuess)
+        for mission in missions:
+            assert mission.initial_epoch == "2026-01-01T00:00:00Z"
+            assert mission.mesh_nsegs_transfer == 160
+            assert mission.phases[0].dynamics.mu_m3ps2 == pytest.approx(3.986004415e14)
+        for mission in missions[1:]:
+            guess = mission.phases[0].initial_guess
+            assert isinstance(guess, TrajectoryGuess) and guess.time_column == 7
+            np.testing.assert_array_equal(guess.rows[:, 6], [23, 22.5, 22])
+        assert plotted == [
+            "traj_low_thrust_perturbation_continuation_throttle.html",
+            "traj_low_thrust_perturbation_continuation_firing.html",
+            "diagnostics_low_thrust_perturbation_continuation.html",
         ]
     elif script_rel.endswith("12_thrust_frames_and_attitude.py"):
         mission = missions[0]

@@ -21,6 +21,7 @@ from .cislunar import CR3BPSystem
 from .coordinates import CoordinateFrame, SolverScaling
 from .exports import Ephemeris
 from .exports.ephemeris import EphemerisFormat
+from .guesses import TrajectoryGuess
 from .solvers.preconfigured import RendezvousResult
 
 
@@ -78,6 +79,31 @@ class Solution:
         if self.result is None:
             return np.empty((0, 0), dtype=float)
         return np.asarray(self.result.traj, dtype=float)
+
+    def trajectory_guess(self, phase_index: int = 0) -> TrajectoryGuess:
+        """Reuse a successful composable phase's full state/time/control history.
+
+        Returns a ``TrajectoryGuess`` retaining mass, attitude states, and
+        controls in the solver's input conventions. Euler slew controls remain
+        normalized here, as required by the compiler; use
+        ``phase_control_trajectories`` for physical rates when reporting.
+        The destination must use the same state/control layout, coordinate
+        frame, and time origin. This supplies a trajectory guess, not optimizer
+        multipliers or a guarantee of convergence under changed dynamics.
+        """
+        if not self.ok or self.result is None:
+            raise ValueError("A trajectory guess requires a successful solution.")
+        histories = self.result.info.get("phase_solver_trajectories", ())
+        time_columns = self.result.info.get("phase_time_columns", ())
+        if not histories or len(histories) != len(time_columns):
+            raise ValueError("This result does not contain reusable composable phase histories.")
+        if (
+            isinstance(phase_index, (bool, np.bool_))
+            or not isinstance(phase_index, (int, np.integer))
+            or not 0 <= phase_index < len(histories)
+        ):
+            raise ValueError("phase_index must select an available solved phase.")
+        return TrajectoryGuess(histories[phase_index], time_column=time_columns[phase_index])
 
     @property
     def frame(self) -> CoordinateFrame | None:
