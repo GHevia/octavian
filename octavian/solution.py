@@ -188,6 +188,20 @@ class Solution:
         return bool(value.get("dimensional", True))
 
     @property
+    def phase_thrust_trajectories(self) -> tuple[np.ndarray, ...]:
+        """Return per-phase ``[time_s, throttle, thrust_N]`` histories.
+
+        Coast phases contain zero throttle/thrust. Vector, fixed, and Euler
+        controls share this representation; Euler slew rates are not throttle.
+        """
+        if self.result is None:
+            return ()
+        return tuple(
+            np.asarray(rows, dtype=float)
+            for rows in self.result.info.get("phase_thrust_trajectories", ())
+        )
+
+    @property
     def phase_control_trajectories(self) -> tuple[np.ndarray, ...]:
         """Return ``[time, controls...]`` arrays for every compiled phase.
 
@@ -376,8 +390,19 @@ class Solution:
         self_outer = self
 
         class _Viz:
-            def save_html(self, out_html: str, *, title: str = "trajectory") -> None:
+            def save_html(
+                self,
+                out_html: str,
+                *,
+                title: str = "trajectory",
+                color_by: str = "phase",
+                firing_threshold: float = 0.001,
+            ) -> None:
                 """Save a frame-aware trajectory plot.
+
+                ``color_by="throttle"`` adds a 0–1 colorbar; ``"firing"``
+                distinguishes firing/coasting using ``firing_threshold``.
+                Both options use solved thrust histories in inertial/RIC views.
 
                 Relative results use RIC axes and a chief marker, rotating
                 CR3BP results show both primaries and Lagrange points, and
@@ -393,10 +418,17 @@ class Solution:
                         out_html,
                         maneuvers=self_outer.result.maneuvers,
                         phase_segments=phase_segments,
+                        thrust_histories=self_outer.phase_thrust_trajectories,
+                        color_by=color_by,
+                        firing_threshold=firing_threshold,
                         title=title,
                     )
                     return
                 if frame is not None and frame.kind == "rotating":
+                    if color_by != "phase":
+                        raise ValueError(
+                            "Thrust coloring is available for inertial and relative results."
+                        )
                     system = self_outer.cr3bp_system
                     if system is None:
                         raise RuntimeError(
@@ -415,6 +447,9 @@ class Solution:
                     out_html,
                     maneuvers=self_outer.result.maneuvers,
                     phase_segments=phase_segments,
+                    thrust_histories=self_outer.phase_thrust_trajectories,
+                    color_by=color_by,
+                    firing_threshold=firing_threshold,
                     title=title,
                 )
 

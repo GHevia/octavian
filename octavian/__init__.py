@@ -42,7 +42,7 @@ from .forces import (
     cannonball_srp_acceleration,
 )
 from .gravity import SphericalHarmonics
-from .guesses import LowThrustSpiralGuess, TrajectoryGuess
+from .guesses import LowThrustQLawGuess, LowThrustSpiralGuess, TrajectoryGuess
 from .links import Link
 from .mission import Mission
 from .models import Dynamics, Perturbations, RetryPolicy, RunPlan, SolveConfig
@@ -104,6 +104,7 @@ __all__ = [
     "RelativePropagationMode",
     "RelativeElementPropagationResult",
     "LowThrustSpiralGuess",
+    "LowThrustQLawGuess",
     "TrajectoryGuess",
     "MissionConfigError",
     "EARTH",

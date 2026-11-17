@@ -53,7 +53,7 @@ from ..astro.types import as_vec3
 from ..astro.units import default_scaling
 from ..cislunar import CR3BPSystem, cr3bp_hermite_guess, propagate_cr3bp
 from ..coordinates import StateLayout
-from ..guesses import LowThrustSpiralGuess, TrajectoryGuess
+from ..guesses import LowThrustQLawGuess, LowThrustSpiralGuess, TrajectoryGuess
 from ..phase import Phase
 from ..relative import (
     CWHRendezvousSeed,
@@ -69,6 +69,7 @@ from .compiler import (
     nonlinear_relative_compiler,
     phase_compiler,
     powered_guessing,
+    qlaw_guessing,
     relative_constraint_compiler,
 )
 from .options import SolverOptions
@@ -324,12 +325,12 @@ def _explicit_trajectory_guesses(
     info: dict[int, dict[str, float | int | bool | str]] = {}
     for index, phase in enumerate(phases):
         config = phase.initial_guess
-        if config is None or isinstance(config, LowThrustSpiralGuess):
+        if config is None or isinstance(config, (LowThrustSpiralGuess, LowThrustQLawGuess)):
             continue
         if not isinstance(config, TrajectoryGuess):
             raise TypeError(
                 "Phase.initial_guess must be created with "
-                "guesses.trajectory(...) or guesses.low_thrust_spiral(...)."
+                "guesses.trajectory(...), guesses.low_thrust_spiral(...), or guesses.low_thrust_qlaw(...)."
             )
         rows = np.asarray(config.rows, dtype=float)
         guesses[index] = [row.copy() for row in rows]
@@ -453,8 +454,8 @@ def _build_guess_single_phase_low_thrust(
     mu: float,
     tf_bounds: tuple[float, float],
     nsegs: int,
-) -> tuple[list[np.ndarray], dict[str, float | int | str]]:
-    """Build a dynamics-integrated tangential spiral seed."""
+) -> tuple[list[np.ndarray], dict[str, float | int | bool | str]]:
+    """Build a two-body spiral or orbit-targeted Q-law seed."""
     initial_state = phase.initial_state or constraint_compiler.state_boundary_value(
         constraint_compiler.get_state_constraint(phase, "Front")
     )
@@ -472,12 +473,43 @@ def _build_guess_single_phase_low_thrust(
     config = phase.initial_guess
     if config is None:
         config = LowThrustSpiralGuess()
-    if not isinstance(config, LowThrustSpiralGuess):
-        raise TypeError("A low_thrust phase initial_guess must be guesses.low_thrust_spiral(...).")
+    if not isinstance(config, (LowThrustSpiralGuess, LowThrustQLawGuess)):
+        raise TypeError("A low_thrust phase initial_guess must be a spiral or Q-law declaration.")
     spacecraft = phase.spacecraft
     if isinstance(spacecraft, str) or spacecraft is None:
         raise ValueError("Low-thrust spiral seeding requires a Spacecraft object.")
     thruster = _first_thruster(phase)
+    if isinstance(config, LowThrustQLawGuess):
+        if phase.final_state is None:
+            raise ValueError("Q-law requires final_state defining the full target orbit.")
+        control = phase_compiler.thrust_control_for_phase(phase)
+        if control.representation != "vector":
+            raise ValueError("Q-law seeding currently requires vector thrust control.")
+        rows, info = qlaw_guessing.build_low_thrust_qlaw_seed(
+            initial_rv=np.hstack([initial_state.r_m, initial_state.v_mps]),
+            target_rv=np.hstack([phase.final_state.r_m, phase.final_state.v_mps]),
+            mu_m3ps2=mu,
+            initial_mass_kg=spacecraft.initial_mass_kg,
+            dry_mass_kg=spacecraft.dry_mass_kg,
+            thrust_N=thruster.thrust_N,
+            isp_s=thruster.isp_s,
+            time_bounds_s=tf_bounds,
+            npts=int(nsegs) + 1,
+            config=config,
+        )
+        # The vector norm in mass flow is nondifferentiable at zero. Give
+        # coast nodes a tiny warm-start vector, without constraining the solve.
+        seed_control_floor = 1e-4
+        for row in rows:
+            if np.linalg.norm(row[8:11]) < seed_control_floor:
+                row[8:11] = seed_control_floor * row[3:6] / np.linalg.norm(row[3:6])
+        info["seed_optimizer_throttle_floor"] = seed_control_floor
+        if control.frame == "ric":
+            from ..relative.transforms import ric_basis
+
+            for row in rows:
+                row[8:11] = ric_basis(row[:3], row[3:6]) @ row[8:11]
+        return rows, info
     return powered_guessing.build_low_thrust_spiral_seed(
         initial_position_m=initial_state.r_m,
         initial_velocity_mps=initial_state.v_mps,
@@ -1507,6 +1539,14 @@ def solve_composable_mission(
         )
 
     _validate_powered_phase_chain(phases)
+    for phase in phases:
+        if isinstance(phase.initial_guess, LowThrustQLawGuess) and (
+            len(phases) != 1
+            or phase_compiler.is_relative_phase(phase)
+            or _cr3bp_model(phase) is not None
+            or _powered_phase_kind(phase) != "low_thrust"
+        ):
+            raise ValueError("Q-law seeding requires a single inertial low_thrust phase.")
     mass_state_indices = _mass_state_phase_indices(phases)
 
     relative_phases = [phase for phase in phases if phase_compiler.is_relative_phase(phase)]
@@ -1584,9 +1624,7 @@ def solve_composable_mission(
     first = phases[0]
     last = phases[-1]
     mu = (
-        cr3bp_system.total_mu_m3ps2
-        if cr3bp_system is not None
-        else float(first.dynamics.mu_m3ps2)  # type: ignore[union-attr]
+        cr3bp_system.total_mu_m3ps2 if cr3bp_system is not None else float(first.dynamics.mu_m3ps2)  # type: ignore[union-attr]
     )
 
     x0_for_units = (
@@ -2020,6 +2058,8 @@ def solve_composable_mission(
     adaptive_mesh_enabled = bool(opts.enable_adaptive_mesh and not nonlinear_ephemeris_phase)
 
     for b in built:
+        if opts.transcription_mode != "LGL3":
+            b.asset_phase.switchTranscriptionMode(opts.transcription_mode)
         b.asset_phase.setAutoScaling(bool(opts.enable_auto_scaling))
         nonlinear_model = _nonlinear_relative_model(b.ph)
         if nonlinear_model is not None:
@@ -2410,6 +2450,21 @@ def solve_composable_mission(
             strict=True,
         )
     ]
+    phase_thrust_trajectories = []
+    for build, history in zip(built, phase_control_trajectories, strict=True):
+        throttle = np.zeros(len(history))
+        thrust = 0.0
+        if build.is_powered:
+            control = phase_compiler.thrust_control_for_phase(build.ph)
+            throttle = (
+                np.linalg.norm(history[:, 1:4], axis=1)
+                if control.representation == "vector"
+                else history[:, 1]
+            )
+            thrust = float(_first_thruster(build.ph).thrust_N)
+        phase_thrust_trajectories.append(
+            np.column_stack([history[:, 0], throttle, thrust * throttle])
+        )
     attitude_phase_trajectories = [
         np.column_stack(
             [
@@ -2537,7 +2592,9 @@ def solve_composable_mission(
                 "mode": (
                     str(build.powered_kind)
                     if is_powered
-                    else "relative_coast" if is_relative else "coast"
+                    else "relative_coast"
+                    if is_relative
+                    else "coast"
                 ),
                 "t_start_s": float(phase_traj[0, 6]),
                 "t_end_s": float(phase_traj[-1, 6]),
@@ -2586,6 +2643,7 @@ def solve_composable_mission(
         last_obj=float(getattr(ocp.optimizer, "LastObjVal", np.nan)),
         info={
             "backend": "asset_composable",
+            "transcription_mode": opts.transcription_mode,
             "optimizer_converged": bool(converged),
             "reported_constraints_satisfied": reported_constraints_satisfied,
             "nphases": len(built),
@@ -2603,11 +2661,13 @@ def solve_composable_mission(
             "dynamics_model": (
                 "cr3bp"
                 if cr3bp_system is not None
-                else "nonlinear_relative"
-                if any(_nonlinear_relative_model(phase) is not None for phase in phases)
-                else "cwh"
-                if relative_phases
-                else "central_gravity"
+                else (
+                    "nonlinear_relative"
+                    if any(_nonlinear_relative_model(phase) is not None for phase in phases)
+                    else "cwh"
+                    if relative_phases
+                    else "central_gravity"
+                )
             ),
             "relative_reference_model": None,
             "cr3bp_system": (
@@ -2626,7 +2686,9 @@ def solve_composable_mission(
             "relative_propagation_mode": (
                 _nonlinear_relative_model(phases[0]).propagation_mode.value
                 if relative_phases and _nonlinear_relative_model(phases[0]) is not None
-                else "cwh" if relative_phases else None
+                else "cwh"
+                if relative_phases
+                else None
             ),
             "native_relative_trajectory": (
                 native_relative_trajectory.tolist()
@@ -2638,6 +2700,9 @@ def solve_composable_mission(
                 if relative_phases
                 else None
             ),
+            "phase_thrust_trajectories": [
+                history.tolist() for history in phase_thrust_trajectories
+            ],
             "phase_control_trajectories": [
                 trajectory.tolist() for trajectory in phase_control_trajectories
             ],

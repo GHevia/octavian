@@ -36,6 +36,9 @@ def save_trajectory_html(
     maneuvers: Sequence[Maneuver] | None = None,
     phase_segments: Sequence[dict[str, object]] | None = None,
     reference_trajectories: Sequence[dict[str, object]] | None = None,
+    thrust_histories: Sequence[np.ndarray] | None = None,
+    color_by: str = "phase",
+    firing_threshold: float = 0.001,
     title: str = "octavian trajectory",
     earth_radius_m: float = EARTH_RADIUS_M,
     use_earth_texture: bool = True,
@@ -57,6 +60,10 @@ def save_trajectory_html(
         reference_trajectories: Dashed overlays with ``traj`` position rows
             in the same frame and units, plus optional ``name`` and ``color``.
             Velocity and time columns are ignored.
+        thrust_histories: Per-phase ``[time_s, throttle, thrust_N]`` arrays.
+        color_by: ``"phase"`` (default), ``"throttle"``, or ``"firing"``.
+            Thrust-based coloring requires ``thrust_histories``.
+        firing_threshold: Throttle above this value is classified as firing.
         title: Plot title.
         earth_radius_m: Earth radius used for the sphere in meters.
         use_earth_texture: Whether to render Earth with a texture map.
@@ -71,7 +78,7 @@ def save_trajectory_html(
     except ImportError as exc:
         raise RuntimeError(
             "Plotly visualization requires the optional viz dependencies. "
-            "Install them with `pip install \"octavian[viz]\"`."
+            'Install them with `pip install "octavian[viz]"`.'
         ) from exc
 
     if not use_earth_texture:
@@ -120,12 +127,14 @@ def save_trajectory_html(
         except ImportError as exc:
             raise RuntimeError(
                 "Textured visualization requires the optional viz dependencies. "
-                "Install them with `pip install \"octavian[viz]\"`."
+                'Install them with `pip install "octavian[viz]"`.'
             ) from exc
 
         earth_image = Image.open(resolved_texture_path).convert("RGB")
         earth_image = earth_image.resize((720, 360))
-        quantized_image = earth_image.quantize(colors=256, method=Image.Quantize.MEDIANCUT).convert("P")
+        quantized_image = earth_image.quantize(colors=256, method=Image.Quantize.MEDIANCUT).convert(
+            "P"
+        )
         palette = quantized_image.getpalette() or ([0, 0, 0] * 256)
         palette_rgb = np.array(palette, dtype=np.uint8).reshape(-1, 3)
 
@@ -143,9 +152,7 @@ def save_trajectory_html(
         colorscale = []
         for palette_index in range(256):
             red, green, blue = palette_rgb[palette_index]
-            colorscale.append(
-                [palette_index / 255.0, f"rgb({int(red)},{int(green)},{int(blue)})"]
-            )
+            colorscale.append([palette_index / 255.0, f"rgb({int(red)},{int(green)},{int(blue)})"])
 
         earth_trace = go.Surface(
             x=earth_x,
@@ -189,7 +196,9 @@ def save_trajectory_html(
     )
 
     phase_traces = []
-    for phase_index, segment in enumerate(phase_segments or (), start=1):
+    for phase_index, segment in enumerate(
+        (phase_segments or ()) if color_by == "phase" else (), start=1
+    ):
         t_start_s = float(segment["t_start_s"])
         t_end_s = float(segment["t_end_s"])
         phase_mask = (time_history_s >= t_start_s - 1.0e-9) & (time_history_s <= t_end_s + 1.0e-9)
@@ -208,6 +217,10 @@ def save_trajectory_html(
                 line=dict(width=7, color=phase_color),
             )
         )
+
+    phase_traces.extend(
+        _thrust_traces(go, traj, thrust_histories, phase_segments, color_by, firing_threshold)
+    )
 
     start_hover_text = (
         f"<b>Start</b><br>"
@@ -350,7 +363,7 @@ def cr3bp_trajectory_figure(
     except ImportError as exc:
         raise RuntimeError(
             "Plotly visualization requires the optional viz dependencies. "
-            "Install them with `pip install \"octavian[viz]\"`."
+            'Install them with `pip install "octavian[viz]"`.'
         ) from exc
 
     trajectory = np.asarray(traj, dtype=float)
@@ -547,6 +560,9 @@ def relative_trajectory_figure(
     maneuvers: Sequence[Maneuver] | None = None,
     phase_segments: Sequence[dict[str, object]] | None = None,
     reference_trajectories: Sequence[dict[str, object]] | None = None,
+    thrust_histories: Sequence[np.ndarray] | None = None,
+    color_by: str = "phase",
+    firing_threshold: float = 0.001,
     title: str = "octavian relative trajectory",
     chief_radius_m: float = 0.0,
 ) -> Any:
@@ -561,6 +577,9 @@ def relative_trajectory_figure(
         reference_trajectories: Dashed overlays with ``traj`` position rows
             in the same frame and units, plus optional ``name`` and ``color``.
             Velocity and time columns are ignored.
+        thrust_histories: Per-phase ``[time_s, throttle, thrust_N]`` arrays.
+        color_by: ``"phase"``, ``"throttle"``, or ``"firing"``.
+        firing_threshold: Throttle above this value is classified as firing.
         title: Plot title.
         chief_radius_m: Optional physical or keep-out radius drawn about the
             chief.  Zero draws a marker without a surrounding sphere.
@@ -577,14 +596,13 @@ def relative_trajectory_figure(
     except ImportError as exc:
         raise RuntimeError(
             "Plotly visualization requires the optional viz dependencies. "
-            "Install them with `pip install \"octavian[viz]\"`."
+            'Install them with `pip install "octavian[viz]"`.'
         ) from exc
 
     trajectory = np.asarray(traj, dtype=float)
     if trajectory.ndim != 2 or trajectory.shape[1] < 7:
         raise ValueError(
-            "traj must be a 2D array with at least 7 columns: "
-            "[R, I, C, Rdot, Idot, Cdot, t]."
+            "traj must be a 2D array with at least 7 columns: [R, I, C, Rdot, Idot, Cdot, t]."
         )
     if trajectory.shape[0] < 1 or not np.all(np.isfinite(trajectory[:, 0:7])):
         raise ValueError("traj must contain at least one finite RIC state")
@@ -626,12 +644,12 @@ def relative_trajectory_figure(
         )
     ]
 
-    for phase_index, segment in enumerate(phase_segments or (), start=1):
+    for phase_index, segment in enumerate(
+        (phase_segments or ()) if color_by == "phase" else (), start=1
+    ):
         start_s = float(segment["t_start_s"])
         end_s = float(segment["t_end_s"])
-        mask = (time_history_s >= start_s - 1.0e-9) & (
-            time_history_s <= end_s + 1.0e-9
-        )
+        mask = (time_history_s >= start_s - 1.0e-9) & (time_history_s <= end_s + 1.0e-9)
         if int(np.count_nonzero(mask)) < 2:
             continue
         positions = position_history_m[mask]
@@ -646,6 +664,9 @@ def relative_trajectory_figure(
             )
         )
 
+    traces.extend(
+        _thrust_traces(go, traj, thrust_histories, phase_segments, color_by, firing_threshold)
+    )
     traces.extend(_reference_traces(go, reference_trajectories))
 
     traces.extend(
@@ -755,6 +776,9 @@ def save_relative_trajectory_html(
     maneuvers: Sequence[Maneuver] | None = None,
     phase_segments: Sequence[dict[str, object]] | None = None,
     reference_trajectories: Sequence[dict[str, object]] | None = None,
+    thrust_histories: Sequence[np.ndarray] | None = None,
+    color_by: str = "phase",
+    firing_threshold: float = 0.001,
     title: str = "octavian relative trajectory",
     chief_radius_m: float = 0.0,
 ) -> None:
@@ -769,6 +793,9 @@ def save_relative_trajectory_html(
         maneuvers=maneuvers,
         phase_segments=phase_segments,
         reference_trajectories=reference_trajectories,
+        thrust_histories=thrust_histories,
+        color_by=color_by,
+        firing_threshold=firing_threshold,
         title=title,
         chief_radius_m=chief_radius_m,
     )
@@ -792,7 +819,7 @@ def trajectory_diagnostics_figure(
     except ImportError as exc:
         raise RuntimeError(
             "Plotly visualization requires the optional viz dependencies. "
-            "Install them with `pip install \"octavian[viz]\"`."
+            'Install them with `pip install "octavian[viz]"`.'
         ) from exc
 
     trajectory = np.asarray(traj, dtype=float)
@@ -812,9 +839,7 @@ def trajectory_diagnostics_figure(
         )
     else:
         if mu_m3ps2 is None or float(mu_m3ps2) <= 0.0:
-            raise ValueError(
-                "Inertial trajectory diagnostics require a positive mu_m3ps2"
-            )
+            raise ValueError("Inertial trajectory diagnostics require a positive mu_m3ps2")
         panels = inertial_diagnostic_panels(
             trajectory,
             mu_m3ps2=float(mu_m3ps2),
@@ -830,9 +855,7 @@ def trajectory_diagnostics_figure(
     time_values = trajectory[:, 6]
     for row, panel in enumerate(panels, start=1):
         for series in panel.series:
-            label = (
-                f"{series.name} ({series.unit})" if series.unit else series.name
-            )
+            label = f"{series.name} ({series.unit})" if series.unit else series.name
             figure.add_trace(
                 go.Scatter(
                     x=time_values,
@@ -844,11 +867,7 @@ def trajectory_diagnostics_figure(
                 col=1,
             )
         figure.update_yaxes(title_text=panel.y_axis_title, row=row, col=1)
-    time_unit = (
-        "TU"
-        if normalized_frame == "rotating" and not cr3bp_dimensional
-        else "s"
-    )
+    time_unit = "TU" if normalized_frame == "rotating" and not cr3bp_dimensional else "s"
     figure.update_xaxes(
         title_text=f"Time ({time_unit})",
         row=len(panels),
@@ -909,4 +928,120 @@ def _reference_traces(
                 opacity=0.75,
             )
         )
+    return traces
+
+
+def _thrust_traces(go, traj, histories, segments, color_by, threshold):
+    """Build phase-local control overlays without joining across coast gaps."""
+    if color_by not in {"phase", "throttle", "firing"}:
+        raise ValueError("color_by must be 'phase', 'throttle', or 'firing'.")
+    if not np.isfinite(threshold) or not 0 <= threshold < 1:
+        raise ValueError("firing_threshold must be in [0, 1).")
+    if color_by == "phase":
+        return []
+    if histories is None or len(histories) == 0:
+        raise ValueError("Thrust coloring requires per-phase [time, throttle, thrust_N] histories.")
+    if segments and len(segments) != len(histories):
+        raise ValueError("Thrust histories must match the number of phase segments.")
+    trajectory = np.asarray(traj, dtype=float)
+    traces = []
+    shown = set()
+    for index, raw in enumerate(histories):
+        history = np.asarray(raw, dtype=float)
+        if (
+            history.ndim != 2
+            or history.shape[1] != 3
+            or len(history) < 2
+            or not np.all(np.isfinite(history))
+            or np.any(np.diff(history[:, 0]) <= 0)
+        ):
+            raise ValueError(
+                "Thrust histories require finite [time, throttle, thrust_N] rows with increasing time."
+            )
+        if (
+            np.any(history[:, 1] < -1e-6)
+            or np.any(history[:, 1] > 1 + 1e-6)
+            or np.any(history[:, 2] < -1e-6)
+        ):
+            raise ValueError("Thrust histories require throttle in [0, 1] and nonnegative thrust.")
+        if history[0, 0] < trajectory[0, 6] - 1e-8 or history[-1, 0] > trajectory[-1, 6] + 1e-8:
+            raise ValueError("Thrust history lies outside the trajectory time range.")
+        mask = (trajectory[:, 6] >= history[0, 0]) & (trajectory[:, 6] <= history[-1, 0])
+        times = np.unique(np.r_[trajectory[mask, 6], history[:, 0]])
+        if color_by == "firing":
+            throttle = history[:, 1]
+            crossing = (throttle[:-1] > threshold) != (throttle[1:] > threshold)
+            indices = np.flatnonzero(crossing)
+            crossing_times = history[indices, 0] + (
+                (threshold - throttle[indices])
+                / (throttle[indices + 1] - throttle[indices])
+                * (history[indices + 1, 0] - history[indices, 0])
+            )
+            times = np.unique(np.r_[times, crossing_times])
+        positions = np.column_stack(
+            [np.interp(times, trajectory[:, 6], trajectory[:, j]) for j in range(3)]
+        )
+        controls = np.column_stack(
+            [
+                times,
+                np.clip(np.interp(times, history[:, 0], history[:, 1]), 0, 1),
+                np.maximum(np.interp(times, history[:, 0], history[:, 2]), 0),
+            ]
+        )
+        hover = "t = %{customdata[0]:.3f} s<br>Throttle = %{customdata[1]:.3f}<br>Thrust = %{customdata[2]:.4f} N<extra>%{fullData.name}</extra>"
+        if color_by == "throttle":
+            name = (
+                str(segments[index].get("name", f"phase {index + 1}"))
+                if segments
+                else f"phase {index + 1}"
+            )
+            traces.append(
+                go.Scatter3d(
+                    x=positions[:, 0],
+                    y=positions[:, 1],
+                    z=positions[:, 2],
+                    mode="lines",
+                    name=name,
+                    customdata=controls,
+                    hovertemplate=hover,
+                    line=dict(
+                        width=7,
+                        color=controls[:, 1],
+                        colorscale="Viridis",
+                        cmin=0,
+                        cmax=1,
+                        showscale=index == 0,
+                        colorbar=dict(title="Throttle"),
+                    ),
+                )
+            )
+        else:
+            firing = (controls[:-1, 1] + controls[1:, 1]) / 2 > threshold
+            for active, name, color in [
+                (False, "Coasting", "#64748B"),
+                (True, "Firing", "#F97316"),
+            ]:
+                selected = np.flatnonzero(firing == active)
+                if not len(selected):
+                    continue
+                xyz, data = [], []
+                for edge in selected:
+                    xyz.extend([positions[edge], positions[edge + 1], [None] * 3])
+                    data.extend([controls[edge], controls[edge + 1], [None] * 3])
+                xyz = np.asarray(xyz, dtype=object)
+                traces.append(
+                    go.Scatter3d(
+                        x=xyz[:, 0],
+                        y=xyz[:, 1],
+                        z=xyz[:, 2],
+                        mode="lines",
+                        name=name,
+                        legendgroup=name,
+                        showlegend=name not in shown,
+                        line=dict(width=7, color=color),
+                        customdata=data,
+                        hovertemplate=hover,
+                    )
+                )
+                shown.add(name)
     return traces

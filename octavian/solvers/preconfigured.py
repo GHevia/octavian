@@ -103,8 +103,7 @@ class RendezvousResult:
         status = "CONVERGED" if self.converged else "NOT CONVERGED"
         cr3bp_metadata = self.info.get("cr3bp_system")
         canonical_cr3bp = (
-            isinstance(cr3bp_metadata, dict)
-            and cr3bp_metadata.get("dimensional") is False
+            isinstance(cr3bp_metadata, dict) and cr3bp_metadata.get("dimensional") is False
         )
         time_unit = "TU" if canonical_cr3bp else "s"
         velocity_unit = "VU" if canonical_cr3bp else "m/s"
@@ -120,8 +119,7 @@ class RendezvousResult:
             for m in self.maneuvers:
                 dv = float(np.linalg.norm(m.dv_mps))
                 lines.append(
-                    f"    - {m.name}: t={m.t_s:.3f} {time_unit} | "
-                    f"|dv|={dv:.6f} {velocity_unit}"
+                    f"    - {m.name}: t={m.t_s:.3f} {time_unit} | |dv|={dv:.6f} {velocity_unit}"
                 )
         constraint_report = self.info.get("constraint_report", [])
         if constraint_report:
@@ -394,6 +392,8 @@ def solve_two_impulse_free_time(
     ocp.optimizer.set_QPOrderingMode(str(opts.qp_ordering_mode))
     set_ocp_threads(ocp, opts.asset_threads)
 
+    if opts.transcription_mode != "LGL3":
+        phase.switchTranscriptionMode(opts.transcription_mode)
     phase.setAutoScaling(bool(opts.enable_auto_scaling))
     phase.setUnits(R=r_unit, V=v_unit, t=t_unit)
     phase.setAdaptiveMesh(bool(opts.enable_adaptive_mesh))
@@ -423,6 +423,7 @@ def solve_two_impulse_free_time(
         last_obj=float(getattr(ocp.optimizer, "LastObjVal", np.nan)),
         info={
             "tf_sol_s": float(traj[-1, 6]),
+            "transcription_mode": opts.transcription_mode,
             "r_unit_m": r_unit,
             "v_unit_mps": v_unit,
             "t_unit_s": t_unit,
@@ -493,7 +494,9 @@ def solve_two_impulse_precoast(
     seed_t1_min = max(t1min, min_precoast)
     seed_t1_max = min(t1max, tfmax - min_transfer)
     if seed_t1_max < seed_t1_min:
-        raise ValueError("Time bounds leave no room for the minimum precoast and transfer durations")
+        raise ValueError(
+            "Time bounds leave no room for the minimum precoast and transfer durations"
+        )
 
     n_t1 = max(int(spec.precoast_grid_size), 2)
     t1_candidates = np.linspace(seed_t1_min, seed_t1_max, n_t1)
@@ -503,9 +506,7 @@ def solve_two_impulse_precoast(
         if T0 is not None:
             span = seed_t1_max - seed_t1_min
             if span > 1.5 * T0:
-                t1_candidates = np.linspace(
-                    seed_t1_min, min(seed_t1_min + T0, seed_t1_max), n_t1
-                )
+                t1_candidates = np.linspace(seed_t1_min, min(seed_t1_min + T0, seed_t1_max), n_t1)
 
     rv0 = np.hstack([as_vec3(spec.x0.r_m), as_vec3(spec.x0.v_mps)])
 
@@ -672,6 +673,8 @@ def solve_two_impulse_precoast(
     set_ocp_threads(ocp, opts.asset_threads)
 
     for phase in [phase1, phase0]:
+        if opts.transcription_mode != "LGL3":
+            phase.switchTranscriptionMode(opts.transcription_mode)
         phase.setAutoScaling(bool(opts.enable_auto_scaling))
         phase.setUnits(R=r_unit, V=v_unit, t=t_unit)
         phase.setAdaptiveMesh(bool(opts.enable_adaptive_mesh))

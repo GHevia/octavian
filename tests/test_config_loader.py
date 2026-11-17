@@ -338,3 +338,11 @@ def test_json_round_trip_input_remains_plain_data() -> None:
     mission = load_mission_mapping(json.loads(json.dumps(config)))
 
     assert mission.name == "Config fixture"
+
+
+def test_solver_transcription_mode_configuration():
+    from octavian.config.declarations import build_solver_options
+
+    assert build_solver_options({"transcription_mode": "LGL5"}).transcription_mode == "LGL5"
+    with pytest.raises(ValueError, match="transcription_mode"):
+        build_solver_options({"transcription_mode": "invalid"})

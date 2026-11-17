@@ -138,7 +138,7 @@ Schema version 1 covers the current public mission building blocks:
   lighting-angle, and ephemeris solar-phase-angle constraints;
 - impulsive delta-v variables and boundary impulse events;
 - delta-v, time, and propellant objectives;
-- low-thrust spiral initial guesses;
+- low-thrust spiral and `low_thrust_qlaw` initial guesses;
 - solver, retry, solve, continuation-plan, mesh, and Lambert options.
 
 Type names use lowercase snake case, such as `semi_major_axis`,
