@@ -97,6 +97,19 @@ def build_constraint(value: Any, path: str, states: Mapping[str, BoundaryState])
             where=where,
             tol_m=None if tolerance is None else float(tolerance),
         )
+    if constraint_type == "flight_path_angle_deg":
+        reject_unknown(config, {"type", "angle_deg", "where", "tol_deg"}, path)
+        return constraints.flight_path_angle_deg(
+            float(config.get("angle_deg", 0)), where=where, tol_deg=config.get("tol_deg")
+        )
+    if constraint_type == "velocity_magnitude":
+        reject_unknown(config, {"type", "speed_mps", "where", "tol_mps"}, path)
+        return constraints.velocity_magnitude(
+            float(required(config, "speed_mps", path)), where=where, tol_mps=config.get("tol_mps")
+        )
+    if constraint_type == "circular_speed":
+        reject_unknown(config, {"type", "where", "tol_mps"}, path)
+        return constraints.circular_speed(where=where, tol_mps=config.get("tol_mps"))
     if constraint_type == "eccentricity":
         reject_unknown(config, {"type", "e", "where", "tol"}, path)
         tolerance = config.get("tol")

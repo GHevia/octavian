@@ -51,6 +51,7 @@ class ConstraintReportContext(Protocol):
     cr3bp_dimensional: bool
     solar_direction_at: Callable[[np.ndarray], np.ndarray] | None
 
+
 _CARTESIAN_COMPONENT_ALIASES = {
     "x": "x",
     "rx": "x",
@@ -181,9 +182,7 @@ def _validate_inertial_orbital_context(context: ConstraintApplicationContext) ->
     if context.is_relative_phase:
         raise ValueError("Inertial orbital-element constraints are not valid in a relative frame.")
     if context.cr3bp_system is not None:
-        raise ValueError(
-            "Osculating two-body element constraints are not valid in a CR3BP frame."
-        )
+        raise ValueError("Osculating two-body element constraints are not valid in a CR3BP frame.")
 
 
 class Constraint(ABC):
@@ -291,11 +290,138 @@ class SemiMajorAxis(OrbitalElementConstraint):
 
 
 @dataclass(frozen=True, slots=True)
+class FlightPathAngle(Constraint):
+    """Signed angle between velocity and the local horizontal, in degrees.
+
+    Zero imposes r·v=0 without an eccentricity singularity. The residual uses
+    sin(gamma), which is smooth and monotone for -90 < gamma < 90 degrees.
+    """
+
+    kind: ClassVar[str] = "flight_path_angle_deg"
+    family: ClassVar[str] = "orbital_geometry"
+    angle_deg: float = 0.0
+    where: Where = "Path"
+    tol_deg: float | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "where", _normalize_where(self.where))
+        angle = _finite_float("angle_deg", self.angle_deg)
+        tolerance = _optional_nonnegative_float("tol_deg", self.tol_deg)
+        if abs(angle) >= 90 or abs(angle) + (tolerance or 0) >= 90:
+            raise ValueError(
+                "Flight-path angle and its tolerance must lie strictly inside (-90,90) degrees."
+            )
+        object.__setattr__(self, "angle_deg", angle)
+        object.__setattr__(self, "tol_deg", tolerance)
+
+    @property
+    def value(self):
+        return {"angle_deg": self.angle_deg, "tol_deg": self.tol_deg}
+
+    def apply(self, phase, context):
+        _validate_inertial_orbital_context(context)
+        vf = context.vector_functions
+        r, v = vf.Arguments(6).tolist([(0, 3), (3, 3)])
+        sine = r.dot(v) / (r.norm() * v.norm())
+        if self.tol_deg is None or self.tol_deg == 0:
+            phase.addEqualCon(
+                self.where, vf.stack([sine - np.sin(np.deg2rad(self.angle_deg))]), range(6)
+            )
+        else:
+            phase.addInequalCon(
+                self.where,
+                vf.stack([sine - np.sin(np.deg2rad(self.angle_deg + self.tol_deg))]),
+                range(6),
+            )
+            phase.addInequalCon(
+                self.where,
+                vf.stack([np.sin(np.deg2rad(self.angle_deg - self.tol_deg)) - sine]),
+                range(6),
+            )
+
+    def report(self, context):
+        rows = np.asarray(context.phase_trajectory)
+        rows = rows[:1] if self.where == "Front" else rows[-1:] if self.where == "Back" else rows
+        sine = (
+            np.sum(rows[:, :3] * rows[:, 3:6], axis=1)
+            / np.linalg.norm(rows[:, :3], axis=1)
+            / np.linalg.norm(rows[:, 3:6], axis=1)
+        )
+        return [
+            _scalar_report_row(
+                self,
+                context,
+                name=self.kind,
+                target=self.angle_deg,
+                tolerance=self.tol_deg or 1e-6,
+                values=np.rad2deg(np.arcsin(np.clip(sine, -1, 1))),
+            )
+        ]
+
+
+@dataclass(frozen=True, slots=True)
+class VelocityMagnitude(Constraint):
+    """Inertial speed target, or local circular speed when speed_mps is None."""
+
+    kind: ClassVar[str] = "velocity_magnitude"
+    family: ClassVar[str] = "orbital_geometry"
+    speed_mps: float | None = None
+    where: Where = "Path"
+    tol_mps: float | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "where", _normalize_where(self.where))
+        if self.speed_mps is not None:
+            speed = _finite_float("speed_mps", self.speed_mps)
+            if speed <= 0:
+                raise ValueError("speed_mps must be positive.")
+            object.__setattr__(self, "speed_mps", speed)
+        object.__setattr__(self, "tol_mps", _optional_nonnegative_float("tol_mps", self.tol_mps))
+
+    @property
+    def value(self):
+        return {"speed_mps": self.speed_mps, "tol_mps": self.tol_mps}
+
+    def apply(self, phase, context):
+        _validate_inertial_orbital_context(context)
+        vf = context.vector_functions
+        r, v = vf.Arguments(6).tolist([(0, 3), (3, 3)])
+        target = (
+            self.speed_mps if self.speed_mps is not None else vf.sqrt(context.mu_m3ps2 / r.norm())
+        )
+        _apply_expression_target(
+            phase,
+            context,
+            where=self.where,
+            residual=vf.stack([v.norm() - target]),
+            argument_indices=range(6),
+            tolerance=self.tol_mps,
+        )
+
+    def report(self, context):
+        rows = np.asarray(context.phase_trajectory)
+        rows = rows[:1] if self.where == "Front" else rows[-1:] if self.where == "Back" else rows
+        speed = np.linalg.norm(rows[:, 3:6], axis=1)
+        if self.speed_mps is None:
+            speed = speed - np.sqrt(context.mu_m3ps2 / np.linalg.norm(rows[:, :3], axis=1))
+        return [
+            _scalar_report_row(
+                self,
+                context,
+                name="circular_speed" if self.speed_mps is None else self.kind,
+                target=self.speed_mps or 0,
+                tolerance=self.tol_mps or 1e-5,
+                values=speed,
+            )
+        ]
+
+
+@dataclass(frozen=True, slots=True)
 class Eccentricity(OrbitalElementConstraint):
     """Constrain orbital eccentricity.
 
-    Circular targets are intentionally rejected for now because they need a
-    non-singular formulation.
+    An exact zero target uses zero flight-path angle and local circular speed,
+    avoiding the zero derivative of eccentricity squared at circularity.
     """
 
     kind: ClassVar[str] = "eccentricity"
@@ -307,14 +433,15 @@ class Eccentricity(OrbitalElementConstraint):
     def __post_init__(self) -> None:
         object.__setattr__(self, "where", _normalize_where(self.where))
         eccentricity_value = _finite_float("e", self.e)
-        if not (0.0 < eccentricity_value < 1.0):
-            raise ValueError(
-                "Eccentricity constraint currently requires 0 < e < 1. "
-                "Circular and non-elliptic handling is deferred."
-            )
+        if not (0.0 <= eccentricity_value < 1.0):
+            raise ValueError("Eccentricity constraint requires 0 <= e < 1.")
         object.__setattr__(self, "e", eccentricity_value)
         tolerance = _optional_nonnegative_float("tol", self.tol)
-        if tolerance is not None and tolerance >= eccentricity_value:
+        if eccentricity_value == 0 and tolerance not in (None, 0.0):
+            raise ValueError(
+                "For a circular tolerance band, set flight_path_angle_deg and velocity_magnitude tolerances explicitly."
+            )
+        if eccentricity_value > 0 and tolerance is not None and tolerance >= eccentricity_value:
             raise ValueError("tol must be smaller than e for eccentricity constraints.")
         object.__setattr__(self, "tol", tolerance)
 
@@ -331,6 +458,10 @@ class Eccentricity(OrbitalElementConstraint):
     def apply(self, phase: Any, context: ConstraintApplicationContext) -> None:
         """Apply eccentricity through its non-negative squared expression."""
         _validate_inertial_orbital_context(context)
+        if self.e == 0:
+            FlightPathAngle(where=self.where).apply(phase, context)
+            VelocityMagnitude(speed_mps=None, where=self.where).apply(phase, context)
+            return
         vf = context.vector_functions
         mu_m3ps2 = float(context.mu_m3ps2)
         arguments = vf.Arguments(6)
@@ -340,9 +471,7 @@ class Eccentricity(OrbitalElementConstraint):
         speed = velocity.norm()
         specific_energy = 0.5 * speed**2 - mu_m3ps2 / radius
         angular_momentum_sq = angular_momentum.dot(angular_momentum)
-        eccentricity_sq = 1.0 + (
-            2.0 * specific_energy * angular_momentum_sq
-        ) / mu_m3ps2**2
+        eccentricity_sq = 1.0 + (2.0 * specific_energy * angular_momentum_sq) / mu_m3ps2**2
         if self.tol is None:
             phase.addEqualCon(
                 self.where,
@@ -372,8 +501,8 @@ class Eccentricity(OrbitalElementConstraint):
 class InclinationDeg(OrbitalElementConstraint):
     """Constrain orbital inclination in degrees.
 
-    Equatorial targets are intentionally rejected for now because they need a
-    non-singular formulation.
+    Exact 0/180 degree targets use z=vz=0 plus angular-momentum sense, rather
+    than a direction-cosine equality whose gradient vanishes at the pole.
     """
 
     kind: ClassVar[str] = "inclination_deg"
@@ -385,15 +514,16 @@ class InclinationDeg(OrbitalElementConstraint):
     def __post_init__(self) -> None:
         object.__setattr__(self, "where", _normalize_where(self.where))
         inclination_deg = _finite_float("inc_deg", self.inc_deg)
-        if not (0.0 < inclination_deg < 180.0):
-            raise ValueError(
-                "Inclination constraint currently requires 0 < inc_deg < 180. "
-                "Equatorial handling is deferred."
-            )
+        if not (0.0 <= inclination_deg <= 180.0):
+            raise ValueError("Inclination constraint requires 0 <= inc_deg <= 180.")
         object.__setattr__(self, "inc_deg", inclination_deg)
         tolerance_deg = _optional_nonnegative_float("tol_deg", self.tol_deg)
-        if tolerance_deg is not None and tolerance_deg >= min(
-            inclination_deg, 180.0 - inclination_deg
+        if inclination_deg in (0, 180) and tolerance_deg not in (None, 0.0):
+            raise ValueError("For an equatorial tolerance band, constrain z and vz explicitly.")
+        if (
+            inclination_deg not in (0, 180)
+            and tolerance_deg is not None
+            and tolerance_deg >= min(inclination_deg, 180.0 - inclination_deg)
         ):
             raise ValueError("tol_deg is too large for the requested inclination target.")
         object.__setattr__(self, "tol_deg", tolerance_deg)
@@ -416,6 +546,12 @@ class InclinationDeg(OrbitalElementConstraint):
         position, velocity = arguments.tolist([(0, 3), (3, 3)])
         angular_momentum = position.cross(velocity)
         inclination_cosine = angular_momentum.normalized()[2]
+        if self.inc_deg in (0, 180):
+            StateComponent("z", 0.0, where=self.where).apply(phase, context)
+            StateComponent("vz", 0.0, where=self.where).apply(phase, context)
+            sense = 1.0 if self.inc_deg == 0 else -1.0
+            phase.addInequalCon(self.where, vf.stack([-sense * inclination_cosine]), range(6))
+            return
         target_cosine = float(np.cos(np.deg2rad(self.inc_deg)))
         if self.tol_deg is None:
             phase.addEqualCon(
@@ -540,7 +676,9 @@ def _apply_angle_bounds(
 ) -> None:
     """Apply angle bounds without inverse-trigonometric vector functions."""
     distance = offset.norm()
-    direction_norm = direction.norm() if scale_direction_norm and hasattr(direction, "norm") else 1.0
+    direction_norm = (
+        direction.norm() if scale_direction_norm and hasattr(direction, "norm") else 1.0
+    )
     projection = offset.dot(direction)
     min_cosine = float(np.cos(np.deg2rad(min_angle_deg)))
     max_cosine = float(np.cos(np.deg2rad(max_angle_deg)))
@@ -668,9 +806,7 @@ class ApproachCone(Constraint):
                 actual=actual,
                 error=actual - self.half_angle_deg,
                 tolerance=tolerance,
-                satisfied=bool(
-                    np.isfinite(actual) and actual <= self.half_angle_deg + tolerance
-                ),
+                satisfied=bool(np.isfinite(actual) and actual <= self.half_angle_deg + tolerance),
             )
         ]
 
@@ -786,9 +922,7 @@ class SolarPhaseAngle(Constraint):
         expressions = context.relative_expressions
         if expressions is not None:
             if context.solar_position_table is None:
-                raise ValueError(
-                    "SolarPhaseAngle requires a SPICE-derived ECI Sun position table"
-                )
+                raise ValueError("SolarPhaseAngle requires a SPICE-derived ECI Sun position table")
             offset_ric = expressions.position - np.asarray(self.origin_m, dtype=float)
             sun_line_eci = (
                 context.solar_position_table(expressions.time) - expressions.chief_position
@@ -890,8 +1024,7 @@ class State(Constraint):
             and getattr(variable, "where", "") == self.where
             for variable in getattr(declared_phase, "variables", ()) or ()
         ) or any(
-            getattr(event, "kind", "") == "impulse"
-            and getattr(event, "where", "") == self.where
+            getattr(event, "kind", "") == "impulse" and getattr(event, "where", "") == self.where
             for event in getattr(declared_phase, "events", ()) or ()
         )
         if has_impulse and "V" in groups and not linked_front_impulse:
@@ -1072,8 +1205,7 @@ class PeriodicState(Constraint):
     def apply(self, phase: Any, context: ConstraintApplicationContext) -> None:
         """Equate selected native Cartesian components at both boundaries."""
         indices = [
-            _cartesian_component_index(context.layout, component)
-            for component in self.components
+            _cartesian_component_index(context.layout, component) for component in self.components
         ]
         arguments = context.vector_functions.Arguments(2 * len(indices))
         front = arguments.head(len(indices))
@@ -1438,13 +1570,9 @@ class RelativeOrbitalElementsConstraint(Constraint):
         representation = _normalize_relative_element_representation(
             self.representation or inferred_representation or "damico"
         )
-        if (
-            inferred_representation is not None
-            and inferred_representation != representation
-        ):
+        if inferred_representation is not None and inferred_representation != representation:
             raise ValueError(
-                "elements object does not match the requested "
-                f"{representation!r} representation"
+                f"elements object does not match the requested {representation!r} representation"
             )
         source = (
             self.elements.as_vector()  # type: ignore[attr-defined]
@@ -1886,6 +2014,25 @@ def relative_orbital_elements(
 def semi_major_axis(a_m: float, where: str = "Path", tol_m: float | None = None) -> SemiMajorAxis:
     """Create a semi-major-axis constraint."""
     return SemiMajorAxis(a_m=a_m, where=where, tol_m=tol_m)
+
+
+def flight_path_angle_deg(
+    angle_deg: float = 0.0, where: str = "Path", tol_deg: float | None = None
+) -> FlightPathAngle:
+    """Target the signed flight-path angle; zero means locally horizontal flight."""
+    return FlightPathAngle(angle_deg, where, tol_deg)
+
+
+def velocity_magnitude(
+    speed_mps: float, where: str = "Path", tol_mps: float | None = None
+) -> VelocityMagnitude:
+    """Target inertial speed in m/s, independently of velocity direction."""
+    return VelocityMagnitude(speed_mps, where, tol_mps)
+
+
+def circular_speed(where: str = "Path", tol_mps: float | None = None) -> VelocityMagnitude:
+    """Target sqrt(mu/r) at the current radius; pair with zero FPA for e=0."""
+    return VelocityMagnitude(None, where, tol_mps)
 
 
 def eccentricity(e: float, where: str = "Path", tol: float | None = None) -> Eccentricity:

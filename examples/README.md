@@ -48,6 +48,8 @@ constraints:
 - `composable/earth_centered/11c_low_thrust_perturbation_continuation.py` — solve
   a 100 mN transfer without perturbations, then reuse its full solved history
   through J2, 8×8 Earth gravity, and Sun/Moon continuation stages;
+- `composable/earth_centered/11d_circular_equatorial_target.py` — exact circular
+  and equatorial targets, with explicit FPA/speed/Cartesian alternatives;
 - earth-centered examples 11–13 — low-thrust orbit raising, thrust-attitude
   representations, and cannonball drag/SRP;
 - earth-centered examples 14–15 — 8×8 EGM2008 with Sun/Moon gravity and model comparison;

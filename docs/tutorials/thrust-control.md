@@ -297,7 +297,32 @@ of the top-level flags. Without the object, the top-level flags remain supported
 Within `Perturbations`, `sun`/`moon` and `third_bodies` combine and deduplicate.
 Solar radiation pressure is controlled independently through `srp`.
 
-## Throttle and firing plots
+## Exact circular and equatorial arrival targets
+
+`constraints.eccentricity(0, where="Back")` compiles two nonsingular equalities:
+zero flight-path angle and local circular speed `sqrt(mu/r)`. FPA alone
+specifies an apsis, not a circular orbit. The component constraints are also
+available as `flight_path_angle_deg(...)`, `velocity_magnitude(...)`, and
+`circular_speed(...)`, with tolerances in degrees or m/s. Flight-path angle
+is signed positive outward and requires nonzero radius and speed. These
+constraints describe central-body inertial, osculating geometry.
+
+`constraints.inclination_deg(0, where="Back")` compiles z=vz=0 and a prograde
+angular-momentum sense condition. A 180° target uses the same plane equalities
+with retrograde sense. The sense inequality is strictly inactive in the desired
+plane; it distinguishes two directions without the vanishing gradient of an
+inclination-cosine equality at a pole. z/vz use the declared inertial frame's
+equatorial plane. General planes can be expressed in an appropriately declared
+frame or with explicit geometry constraints.
+
+Nonzero tolerance bands on a zero-e or endpoint-inclination declaration are
+rejected because mapping an element band into FPA/speed or z/vz bands would
+change its mathematical meaning. Use the explicit component constraints with
+their physical tolerances instead. Example 11d solves the same orbit raise
+using automatic zero-element handling and explicit FPA/speed/z/vz constraints.
+Existing nonzero eccentricity/inclination formulations are unchanged.
+
+## Solver results and time histories
 
 Solver results distinguish feasibility from objective convergence:
 `solution.feasible` (also `solution.ok`) accepts a feasible or acceptable
