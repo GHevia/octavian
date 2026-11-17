@@ -71,6 +71,10 @@ def _fake_solution() -> Solution:
                 ).tolist()
             ],
             "phase_time_columns": [7],
+            "phase_mass_trajectories": [np.column_stack([traj[:, 6], [23, 22.5, 22]]).tolist()],
+            "phase_thrust_trajectories": [
+                np.column_stack([traj[:, 6], np.ones(3), np.full(3, 0.1)]).tolist()
+            ],
             "phase_guess_info": {
                 0: {
                     "seed_tof_s": 3_600.0,

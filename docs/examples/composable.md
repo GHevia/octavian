@@ -424,6 +424,8 @@ Expected output:
 - `traj_low_thrust_perturbation_continuation_throttle.html`
 - `traj_low_thrust_perturbation_continuation_firing.html`
 - `diagnostics_low_thrust_perturbation_continuation.html`
+- `propulsion_low_thrust_continuation.html` and `.csv` show solved mass/throttle histories.
+- `low_thrust_optimization_duals.npz` pairs native optimization states and ASSET costates.
 
 ## 12: Thrust Frames And Kinematic Attitude
 

@@ -299,6 +299,53 @@ Solar radiation pressure is controlled independently through `srp`.
 
 ## Throttle and firing plots
 
+Solver results distinguish feasibility from objective convergence:
+`solution.feasible` (also `solution.ok`) accepts a feasible or acceptable
+returned iterate, while `solution.optimality_converged` requires ASSET's
+`CONVERGED` flag from the objective optimization. Every enum in the pinned
+ASSET release is truthy, so Octavian compares named flags explicitly. A final
+feasibility recovery never establishes fuel optimality. Summaries label these
+outcomes separately. `result.info["solve_report"]` records each solver stage's
+flag, iterations, objective, and elapsed time; mesh convergence is `None` when
+adaptive refinement was disabled. `SolverOptions` exposes `max_iterations`,
+`feasibility_tolerance`, and `optimality_tolerance` in addition to line-search
+settings. Backend-scaled tolerances are not physical propagation tolerances.
+
+Use `solution.validate_dynamics(max_step_s=10)` to reintegrate each solved
+phase's compiled ODE under its control interpolant with independent RK4. The
+result reports native endpoint state errors. Supply component-wise
+`state_tolerances` in native units to get a pass/fail check. Each phase starts
+at its own solved front state, respecting impulsive links. Halve the step to
+check numerical integration convergence. This checks dynamics rather than
+certifying optimality or every path constraint.
+
+`solution.costate_trajectories` contains ASSET estimates sampled at optimization
+termination, paired with `solution.optimization_trajectories`. These snapshots
+precede recovery and use the native differential-state order followed by time.
+Unavailable costates are `None` with an explicit backend error in
+`result.info["optimization_phases"]`. Estimates from an unconverged objective
+are not certified indirect solutions. Frames, scaling, and state-layout names
+remain in result metadata; ASSET's state/costate conventions are retained.
+Raw defect histories are also retained; they are not physical mesh-error or
+KKT-residual estimates. Live phases are accessible through
+`solution.asset_phases`, for example
+`solution.asset_phases[0].returnEqualConLmults(constraint_index)`. Live phases
+represent the final iterate and are not serialized, so their multipliers can
+differ from the optimization snapshots after recovery.
+
+Example 11c additionally saves a propulsion time-history figure, CSV, and
+paired optimization-state/costate NPZ. For any mass-carrying solution:
+
+```python
+solution.viz().save_propulsion_html("propulsion.html")
+solution.save_propulsion_csv("propulsion.csv")
+```
+
+The figure plots throttle, thrust, mass, propellant used in each phase, and
+thrust acceleration over time. Phase boundaries are drawn separately. The
+CSV includes a phase index and physical SI units; coasts carrying mass have
+zero thrust, and phases without a mass state have no propulsion history.
+
 To show actual throttle or firing intervals, including coasts **inside** a
 powered phase:
 

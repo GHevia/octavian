@@ -802,6 +802,63 @@ def save_relative_trajectory_html(
     figure.write_html(out_html, include_plotlyjs="cdn")
 
 
+def propulsion_history_figure(
+    histories: Sequence[np.ndarray], *, title: str = "Propulsion histories"
+) -> Any:
+    """Plot per-phase [t, throttle, thrust, mass, used propellant, acceleration].
+
+    Each phase is drawn independently so coasts and phase boundaries do not
+    acquire interpolated thrust. Propellant use resets at each phase front.
+    """
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
+    labels = (
+        "Throttle",
+        "Thrust (N)",
+        "Mass (kg)",
+        "Propellant used in phase (kg)",
+        "Thrust acceleration (m/s²)",
+    )
+    figure = make_subplots(
+        rows=5, cols=1, shared_xaxes=True, subplot_titles=labels, vertical_spacing=0.05
+    )
+    found = False
+    for index, raw in enumerate(histories):
+        history = np.asarray(raw, dtype=float)
+        if not history.size:
+            continue
+        if (
+            history.ndim != 2
+            or history.shape[1] != 6
+            or not np.all(np.isfinite(history))
+            or np.any(np.diff(history[:, 0]) <= 0)
+        ):
+            raise ValueError(
+                "Propulsion histories require finite [time, throttle, thrust, mass, propellant_used, acceleration] rows with increasing time."
+            )
+        found = True
+        for column, label in enumerate(labels, start=1):
+            figure.add_trace(
+                go.Scatter(
+                    x=history[:, 0],
+                    y=history[:, column],
+                    name=f"Phase {index + 1}",
+                    legendgroup=str(index),
+                    showlegend=column == 1,
+                    mode="lines",
+                ),
+                row=column,
+                col=1,
+            )
+            figure.update_yaxes(title_text=label, row=column, col=1)
+    if not found:
+        raise ValueError("No mass-carrying propulsion histories are available.")
+    figure.update_xaxes(title_text="Time (s)", row=5, col=1)
+    figure.update_layout(title=title, template="plotly_dark", height=1100, hovermode="x unified")
+    return figure
+
+
 def trajectory_diagnostics_figure(
     traj: np.ndarray,
     *,

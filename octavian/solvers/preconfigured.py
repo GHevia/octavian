@@ -24,6 +24,7 @@ from numpy.typing import NDArray
 from .._asset import (
     Tmodes,
     add_back_time_bound,
+    configure_optimizer,
     oc,
     require_asset,
     set_ocp_threads,
@@ -68,6 +69,13 @@ class RendezvousResult:
     maneuvers: list[Maneuver] = field(default_factory=list)
     last_obj: float = float("nan")
     info: dict[str, Any] = field(default_factory=dict)
+    asset_phases: tuple[Any, ...] = field(default=(), repr=False, compare=False)
+    asset_odes: tuple[Any, ...] = field(default=(), repr=False, compare=False)
+
+    @property
+    def optimality_converged(self) -> bool:
+        """Whether the objective optimization fully converged before recovery."""
+        return bool(self.info.get("solve_report", {}).get("optimality_converged", False))
 
     def tf_s(self) -> float:
         """Return the final trajectory time.
@@ -101,6 +109,9 @@ class RendezvousResult:
         """
         lines: list[str] = []
         status = "CONVERGED" if self.converged else "NOT CONVERGED"
+        report = self.info.get("solve_report")
+        if report is not None and self.converged:
+            status = "OPTIMALITY CONVERGED" if self.optimality_converged else "FEASIBLE"
         cr3bp_metadata = self.info.get("cr3bp_system")
         canonical_cr3bp = (
             isinstance(cr3bp_metadata, dict) and cr3bp_metadata.get("dimensional") is False
@@ -108,6 +119,11 @@ class RendezvousResult:
         time_unit = "TU" if canonical_cr3bp else "s"
         velocity_unit = "VU" if canonical_cr3bp else "m/s"
         lines.append(f"Octavian result: {status}")
+        if report is not None:
+            lines.append(
+                "  solver stages: "
+                + ", ".join(f"{stage['stage']}={stage['flag']}" for stage in report["stages"])
+            )
         if not self.converged and self.info.get("optimizer_converged") is True:
             lines.append("  reported constraint validation: FAILED")
         lines.append(f"  tf: {self.tf_s():.3f} {time_unit}")
@@ -387,9 +403,7 @@ def solve_two_impulse_free_time(
     ocp.addPhase(phase)
 
     opts = options or SolverOptions()
-    ocp.optimizer.PrintLevel = int(opts.print_level)
-    ocp.optimizer.MaxLSIters = int(opts.max_ls_iters)
-    ocp.optimizer.set_QPOrderingMode(str(opts.qp_ordering_mode))
+    configure_optimizer(ocp.optimizer, opts)
     set_ocp_threads(ocp, opts.asset_threads)
 
     if opts.transcription_mode != "LGL3":
@@ -401,7 +415,7 @@ def solve_two_impulse_free_time(
     ocp.setAdaptiveMesh(bool(opts.enable_adaptive_mesh))
     ocp.PrintMeshInfo = False
 
-    converged = solve_with_standard_sequence(ocp, phases=(phase,))
+    solve_report = solve_with_standard_sequence(ocp, phases=(phase,))
 
     traj = np.asarray(phase.returnTraj(), dtype=np.float64)
     # traj columns for XVars=6,UVars=0 typically: [x0..x5, t]
@@ -417,11 +431,16 @@ def solve_two_impulse_free_time(
     ]
 
     return RendezvousResult(
-        converged=converged,
+        converged=solve_report.feasible,
+        asset_phases=(phase,),
+        asset_odes=(ode,),
         traj=traj,
         maneuvers=maneuvers,
         last_obj=float(getattr(ocp.optimizer, "LastObjVal", np.nan)),
         info={
+            "solve_report": solve_report.to_dict(),
+            "optimization_phases": list(solve_report.optimization_phases),
+            "phase_time_columns": [6],
             "tf_sol_s": float(traj[-1, 6]),
             "transcription_mode": opts.transcription_mode,
             "r_unit_m": r_unit,
@@ -667,9 +686,7 @@ def solve_two_impulse_precoast(
     ocp.optimizer.set_AccKKTtol(1e-6)
 
     opts = options or SolverOptions()
-    ocp.optimizer.PrintLevel = int(opts.print_level)
-    ocp.optimizer.MaxLSIters = int(opts.max_ls_iters)
-    ocp.optimizer.set_QPOrderingMode(str(opts.qp_ordering_mode))
+    configure_optimizer(ocp.optimizer, opts)
     set_ocp_threads(ocp, opts.asset_threads)
 
     for phase in [phase1, phase0]:
@@ -683,7 +700,7 @@ def solve_two_impulse_precoast(
     ocp.setAdaptiveMesh(bool(opts.enable_adaptive_mesh))
     ocp.PrintMeshInfo = False
 
-    converged = solve_with_standard_sequence(ocp, phases=(phase0, phase1))
+    solve_report = solve_with_standard_sequence(ocp, phases=(phase0, phase1))
 
     traj0 = np.asarray(phase0.returnTraj(), dtype=np.float64)
     traj1 = np.asarray(phase1.returnTraj(), dtype=np.float64)
@@ -707,11 +724,16 @@ def solve_two_impulse_precoast(
         )
 
     return RendezvousResult(
-        converged=converged,
+        converged=solve_report.feasible,
+        asset_phases=(phase0, phase1),
+        asset_odes=(ode, ode),
         traj=traj,
         maneuvers=maneuvers,
         last_obj=float(getattr(ocp.optimizer, "LastObjVal", np.nan)),
         info={
+            "solve_report": solve_report.to_dict(),
+            "optimization_phases": list(solve_report.optimization_phases),
+            "phase_time_columns": [6, 6],
             "t1_sol_s": float(traj0[-1, 6]),
             "tf_sol_s": float(traj1[-1, 6]),
             "r_unit_m": r_unit,
