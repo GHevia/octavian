@@ -108,6 +108,7 @@ def _fake_solution() -> Solution:
         ("examples/composable/earth_centered/11_low_thrust_orbit_raise.py", 1),
         ("examples/composable/earth_centered/11c_low_thrust_perturbation_continuation.py", 4),
         ("examples/composable/earth_centered/11d_circular_equatorial_target.py", 2),
+        ("examples/composable/earth_centered/11e_mean_element_propagation.py", 0),
         ("examples/composable/earth_centered/12_thrust_frames_and_attitude.py", 1),
         ("examples/composable/earth_centered/13_cannonball_drag_srp.py", 1),
         ("examples/composable/relative/16_cwh_relative_rendezvous.py", 1),

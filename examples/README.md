@@ -50,6 +50,8 @@ constraints:
   through J2, 8×8 Earth gravity, and Sun/Moon continuation stages;
 - `composable/earth_centered/11d_circular_equatorial_target.py` — exact circular
   and equatorial targets, with explicit FPA/speed/Cartesian alternatives;
+- `composable/earth_centered/11e_mean_element_propagation.py` — first-order mean
+  J2 propagation, paired osculating transforms, and a numerical comparison;
 - earth-centered examples 11–13 — low-thrust orbit raising, thrust-attitude
   representations, and cannonball drag/SRP;
 - earth-centered examples 14–15 — 8×8 EGM2008 with Sun/Moon gravity and model comparison;

@@ -22,6 +22,11 @@ The scripts read sequentially from configuration through solve and reporting.
 Short, single-use helpers are inlined; repeated cases use ordinary loops.
 Example 34 retains `solve_family_member` for its substantial continuation solve.
 
+Example 11e demonstrates the [mean-element propagator and transforms](../tutorials/propagation.md#mean-elements-and-short-period-reconstruction).
+It compares a mean circular J2 orbit with Cartesian numerical propagation and
+plots osculating element oscillations and accumulated model error. It is an
+unpowered analysis example alongside the low-thrust targeting examples.
+
 Earth-centered examples 01, 02, 03, 05, 06, 08, and 11 use `propagate.inertial`
 to overlay departure and target reference orbits. The history spans one nominal
 Keplerian period computed from each boundary state. Example 08 enables the

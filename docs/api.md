@@ -62,6 +62,8 @@ The API reference is generated from source docstrings with `mkdocstrings`.
 
 ::: octavian.propagate
 
+::: octavian.astro.mean_elements
+
 ::: octavian.cislunar.model
 
 ::: octavian.cislunar.transforms

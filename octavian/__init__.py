@@ -26,6 +26,12 @@ from . import (
     relative,
     variables,
 )
+from .astro.mean_elements import (
+    MeanElementHistory,
+    MeanElements,
+    mean_to_osculating,
+    osculating_to_mean,
+)
 from .bodies import EARTH, MOON, SUN, CelestialBody
 from .cislunar import CR3BPSystem
 from .config import MissionConfigError, load_mission, load_mission_mapping, mission_from_dict
@@ -94,6 +100,10 @@ __all__ = [
     "Phase",
     "Mission",
     "Solution",
+    "MeanElements",
+    "MeanElementHistory",
+    "mean_to_osculating",
+    "osculating_to_mean",
     "CoordinateFrame",
     "SolverScaling",
     "StateLayout",
