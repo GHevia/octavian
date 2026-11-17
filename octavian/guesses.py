@@ -99,10 +99,17 @@ class LowThrustQLawGuess:
     """Equinoctial proximity-quotient steering for a two-body orbit seed.
 
     Targets the orbit of ``Phase.final_state`` (including its plane), leaving
-    orbital phase free. The quotient uses analytic gradients and sampled maximum
-    Gauss element rates, without periapsis penalties or efficiency coasting.
-    It supports elliptic orbits away from the retrograde equinoctial singularity.
-    ``averaged=True`` time-averages Gauss rates for many-revolution seeds.
+    orbital phase free. The quotient normalizes [p,f,g] errors using maximum
+    Gauss rates at the target orbit and measures plane error by the angle between
+    orbit normals. Fixed reference rates avoid rewarding orbit inflation.
+    Analytic gradients choose steering, without periapsis penalties or
+    efficiency coasting; the seed does not minimize propellant.
+    An internal working frame supports elliptic input orbits, including
+    retrograde-equatorial orbits and plane paths crossing the inertial chart's
+    pole. Antipodal planes receive a deterministic rotation path.
+    ``averaged=True`` time-averages Gauss rates for many-revolution seeds,
+    neglecting short-period oscillations. It does not change the mission's
+    optimization objective or the direct solver's dynamics.
     ``steps_per_orbit`` controls only osculating integration; ``orbit_samples``
     controls maximum-rate sampling and the averaged quadrature.
     Tolerances terminate seed steering; they do not impose solver constraints.

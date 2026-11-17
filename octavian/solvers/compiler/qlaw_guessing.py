@@ -57,47 +57,52 @@ def proximity_quotient_gradient(
     mu: float,
     orbit_samples: int,
 ) -> tuple[float, np.ndarray]:
-    """Return Q and its analytic gradient, including rate normalization.
+    """Return the target-normalized proximity quotient and analytic gradient.
 
-    Average subgradients across tied maximum rates. This avoids arbitrarily
-    selecting one node and creating spurious eccentricity at circular orbits.
+    Reference rates are fixed at the target orbit: increasing the current
+    orbit's achievable rates must not make an unchanged error look smaller.
+    Plane error uses the angle between normals, rather than distance in the
+    stereographic (h,k) chart. This also avoids steering toward the chart's
+    retrograde singularity merely to decrease a rate-normalized error.
     """
     longitude = np.arange(orbit_samples) * (2 * np.pi / orbit_samples)
-    p, f, g, h, k = elements
-    rates = gauss_matrix(elements, longitude, mu)
-    squared = np.sum(rates * rates, axis=-1)
-    denominator = np.max(squared, axis=0)
-    c, sn = np.cos(longitude), np.sin(longitude)
-    w, q, s2 = 1 + f * c + g * sn, h * sn - k * c, 1 + h * h + k * k
-    coefficients = rates / np.sqrt(p / mu)
-    derivatives = np.zeros((orbit_samples, 5, 5, 3))
-    derivatives[:, 0, 1, 1] = -2 * p * c / w**2
-    derivatives[:, 0, 2, 1] = -2 * p * sn / w**2
-    derivatives[:, 1, 1, 1] = 1 / w - (c + f) * c / w**2
-    derivatives[:, 1, 2, 1] = -(c + f) * sn / w**2
-    derivatives[:, 1, 1, 2] = q * g * c / w**2
-    derivatives[:, 1, 2, 2] = -q / w + q * g * sn / w**2
-    derivatives[:, 2, 1, 1] = -(sn + g) * c / w**2
-    derivatives[:, 2, 2, 1] = 1 / w - (sn + g) * sn / w**2
-    derivatives[:, 2, 1, 2] = q / w - q * f * c / w**2
-    derivatives[:, 2, 2, 2] = -q * f * sn / w**2
-    derivatives[:, 1, 3, 2], derivatives[:, 1, 4, 2] = -sn * g / w, c * g / w
-    derivatives[:, 2, 3, 2], derivatives[:, 2, 4, 2] = sn * f / w, -c * f / w
-    for i, trig in ((3, c), (4, sn)):
-        derivatives[:, i, 1, 2] = -s2 * trig * c / (2 * w**2)
-        derivatives[:, i, 2, 2] = -s2 * trig * sn / (2 * w**2)
-        derivatives[:, i, 3, 2] = h * trig / w
-        derivatives[:, i, 4, 2] = k * trig / w
-    rate_gradient = 2 * p / mu * np.sum(coefficients[:, :, None, :] * derivatives, axis=-1)
-    rate_gradient[:, :, 0] = squared / p
-    rate_gradient[:, 0, 0] *= 3
-    tied = np.isclose(squared, denominator[None, :], rtol=1e-12, atol=0)
-    denominator_gradient = (
-        np.sum(rate_gradient * tied[:, :, None], axis=0) / np.sum(tied, axis=0)[:, None]
-    )
-    error = elements - target
+    rates = gauss_matrix(target, longitude, mu)[:, :3, :]
+    denominator = np.max(np.sum(rates * rates, axis=-1), axis=0)
+    error = elements[:3] - target[:3]
     quotient = float(np.sum(error * error / denominator))
-    gradient = 2 * error / denominator - (error * error / denominator**2) @ denominator_gradient
+    gradient = np.r_[2 * error / denominator, 0.0, 0.0]
+
+    h, k = elements[3:5]
+    ht, kt = target[3:5]
+    s2, st2 = 1 + h * h + k * k, 1 + ht * ht + kt * kt
+    normal = np.array([2 * k, -2 * h, 1 - h * h - k * k]) / s2
+    target_normal = np.array([2 * kt, -2 * ht, 1 - ht * ht - kt * kt]) / st2
+    sine = np.linalg.norm(np.cross(normal, target_normal))
+    cosine = np.clip(normal @ target_normal, -1.0, 1.0)
+    angle = np.arctan2(sine, cosine)
+    # The maximum plane-rotation rate per unit normal acceleration is r/|H|,
+    # attained at target apoapsis. Its inverse square supplies the plane weight.
+    plane_weight = mu / target[0] * (1 - np.hypot(target[1], target[2])) ** 2
+    quotient += plane_weight * angle * angle
+    normal_gradient = np.array(
+        [
+            (np.array([0.0, -2.0, -2 * h]) - 2 * h * normal) / s2,
+            (np.array([2.0, 0.0, -2 * k]) - 2 * k * normal) / s2,
+        ]
+    )
+    if sine < 1e-12 and cosine < 0:
+        # Antipodal planes have equally short rotation paths. Choose the path
+        # toward the chart's north pole instead of returning a zero gradient.
+        tangent = np.array([0.0, 0.0, 1.0]) - normal[2] * normal
+        if np.linalg.norm(tangent) < 1e-12:
+            tangent = np.array([1.0, 0.0, 0.0])
+        tangent /= np.linalg.norm(tangent)
+        gradient[3:5] = -2 * plane_weight * angle * (normal_gradient @ tangent)
+    else:
+        # theta/sin(theta) tends to one for coincident planes.
+        angle_ratio = angle / sine if sine > 1e-12 else 1.0
+        tangent = target_normal - cosine * normal
+        gradient[3:5] = -2 * plane_weight * angle_ratio * (normal_gradient @ tangent)
     return quotient, gradient
 
 
@@ -241,6 +246,31 @@ def build_low_thrust_qlaw_seed(
     if not 0 <= tmin < tmax:
         raise ValueError("Q-law time bounds must satisfy max > min >= 0.")
     initial_rv, target_rv = np.asarray(initial_rv, dtype=float), np.asarray(target_rv, dtype=float)
+    # Choose a working chart before converting to elements. A large node change
+    # can cross the inertial chart's pole; retrograde-equatorial input states
+    # are also regular in this frame. Ellipticity is checked after rotation.
+    for rv in (initial_rv, target_rv):
+        if rv.shape != (6,) or not np.all(np.isfinite(rv)):
+            raise ValueError("Q-law requires finite six-component Cartesian states.")
+        if np.linalg.norm(rv[:3]) <= 0 or np.linalg.norm(np.cross(rv[:3], rv[3:6])) <= 0:
+            raise ValueError("Q-law requires nonzero radius and angular momentum.")
+    initial_normal = np.cross(initial_rv[:3], initial_rv[3:6])
+    initial_normal /= np.linalg.norm(initial_normal)
+    target_normal = np.cross(target_rv[:3], target_rv[3:6])
+    target_normal /= np.linalg.norm(target_normal)
+    north = initial_normal + target_normal
+    if np.linalg.norm(north) < 1e-10:
+        north = initial_rv[:3] / np.linalg.norm(initial_rv[:3])
+    else:
+        north /= np.linalg.norm(north)
+    first = initial_rv[:3] - (initial_rv[:3] @ north) * north
+    if np.linalg.norm(first) < 1e-10 * np.linalg.norm(initial_rv[:3]):
+        axis = np.eye(3)[np.argmin(np.abs(north))]
+        first = axis - (axis @ north) * north
+    first /= np.linalg.norm(first)
+    working_basis = np.column_stack([first, np.cross(north, first), north])
+    initial_rv = (initial_rv.reshape(2, 3) @ working_basis).reshape(6)
+    target_rv = (target_rv.reshape(2, 3) @ working_basis).reshape(6)
     target, _ = equinoctial_elements(target_rv, mu)
     initial, longitude = equinoctial_elements(initial_rv, mu)
     target_a = target[0] / (1 - target[1] ** 2 - target[2] ** 2)
@@ -310,10 +340,11 @@ def build_low_thrust_qlaw_seed(
         normal /= np.linalg.norm(normal)
         basis = np.column_stack([radial, np.cross(normal, radial), normal])
         return np.r_[
-            rv,
+            (rv.reshape(2, 3) @ working_basis.T).reshape(6),
             current[6],
             time,
-            basis
+            working_basis
+            @ basis
             @ ric_control(
                 current, coasting=coast_start_time is not None and time >= coast_start_time
             ),
@@ -396,6 +427,7 @@ def build_low_thrust_qlaw_seed(
     a_error, e_error, plane_error = errors(state)
     return rows, {
         "guess_kind": "low_thrust_qlaw",
+        "seed_quotient_normalization": "target_orbit",
         "seed_averaged": config.averaged,
         "seed_tof_s": float(time),
         "seed_throttle": config.throttle,
