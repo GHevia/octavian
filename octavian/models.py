@@ -113,6 +113,13 @@ class Dynamics:
     automatically, taking precedence over general central-body constants.
     ``third_body_table_margin_s`` extends Sun/Moon and solar-geometry tables
     beyond the mission's cumulative absolute upper time bound.
+
+    Prefer ``perturbations=Perturbations(...)`` for force selection. When
+    supplied, that object replaces all top-level ``j2``, ``moon``, ``sun``,
+    ``srp``, ``drag``, and ``third_bodies`` flags; the two interfaces do not
+    merge. Without it, the top-level flags provide the same convenience
+    configuration. Within ``Perturbations``, body flags and ``third_bodies``
+    are combined and deduplicated.
     """
 
     mu_m3ps2: float = 3.986004418e14
@@ -304,7 +311,11 @@ class Dynamics:
         return dynamics
 
     def active_perturbations(self) -> Perturbations:
-        """Return normalized perturbation flags for solver compilation."""
+        """Return the explicit config, or build one from the top-level flags.
+
+        Even an empty explicit ``Perturbations()`` overrides every top-level
+        flag. This method does not merge the two configuration styles.
+        """
         if self.perturbations is not None:
             return self.perturbations
         return Perturbations(

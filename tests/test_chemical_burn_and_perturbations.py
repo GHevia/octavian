@@ -97,6 +97,24 @@ def test_sun_moon_perturbation_flags_are_normalized() -> None:
     assert third_bodies.phase_third_body_names(phase) == ("moon", "sun")
 
 
+@pytest.mark.parametrize("explicit", [Perturbations(), Perturbations(moon=True)])
+def test_explicit_perturbations_replace_all_top_level_flags(explicit):
+    dynamics = Dynamics(
+        j2=True,
+        moon=True,
+        sun=True,
+        srp=True,
+        drag=True,
+        third_bodies=("sun",),
+        perturbations=explicit,
+    )
+    assert dynamics.active_perturbations() is explicit
+    assert dynamics.active_perturbations().active_third_bodies() == explicit.active_third_bodies()
+    dynamics.perturbations = None
+    assert dynamics.active_perturbations().active_third_bodies() == ("moon", "sun")
+    assert dynamics.active_perturbations().j2
+
+
 def test_sun_moon_perturbations_require_initial_epoch() -> None:
     phase = _burn_phase()
     phase.mode = "coast"

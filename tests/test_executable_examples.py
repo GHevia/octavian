@@ -23,6 +23,7 @@ def test_executable_example(example: Path, tmp_path: Path) -> None:
     if example.name in {
         "08_chemical_burn_j2.py",
         "10_sun_moon_perturbations.py",
+        "11c_low_thrust_perturbation_continuation.py",
         "14_high_fidelity_propagation.py",
         "15_spherical_harmonics.py",
     } and not any(

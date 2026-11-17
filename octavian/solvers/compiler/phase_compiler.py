@@ -887,7 +887,7 @@ def prepare_phase_guess(
 
     rows = [np.asarray(row, dtype=float).reshape(-1) for row in guess]
     compiled_width = layout.state_dim + 1 + layout.control_dim
-    if propulsion_kind is not None and rows and all(row.size == compiled_width for row in rows):
+    if rows and all(row.size == compiled_width for row in rows):
         return rows, layout, propulsion_kind
     if (
         propulsion_kind is not None

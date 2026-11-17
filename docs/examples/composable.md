@@ -402,6 +402,29 @@ This example demonstrates a dynamics-integrated spiral seed, free terminal
 orbital phase, propellant optimization, and inertial diagnostics for Cartesian
 state, radius, speed, and osculating elements.
 
+## 11c: Low-Thrust Perturbation Continuation
+
+Path: `examples/composable/earth_centered/11c_low_thrust_perturbation_continuation.py`
+
+Solve a 100 mN orbit raise and 2° plane change in two-body dynamics, then reuse
+the full solution through J2, 8×8 EGM2008, and 8×8 plus Sun/Moon stages.
+`Solution.trajectory_guess()` retains solved mass and controls as well as
+Cartesian state and time. The configured 160-segment LGL5 mesh stays fixed
+throughout the continuation instead of growing with dense output samples.
+The final transfer includes every perturbation in optimization; the initial
+Q-law seed remains a two-body calculation.
+
+The epoch, central GM, spacecraft, and endpoint targets remain fixed across
+stages. Terminal semi-major axis, eccentricity, and inclination describe the
+osculating arrival orbit. The two-body reference curves in the plots illustrate
+the target geometry rather than a stationary orbit under perturbations.
+
+Expected output:
+
+- `traj_low_thrust_perturbation_continuation_throttle.html`
+- `traj_low_thrust_perturbation_continuation_firing.html`
+- `diagnostics_low_thrust_perturbation_continuation.html`
+
 ## 12: Thrust Frames And Kinematic Attitude
 
 Path: `examples/composable/earth_centered/12_thrust_frames_and_attitude.py`

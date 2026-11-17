@@ -45,6 +45,9 @@ constraints:
 - `composable/earth_centered/11b_low_thrust_plane_change.py` — Q-law seeding
   for a 100 mN small-satellite orbit raise with inclination change, throttle
   coloring, and firing intervals;
+- `composable/earth_centered/11c_low_thrust_perturbation_continuation.py` — solve
+  a 100 mN transfer without perturbations, then reuse its full solved history
+  through J2, 8×8 Earth gravity, and Sun/Moon continuation stages;
 - earth-centered examples 11–13 — low-thrust orbit raising, thrust-attitude
   representations, and cannonball drag/SRP;
 - earth-centered examples 14–15 — 8×8 EGM2008 with Sun/Moon gravity and model comparison;
