@@ -14,6 +14,58 @@ from octavian.variables import ImpulsiveDeltaV
 MU = 3.986004418e14
 
 
+def test_circular_and_equatorial_constraints_have_independent_jacobians():
+    from octavian.coordinates.layouts import CARTESIAN
+
+    class Capture:
+        def __init__(self):
+            self.functions = []
+            self.boundaries = []
+            self.inequalities = []
+
+        def addEqualCon(self, where, function, indices):
+            self.functions.append(function)
+
+        def addBoundaryValue(self, where, indices, values):
+            self.boundaries.extend(indices)
+
+        def addInequalCon(self, where, function, indices):
+            self.inequalities.append(function)
+
+    for inclination in (0, 180):
+        context = constraint_compiler.ConstraintContext(layout=CARTESIAN, mu_m3ps2=MU)
+        captured = Capture()
+        constraints.semi_major_axis(7e6, where="Back").apply(captured, context)
+        constraints.eccentricity(0, where="Back").apply(captured, context)
+        constraints.inclination_deg(inclination, where="Back").apply(captured, context)
+        vector = np.array([7e6, 0, 0, 0, (1 if inclination == 0 else -1) * np.sqrt(MU / 7e6), 0])
+        rows = [function.jacobian(vector)[0] for function in captured.functions]
+        rows.extend(np.eye(6)[index] for index in captured.boundaries)
+        scaled = np.asarray(rows) * np.array([7e6] * 3 + [7500] * 3)
+        scaled /= np.linalg.norm(scaled, axis=1)[:, None]
+        assert np.linalg.matrix_rank(scaled, tol=1e-8) == 5
+        assert len(captured.functions) == 3
+        assert captured.boundaries == [2, 5]
+        assert captured.inequalities[0].compute(vector)[0] < 0
+        vector[4] *= -1
+        assert captured.inequalities[0].compute(vector)[0] > 0
+
+
+def test_flight_path_angle_and_speed_report_physical_values():
+    from octavian.coordinates.layouts import CARTESIAN
+
+    radius, speed, angle = 7e6, 7500.0, 7.0
+    radians = np.deg2rad(angle)
+    rows = np.array([[radius, 0, 0, speed * np.sin(radians), speed * np.cos(radians), 0, 0]])
+    report = constraint_compiler.ConstraintReport("test", rows, rows, None, CARTESIAN, MU)
+    assert constraints.flight_path_angle_deg(angle, where="Back").report(report)[0]["satisfied"]
+    assert constraints.velocity_magnitude(speed, where="Back").report(report)[0]["satisfied"]
+    with pytest.raises(ValueError):
+        constraints.flight_path_angle_deg(90)
+    with pytest.raises(ValueError):
+        constraints.eccentricity(0, tol=0.01)
+
+
 class _FakeVector:
     def __init__(self, values: np.ndarray) -> None:
         self.values = np.asarray(values, dtype=float).reshape(3)
@@ -73,9 +125,9 @@ def test_orbital_constraint_classes_expose_their_family() -> None:
     ("factory", "kwargs", "message"),
     [
         (constraints.semi_major_axis, {"a_m": 0.0}, "a_m must be > 0"),
-        (constraints.eccentricity, {"e": 0.0}, "requires 0 < e < 1"),
+        (constraints.eccentricity, {"e": -0.1}, "requires 0 <= e < 1"),
         (constraints.eccentricity, {"e": 0.1, "tol": 0.1}, "tol must be smaller than e"),
-        (constraints.inclination_deg, {"inc_deg": 0.0}, "requires 0 < inc_deg < 180"),
+        (constraints.inclination_deg, {"inc_deg": -1.0}, "requires 0 <= inc_deg <= 180"),
         (constraints.inclination_deg, {"inc_deg": 20.0, "tol_deg": 20.0}, "tol_deg is too large"),
     ],
 )
@@ -97,7 +149,9 @@ def test_compiler_adds_exact_orbital_element_constraints(monkeypatch: pytest.Mon
     monkeypatch.setattr(
         constraint_compiler,
         "vf",
-        SimpleNamespace(Arguments=lambda _: _FakeArgs(r_m, v_mps), stack=lambda values: float(values[0])),
+        SimpleNamespace(
+            Arguments=lambda _: _FakeArgs(r_m, v_mps), stack=lambda values: float(values[0])
+        ),
         raising=True,
     )
 
@@ -141,7 +195,9 @@ def test_compiler_adds_tolerance_bands_for_orbital_element_constraints(
     monkeypatch.setattr(
         constraint_compiler,
         "vf",
-        SimpleNamespace(Arguments=lambda _: _FakeArgs(r_m, v_mps), stack=lambda values: float(values[0])),
+        SimpleNamespace(
+            Arguments=lambda _: _FakeArgs(r_m, v_mps), stack=lambda values: float(values[0])
+        ),
         raising=True,
     )
 
@@ -229,7 +285,9 @@ def test_back_impulse_target_uses_state_constraint_velocity_group() -> None:
         final_state=None,
         variables=[ImpulsiveDeltaV(where="Back")],
     )
-    assert np.allclose(composable._explicit_boundary_velocity_target(phase, "Back"), terminal_state.v_mps)
+    assert np.allclose(
+        composable._explicit_boundary_velocity_target(phase, "Back"), terminal_state.v_mps
+    )
 
 
 def test_terminal_shell_moves_only_orbital_constraints() -> None:
