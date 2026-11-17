@@ -275,6 +275,9 @@ def build_solver_options(value: Any) -> SolverOptions:
     allowed = {
         "print_level",
         "max_ls_iters",
+        "max_iterations",
+        "feasibility_tolerance",
+        "optimality_tolerance",
         "transcription_mode",
         "qp_ordering_mode",
         "enable_auto_scaling",
@@ -289,6 +292,9 @@ def build_solver_options(value: Any) -> SolverOptions:
     return SolverOptions(
         print_level=int(config.get("print_level", 0)),
         max_ls_iters=int(config.get("max_ls_iters", 2)),
+        max_iterations=int(config.get("max_iterations", 500)),
+        feasibility_tolerance=float(config.get("feasibility_tolerance", 1e-6)),
+        optimality_tolerance=float(config.get("optimality_tolerance", 1e-6)),
         transcription_mode=str(config.get("transcription_mode", "LGL3")),
         qp_ordering_mode=str(config.get("qp_ordering_mode", "MINDEG")),
         enable_auto_scaling=boolean(

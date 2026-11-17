@@ -80,6 +80,122 @@ class Solution:
             return np.empty((0, 0), dtype=float)
         return np.asarray(self.result.traj, dtype=float)
 
+    @property
+    def feasible(self) -> bool:
+        """Whether the returned trajectory passed solver and constraint checks."""
+        return self.ok
+
+    @property
+    def optimality_converged(self) -> bool:
+        """Whether objective optimization converged, separately from feasibility."""
+        return self.result is not None and self.result.optimality_converged
+
+    @property
+    def asset_phases(self) -> tuple[Any, ...]:
+        """Live ASSET phases for native constraint and multiplier access.
+
+        These refer to the final returned iterate, possibly after feasibility
+        recovery. They are not serialized. Use optimization_trajectories and
+        costate_trajectories for paired snapshots taken before recovery.
+        """
+        return () if self.result is None else self.result.asset_phases
+
+    @property
+    def optimization_trajectories(self) -> tuple[np.ndarray, ...]:
+        """Full native state/time/control histories at optimization termination."""
+        if self.result is None:
+            return ()
+        return tuple(
+            np.asarray(row["trajectory"], dtype=float)
+            for row in self.result.info.get("optimization_phases", ())
+        )
+
+    @property
+    def costate_trajectories(self) -> tuple[np.ndarray | None, ...]:
+        """ASSET costate estimates paired with optimization_trajectories.
+
+        Rows contain one costate per native differential state followed by
+        time, in ASSET's conventions. Missing estimates are None, with the
+        backend error retained in result.info['optimization_phases']. Estimates
+        from an unconverged optimization are not certified indirect solutions.
+        Scaling, state layouts, and frames remain in result.info.
+        """
+        if self.result is None:
+            return ()
+        return tuple(
+            None if row.get("costates") is None else np.asarray(row["costates"], dtype=float)
+            for row in self.result.info.get("optimization_phases", ())
+        )
+
+    def validate_dynamics(
+        self, *, max_step_s: float = 10.0, state_tolerances=None
+    ) -> list[dict[str, Any]]:
+        """Reintegrate each phase with RK4 and its compiled control interpolant.
+
+        Uses the declared ODE (including perturbations), independent of the
+        collocation equations. Each phase starts at its own solved front state;
+        impulsive links are not integrated as continuous flight. Errors use
+        native state order/units. Optional positive component tolerances give a
+        pass/fail result; otherwise this reports errors without choosing units
+        or acceptance limits for the user. This checks dynamics, not all path
+        constraints or optimality. RK4 step convergence should be checked when
+        interpreting small residuals. Canonical CR3BP times use TU, not seconds.
+        """
+        if self.result is None or not self.result.asset_odes:
+            raise ValueError("Validation requires live ASSET dynamics from a solve.")
+        if not np.isfinite(max_step_s) or max_step_s <= 0:
+            raise ValueError("max_step_s must be finite and positive.")
+        reports = []
+        for phase, ode, time_column in zip(
+            self.asset_phases,
+            self.result.asset_odes,
+            self.result.info["phase_time_columns"],
+            strict=True,
+        ):
+            raw = np.asarray(phase.returnTraj(), dtype=float)
+            table, function = phase.returnTrajTable(), ode.vf()
+            current = raw[0, :time_column].copy()
+            time = float(raw[0, time_column])
+            tolerance = (
+                None
+                if state_tolerances is None
+                else np.broadcast_to(np.asarray(state_tolerances, dtype=float), current.shape)
+            )
+            if tolerance is not None and (
+                not np.all(np.isfinite(tolerance)) or np.any(tolerance <= 0)
+            ):
+                raise ValueError(
+                    "state_tolerances must be finite and positive in native state units."
+                )
+
+            def derivative(t, x, table=table, function=function, time_column=time_column):
+                inputs = np.asarray(table.Interpolate(float(t)), dtype=float).copy()
+                inputs[:time_column] = x
+                return np.asarray(function.compute(inputs), dtype=float)
+
+            for target in raw[1:, time_column]:
+                count = max(1, int(np.ceil((target - time) / max_step_s)))
+                step = (target - time) / count
+                for _ in range(count):
+                    k1 = derivative(time, current)
+                    k2 = derivative(time + step / 2, current + step * k1 / 2)
+                    k3 = derivative(time + step / 2, current + step * k2 / 2)
+                    k4 = derivative(time + step, current + step * k3)
+                    current += step * (k1 + 2 * k2 + 2 * k3 + k4) / 6
+                    time += step
+            error = current - raw[-1, :time_column]
+            reports.append(
+                {
+                    "end_state_error": error.tolist(),
+                    "max_step": max_step_s,
+                    "within_tolerance": bool(np.all(np.abs(error) <= tolerance))
+                    if tolerance is not None
+                    else None,
+                }
+            )
+        self.result.info["dynamics_validation"] = reports
+        return reports
+
     def trajectory_guess(self, phase_index: int = 0) -> TrajectoryGuess:
         """Reuse a successful composable phase's full state/time/control history.
 
@@ -225,6 +341,50 @@ class Solution:
         return tuple(
             np.asarray(rows, dtype=float)
             for rows in self.result.info.get("phase_thrust_trajectories", ())
+        )
+
+    @property
+    def phase_propulsion_histories(self) -> tuple[np.ndarray, ...]:
+        """Per-phase [time, throttle, thrust, mass, propellant_used, acceleration].
+
+        Units are seconds, dimensionless, N, kg, kg, and m/s². Propellant use
+        starts at zero in each phase. Phases without a mass state return an
+        empty (0,6) array; mass-carrying coasts retain their mass and zero thrust.
+        """
+        if self.result is None:
+            return ()
+        histories = []
+        for mass, thrust in zip(
+            self.result.info.get("phase_mass_trajectories", ()),
+            self.phase_thrust_trajectories,
+            strict=True,
+        ):
+            if not len(mass):
+                histories.append(np.empty((0, 6)))
+                continue
+            values = np.asarray(mass, dtype=float)
+            histories.append(
+                np.column_stack(
+                    [thrust, values[:, 1], values[0, 1] - values[:, 1], thrust[:, 2] / values[:, 1]]
+                )
+            )
+        return tuple(histories)
+
+    def save_propulsion_csv(self, path: str | Path) -> None:
+        """Export phase-indexed propulsion histories in physical units."""
+        rows = [
+            np.column_stack([np.full(len(history), index), history])
+            for index, history in enumerate(self.phase_propulsion_histories)
+            if len(history)
+        ]
+        if not rows:
+            raise ValueError("The solution contains no mass-carrying phase histories.")
+        np.savetxt(
+            path,
+            np.vstack(rows),
+            delimiter=",",
+            header="phase,time_s,throttle,thrust_N,mass_kg,propellant_used_kg,acceleration_mps2",
+            comments="",
         )
 
     @property
@@ -416,6 +576,20 @@ class Solution:
         self_outer = self
 
         class _Viz:
+            def propulsion_figure(self, *, title: str = "Propulsion histories"):
+                """Plot solved throttle, thrust, mass, propellant, and acceleration."""
+                return _plotly.propulsion_history_figure(
+                    self_outer.phase_propulsion_histories, title=title
+                )
+
+            def save_propulsion_html(
+                self, out_html: str | Path, *, title: str = "Propulsion histories"
+            ) -> None:
+                """Save an interactive propulsion time-history figure."""
+                self.propulsion_figure(title=title).write_html(
+                    str(out_html), include_plotlyjs="cdn"
+                )
+
             def save_html(
                 self,
                 out_html: str,

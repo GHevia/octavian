@@ -59,3 +59,32 @@ def test_inertial_html_contains_throttle_coloring(tmp_path):
     )
     html = output.read_text()
     assert "Throttle" in html and "Thrust" in html and '"showscale":true' in html
+
+
+def test_propulsion_histories_report_mass_flow_and_acceleration(tmp_path):
+    from octavian.solution import Solution
+    from octavian.solvers.preconfigured import RendezvousResult
+
+    solution = Solution(
+        ok=True,
+        result=RendezvousResult(
+            converged=True,
+            traj=TRAJ,
+            info={
+                "phase_thrust_trajectories": [HISTORY.tolist()],
+                "phase_mass_trajectories": [
+                    np.column_stack([HISTORY[:, 0], np.linspace(100, 99, 5)]).tolist()
+                ],
+            },
+        ),
+    )
+    history = solution.phase_propulsion_histories[0]
+    np.testing.assert_allclose(history[:, 5], HISTORY[:, 2] / history[:, 3])
+    np.testing.assert_allclose(history[:, 4], np.linspace(0, 1, 5))
+    figure = solution.viz().propulsion_figure()
+    assert len(figure.data) == 5
+    np.testing.assert_array_equal(figure.data[2].y, history[:, 3])
+    output = tmp_path / "propulsion.csv"
+    solution.save_propulsion_csv(output)
+    exported = np.loadtxt(output, delimiter=",", skiprows=1)
+    np.testing.assert_allclose(exported[:, 1:], history)

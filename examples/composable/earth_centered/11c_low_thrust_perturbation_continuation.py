@@ -151,3 +151,13 @@ for coloring in ("throttle", "firing"):
 solution.viz().save_diagnostics_html(
     "diagnostics_low_thrust_perturbation_continuation.html", title=mission.name
 )
+solution.viz().save_propulsion_html("propulsion_low_thrust_continuation.html")
+solution.save_propulsion_csv("propulsion_low_thrust_continuation.csv")
+print("Feasible:", solution.feasible, "Optimality converged:", solution.optimality_converged)
+if solution.costate_trajectories and solution.costate_trajectories[0] is not None:
+    np.savez(
+        "low_thrust_optimization_duals.npz",
+        trajectory=solution.optimization_trajectories[0],
+        costates=solution.costate_trajectories[0],
+        optimality_converged=solution.optimality_converged,
+    )

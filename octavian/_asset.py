@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
+
+import numpy as np
 
 try:
     import asset_asrl as ast  # type: ignore
@@ -96,6 +99,49 @@ class AssetSolveAttempt:
     adaptive_mesh: bool | None = None
 
 
+@dataclass(frozen=True)
+class AssetSolveReport:
+    """Separate solver stages and preserve the optimization iterate's duals.
+
+    Feasibility accepts ASSET's CONVERGED and ACCEPTABLE flags. Optimality is
+    established only by CONVERGED from optimize(), before any recovery solve.
+    Costates and trajectories are snapshots of that same optimization iterate.
+    """
+
+    stages: tuple[dict[str, Any], ...]
+    optimization_phases: tuple[dict[str, Any], ...]
+    mesh_converged: bool | None
+
+    @property
+    def feasible(self) -> bool:
+        return self.stages[-1]["flag"] in {"CONVERGED", "ACCEPTABLE"}
+
+    @property
+    def optimality_converged(self) -> bool:
+        return any(
+            stage["stage"] == "optimize" and stage["flag"] == "CONVERGED" for stage in self.stages
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "feasible": self.feasible,
+            "optimality_converged": self.optimality_converged,
+            "mesh_converged": self.mesh_converged,
+            "stages": list(self.stages),
+        }
+
+
+def _phase_snapshot(phase: Any) -> dict[str, Any]:
+    snapshot = {"trajectory": np.asarray(phase.returnTraj(), dtype=float).tolist()}
+    for name, method in (("costates", "returnCostateTraj"), ("defects", "returnTrajError")):
+        try:
+            snapshot[name] = np.asarray(getattr(phase, method)(), dtype=float).tolist()
+        except (AttributeError, RuntimeError, ValueError) as exc:
+            snapshot[name] = None
+            snapshot[f"{name}_error"] = str(exc)
+    return snapshot
+
+
 def is_non_monotonic_time_error(error: BaseException | str) -> bool:
     """Return whether an ASSET error is the known non-monotonic time failure.
 
@@ -113,7 +159,7 @@ def solve_with_standard_sequence(
     *,
     phases: Sequence[Any] = (),
     retry_non_monotonic_time: bool = True,
-) -> bool:
+) -> AssetSolveReport:
     """Run Octavian's standard ASSET solve sequence with targeted recovery.
 
     Parameters
@@ -131,8 +177,10 @@ def solve_with_standard_sequence(
 
     Returns
     -------
-    bool
-        ASSET convergence flag.
+    AssetSolveReport
+        Explicit feasibility, optimization, recovery, and mesh status. ASSET
+        convergence enums must never be interpreted through bool(): every
+        enum, including DIVERGING, is truthy in supported versions.
 
     Raises
     ------
@@ -149,7 +197,30 @@ def solve_with_standard_sequence(
         if attempt.adaptive_mesh is not None:
             _set_adaptive_mesh(ocp, phases, attempt.adaptive_mesh)
         try:
-            return bool(ocp.solve_optimize_solve())
+            stages = []
+            snapshots = ()
+            for stage in ("solve", "optimize", "recover"):
+                started = perf_counter()
+                flag = getattr(ocp, "solve" if stage == "recover" else stage)()
+                name = flag.name
+                stages.append(
+                    {
+                        "stage": stage,
+                        "flag": name,
+                        "iterations": int(ocp.optimizer.LastIterNum),
+                        "objective": float(ocp.optimizer.LastObjVal),
+                        "elapsed_s": perf_counter() - started,
+                        "attempt": attempt.label,
+                    }
+                )
+                if stage == "optimize":
+                    snapshots = tuple(_phase_snapshot(phase) for phase in phases)
+                    if name == "CONVERGED":
+                        break
+            mesh_converged = (
+                bool(ocp.MeshConverged) if getattr(ocp, "AdaptiveMesh", False) else None
+            )
+            return AssetSolveReport(tuple(stages), snapshots, mesh_converged)
         except Exception as exc:  # noqa: BLE001 - backend raises implementation-specific exceptions
             if not is_non_monotonic_time_error(exc):
                 raise
@@ -189,6 +260,18 @@ def set_ocp_threads(ocp: Any, threads: tuple[int, int] | None) -> None:
     if setter is None:
         raise RuntimeError("This ASSET OCP object does not expose setThreads().")
     setter(optimizer_threads, mesh_threads)
+
+
+def configure_optimizer(optimizer: Any, options: Any) -> None:
+    """Apply shared iteration limits, tolerances, and output settings."""
+    optimizer.PrintLevel = int(options.print_level)
+    optimizer.MaxLSIters = int(options.max_ls_iters)
+    optimizer.MaxIters = options.max_iterations
+    optimizer.KKTtol = options.optimality_tolerance
+    optimizer.EContol = options.feasibility_tolerance
+    optimizer.IContol = options.feasibility_tolerance
+    optimizer.Bartol = options.feasibility_tolerance
+    optimizer.set_QPOrderingMode(str(options.qp_ordering_mode))
 
 
 def _set_adaptive_mesh(ocp: Any, phases: Sequence[Any], enabled: bool) -> None:

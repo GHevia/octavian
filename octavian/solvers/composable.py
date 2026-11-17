@@ -36,6 +36,7 @@ import numpy as np
 
 from .._asset import (
     add_back_time_bound,
+    configure_optimizer,
     fix_front_time,
     oc,
     require_asset,
@@ -2064,9 +2065,7 @@ def solve_composable_mission(
 
     # Set scaling & mesh options
     opts = options or SolverOptions()
-    ocp.optimizer.PrintLevel = int(opts.print_level)
-    ocp.optimizer.MaxLSIters = int(opts.max_ls_iters)
-    ocp.optimizer.set_QPOrderingMode(str(opts.qp_ordering_mode))
+    configure_optimizer(ocp.optimizer, opts)
     set_ocp_threads(ocp, opts.asset_threads)
     nonlinear_ephemeris_phase = any(
         _nonlinear_relative_model(build.ph) is not None
@@ -2404,7 +2403,7 @@ def solve_composable_mission(
         )
 
     # Solve
-    converged = solve_with_standard_sequence(
+    solve_report = solve_with_standard_sequence(
         ocp,
         phases=tuple(build.asset_phase for build in built),
     )
@@ -2655,17 +2654,29 @@ def solve_composable_mission(
     reported_constraints_satisfied = all(
         bool(row.get("satisfied", False)) for row in constraint_report
     )
-    validated_convergence = _validated_convergence(converged, constraint_report)
+    validated_convergence = _validated_convergence(solve_report.feasible, constraint_report)
 
     return RendezvousResult(
         converged=validated_convergence,
+        asset_phases=tuple(build.asset_phase for build in built),
+        asset_odes=tuple(
+            phase_compiler.ode_for_phase(
+                build.ph,
+                carries_mass=_layout_has_state_group(build.layout, "mass"),
+                third_body_tables=phase_compiler.tables_for_phase(build.ph, third_body_tables),
+                sun_table=phase_compiler.sun_table_for_phase(build.ph, third_body_tables),
+            )
+            for build in built
+        ),
         traj=np.asarray(traj, dtype=np.float64),
         maneuvers=maneuvers,
         last_obj=float(getattr(ocp.optimizer, "LastObjVal", np.nan)),
         info={
             "backend": "asset_composable",
             "transcription_mode": opts.transcription_mode,
-            "optimizer_converged": bool(converged),
+            "optimizer_converged": solve_report.optimality_converged,
+            "solve_report": solve_report.to_dict(),
+            "optimization_phases": list(solve_report.optimization_phases),
             "reported_constraints_satisfied": reported_constraints_satisfied,
             "nphases": len(built),
             "r_unit_m": r_unit,
@@ -2729,6 +2740,17 @@ def solve_composable_mission(
             ],
             "phase_solver_trajectories": [trajectory.tolist() for trajectory in raw_trajs],
             "phase_time_columns": [build.layout.time_column for build in built],
+            "phase_mass_trajectories": [
+                np.column_stack(
+                    [
+                        raw[:, build.layout.time_column],
+                        raw[:, build.layout.state_indices("mass")[0]],
+                    ]
+                ).tolist()
+                if _layout_has_state_group(build.layout, "mass")
+                else []
+                for raw, build in zip(raw_trajs, built, strict=True)
+            ],
             "attitude_phase_trajectories": [
                 trajectory.tolist() for trajectory in attitude_phase_trajectories
             ],
