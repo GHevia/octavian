@@ -42,6 +42,8 @@ constraints:
   expressed as vehicle, dynamics, phase, constraints, variables, and objective;
 - examples 02–07 — phase links, path constraints, and orbital targeting;
 - examples 08–10 — finite burns and perturbations;
+- `composable/earth_centered/11_low_thrust_orbit_raise.py` — a 100 mN,
+  23 kg spiral-seeded orbit raise with circular arrival and a 36–36.2 hour window;
 - `composable/earth_centered/11b_low_thrust_plane_change.py` — Q-law seeding
   for a 100 mN small-satellite orbit raise with inclination change, throttle
   coloring, and firing intervals;

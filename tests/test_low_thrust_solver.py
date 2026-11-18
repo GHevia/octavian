@@ -27,13 +27,13 @@ def _low_thrust_orbit_raise_mission() -> Mission:
     target_radius_m = 8_000_000.0
     spacecraft = Spacecraft(
         name="Electric orbit-raising vehicle",
-        dry_mass_kg=500.0,
+        dry_mass_kg=20.0,
         thrusters=[
             Thruster(
                 name="main",
-                thrust_N=5.0,
+                thrust_N=0.1,
                 isp_s=1_800.0,
-                propellant_mass_kg=60.0,
+                propellant_mass_kg=3.0,
             )
         ],
     )
@@ -52,23 +52,24 @@ def _low_thrust_orbit_raise_mission() -> Mission:
         dynamics=Dynamics(mu_m3ps2=MU),
         initial_state=initial_state,
         final_state=terminal_seed_anchor,
-        tof_bounds_s=(14.0 * 3_600.0, 24.0 * 3_600.0),
+        tof_bounds_s=(36.0 * 3_600.0, 36.2 * 3_600.0),
         initial_guess=guesses.low_thrust_spiral(throttle=0.85, steps_per_orbit=120),
         constraints=[
             constraints.state(initial_state, where="Front"),
             constraints.min_radius(6_900_000.0),
-            constraints.semi_major_axis(target_radius_m, where="Back", tol_m=10_000.0),
-            constraints.eccentricity(0.01, where="Back", tol=0.0099),
+            constraints.semi_major_axis(target_radius_m, where="Back"),
+            constraints.eccentricity(0.0, where="Back"),
         ],
     )
     return Mission(
         name="Regression fixture: low-thrust circular orbit raise",
         phases=[orbit_raise],
         objectives=[objectives.minimize_propellant()],
-        mesh_nsegs_transfer=100,
+        mesh_nsegs_transfer=200,
         solver_options=SolverOptions(
             print_level=0,
             max_ls_iters=5,
+            transcription_mode="LGL5",
             enable_adaptive_mesh=False,
             asset_threads=(1, 1),
         ),
@@ -91,12 +92,16 @@ def test_low_thrust_orbit_raise_converges_from_spiral_seed() -> None:
     powered = result.info["powered_phases"]
     assert len(powered) == 1
     assert powered[0]["kind"] == "low_thrust"
-    assert 10.0 < powered[0]["propellant_used_kg"] < 25.0
+    assert 0.5 < powered[0]["propellant_used_kg"] < 0.8
     assert result.last_obj == pytest.approx(
         -powered[0]["mass_final_kg"] / mission.phases[0].spacecraft.initial_mass_kg,
         rel=1e-8,
     )
     assert all(row["satisfied"] for row in result.info["constraint_report"])
+    assert "total dv:" not in result.summary()
+    terminal = {row["constraint"]: row["actual"] for row in result.info["constraint_report"]}
+    assert abs(terminal["semi_major_axis"] - 8_000_000.0) < 1.0
+    assert terminal["eccentricity"] < 2e-6
 
 
 def test_qlaw_plane_change_converges_and_reports_physical_thrust(monkeypatch) -> None:
@@ -116,7 +121,7 @@ def test_qlaw_plane_change_converges_and_reports_physical_thrust(monkeypatch) ->
         constraints.state(phase.initial_state, where="Front"),
         constraints.min_radius(6_900_000),
         constraints.semi_major_axis(7_200_000.0, where="Back"),
-        constraints.eccentricity(0.005, where="Back", tol=0.0049),
+        constraints.eccentricity(0.0, where="Back"),
         constraints.inclination_deg(2.0, where="Back"),
     ]
     mission.mesh_nsegs_transfer = 120

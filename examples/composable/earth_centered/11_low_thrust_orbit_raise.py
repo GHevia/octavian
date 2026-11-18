@@ -1,4 +1,4 @@
-"""Earth-centered composable example 11: fuel-optimal low-thrust orbit raising.
+"""Earth-centered example 11: 100 mN orbit raising with a circular arrival.
 
 Run:
   python examples/composable/earth_centered/11_low_thrust_orbit_raise.py
@@ -30,13 +30,13 @@ TARGET_RADIUS_M = 8_000_000.0
 
 spacecraft = Spacecraft(
     name="Electric orbit-raising vehicle",
-    dry_mass_kg=500.0,
+    dry_mass_kg=20.0,
     thrusters=[
         Thruster(
             name="main",
-            thrust_N=5.0,
+            thrust_N=0.1,
             isp_s=1_800.0,
-            propellant_mass_kg=60.0,
+            propellant_mass_kg=3.0,
         )
     ],
 )
@@ -59,7 +59,7 @@ orbit_raise = Phase(
     # This Cartesian state chooses scaling and the spiral target radius. The
     # terminal constraints below leave orbital phase free.
     final_state=terminal_seed_anchor,
-    tof_bounds_s=(14.0 * 3_600.0, 24.0 * 3_600.0),
+    tof_bounds_s=(36.0 * 3_600.0, 36.2 * 3_600.0),
     initial_guess=guesses.low_thrust_spiral(
         throttle=0.85,
         steps_per_orbit=120,
@@ -67,10 +67,8 @@ orbit_raise = Phase(
     constraints=[
         constraints.state(initial_state, where="Front"),
         constraints.min_radius(6_900_000.0),
-        constraints.semi_major_axis(TARGET_RADIUS_M, where="Back", tol_m=10_000.0),
-        # The current eccentricity declaration requires a strictly positive
-        # lower bound, so this expresses a near-circular target band.
-        constraints.eccentricity(0.01, where="Back", tol=0.0099),
+        constraints.semi_major_axis(TARGET_RADIUS_M, where="Back"),
+        constraints.eccentricity(0.0, where="Back"),
     ],
 )
 
@@ -78,10 +76,11 @@ mission = Mission(
     name="Composable: low-thrust circular orbit raise",
     phases=[orbit_raise],
     objectives=[objectives.minimize_propellant()],
-    mesh_nsegs_transfer=100,
+    mesh_nsegs_transfer=200,
     solver_options=SolverOptions(
         print_level=0,
         max_ls_iters=5,
+        transcription_mode="LGL5",
         enable_adaptive_mesh=False,
         asset_threads=(1, 1),
     ),
@@ -89,8 +88,8 @@ mission = Mission(
 
 
 solution = mission.solve()
-if solution.result is None:
-    raise RuntimeError("The low-thrust orbit-raising mission did not return a result.")
+if not solution.ok or solution.result is None:
+    raise RuntimeError("The low-thrust orbit-raising mission did not return a feasible result.")
 
 print(solution.result.summary())
 seed_info = solution.result.info["phase_guess_info"][0]
@@ -101,7 +100,7 @@ print(
     f"final radius={seed_info['seed_final_radius_m'] / 1_000.0:.3f} km"
 )
 print(
-    "Optimized propulsion: "
+    "Propulsion: "
     f"propellant={powered['propellant_used_kg']:.3f} kg, "
     f"equivalent dv={powered['equivalent_dv_mps']:.3f} m/s"
 )
