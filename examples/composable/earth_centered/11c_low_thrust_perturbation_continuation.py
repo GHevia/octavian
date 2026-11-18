@@ -61,7 +61,7 @@ transfer = Phase(
         constraints.state(initial, where="Front"),
         constraints.min_radius(6_900_000),
         constraints.semi_major_axis(TARGET_RADIUS_M, where="Back"),
-        constraints.eccentricity(0.005, where="Back", tol=0.0049),
+        constraints.eccentricity(0.0, where="Back"),
         constraints.inclination_deg(TARGET_INCLINATION_DEG, where="Back"),
     ],
 )

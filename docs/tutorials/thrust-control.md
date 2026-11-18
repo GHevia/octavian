@@ -336,6 +336,10 @@ adaptive refinement was disabled. `SolverOptions` exposes `max_iterations`,
 `feasibility_tolerance`, and `optimality_tolerance` in addition to line-search
 settings. Backend-scaled tolerances are not physical propagation tolerances.
 
+Low-thrust summaries omit the impulsive `total dv` line. Continuous-thrust
+delta-v remains available as `equivalent_dv_mps` in each
+`result.info["powered_phases"]` entry, alongside propellant consumption.
+
 Use `solution.validate_dynamics(max_step_s=10)` to reintegrate each solved
 phase's compiled ODE under its control interpolant with independent RK4. The
 result reports native endpoint state errors. Supply component-wise
@@ -396,7 +400,7 @@ schedule.
 See `examples/composable/earth_centered/11b_low_thrust_plane_change.py` for a
 100 mN, 23 kg small-satellite orbit raise from 7,000 to 7,200 km with a
 two-degree inclination change, reference orbits, and both throttle and firing
-views. Semi-major axis and inclination are equality targets, while arrival
+views. Semi-major axis, circularity, and inclination are equality targets, while arrival
 phase and ascending node remain free. It uses a scheduled 32–32.2 hour arrival window and 120 fixed LGL5 segments for a
 quick tutorial. Select the collocation order explicitly with
 `SolverOptions(transcription_mode="LGL5")`; LGL3 remains the default and LGL7

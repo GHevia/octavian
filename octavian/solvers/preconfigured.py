@@ -127,7 +127,10 @@ class RendezvousResult:
         if not self.converged and self.info.get("optimizer_converged") is True:
             lines.append("  reported constraint validation: FAILED")
         lines.append(f"  tf: {self.tf_s():.3f} {time_unit}")
-        lines.append(f"  total dv: {self.total_dv_mps():.6f} {velocity_unit}")
+        if not any(
+            phase.get("kind") == "low_thrust" for phase in self.info.get("powered_phases", [])
+        ):
+            lines.append(f"  total dv: {self.total_dv_mps():.6f} {velocity_unit}")
         if np.isfinite(self.last_obj):
             lines.append(f"  last objective: {self.last_obj:.6g}")
         if self.maneuvers:

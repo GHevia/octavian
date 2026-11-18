@@ -22,6 +22,11 @@ The scripts read sequentially from configuration through solve and reporting.
 Short, single-use helpers are inlined; repeated cases use ordinary loops.
 Example 34 retains `solve_family_member` for its substantial continuation solve.
 
+Example 11e demonstrates the [mean-element propagator and transforms](../tutorials/propagation.md#mean-elements-and-short-period-reconstruction).
+It compares a mean circular J2 orbit with Cartesian numerical propagation and
+plots osculating element oscillations and accumulated model error. It is an
+unpowered analysis example alongside the low-thrust targeting examples.
+
 Earth-centered examples 01, 02, 03, 05, 06, 08, and 11 use `propagate.inertial`
 to overlay departure and target reference orbits. The history spans one nominal
 Keplerian period computed from each boundary state. Example 08 enables the
@@ -400,7 +405,11 @@ Path: `examples/composable/earth_centered/11_low_thrust_orbit_raise.py`
 
 This example demonstrates a dynamics-integrated spiral seed, free terminal
 orbital phase, propellant optimization, and inertial diagnostics for Cartesian
-state, radius, speed, and osculating elements.
+state, radius, speed, and osculating elements. A 100 mN thruster raises a 23 kg
+vehicle from 7,000 to 8,000 km in a 36–36.2 hour arrival window. A 200-segment
+LGL5 mesh resolves the longer transfer. Arrival semi-major axis and circularity
+are equality targets, rather than broad orbital-element bands. Zero eccentricity
+uses the nonsingular FPA/circular-speed formulation.
 
 ## 11c: Low-Thrust Perturbation Continuation
 
@@ -416,7 +425,8 @@ Q-law seed remains a two-body calculation.
 
 The epoch, central GM, spacecraft, and endpoint targets remain fixed across
 stages. Terminal semi-major axis, eccentricity, and inclination describe the
-osculating arrival orbit. The two-body reference curves in the plots illustrate
+osculating arrival orbit; circularity is an equality target in every stage.
+The two-body reference curves in the plots illustrate
 the target geometry rather than a stationary orbit under perturbations.
 
 Expected output:

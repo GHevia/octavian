@@ -42,6 +42,8 @@ constraints:
   expressed as vehicle, dynamics, phase, constraints, variables, and objective;
 - examples 02–07 — phase links, path constraints, and orbital targeting;
 - examples 08–10 — finite burns and perturbations;
+- `composable/earth_centered/11_low_thrust_orbit_raise.py` — a 100 mN,
+  23 kg spiral-seeded orbit raise with circular arrival and a 36–36.2 hour window;
 - `composable/earth_centered/11b_low_thrust_plane_change.py` — Q-law seeding
   for a 100 mN small-satellite orbit raise with inclination change, throttle
   coloring, and firing intervals;
@@ -50,6 +52,8 @@ constraints:
   through J2, 8×8 Earth gravity, and Sun/Moon continuation stages;
 - `composable/earth_centered/11d_circular_equatorial_target.py` — exact circular
   and equatorial targets, with explicit FPA/speed/Cartesian alternatives;
+- `composable/earth_centered/11e_mean_element_propagation.py` — first-order mean
+  J2 propagation, paired osculating transforms, and a numerical comparison;
 - earth-centered examples 11–13 — low-thrust orbit raising, thrust-attitude
   representations, and cannonball drag/SRP;
 - earth-centered examples 14–15 — 8×8 EGM2008 with Sun/Moon gravity and model comparison;

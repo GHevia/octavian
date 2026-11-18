@@ -54,6 +54,7 @@ close after that time. See the [reference plotting guide](output-files.md#refere
 | Call | Model | Return |
 | --- | --- | --- |
 | `propagate.inertial(...)` | Cartesian RK4 with optional harmonics or J2, third-body gravity, drag, and SRP | `[r, v, time]` array |
+| `propagate.mean_elements(...)` | First-order secular J2 with paired short-period reconstruction | `MeanElementHistory` |
 | `propagate.two_body(...)` | Elliptic point-mass inertial motion | `[r, v, time]` array |
 | `propagate.cwh(...)` | Linear circular-chief CWH | `[RIC state, time]` array |
 | `propagate.nonlinear_ric(...)` | Exact circular-chief RIC before linearization | `[RIC state, time]` array |
@@ -64,6 +65,58 @@ close after that time. See the [reference plotting guide](output-files.md#refere
 Every ordinary state-history array has seven columns, with time last. The
 relative result objects keep multiple useful views together instead of
 discarding information.
+
+## Mean Elements And Short-Period Reconstruction
+
+For long unpowered arcs, `propagate.mean_elements` advances secular J2 rates
+without resolving every orbit. `MeanElements` uses modified equinoctial
+coordinates: `[p, f, g, h, k, mean_longitude]`. Here `p` is meters,
+`f=e cos(Ω+ω)`, `g=e sin(Ω+ω)`, `h=tan(i/2)cosΩ`, `k=tan(i/2)sinΩ`,
+and longitude is `Ω+ω+M` in radians. Circular and equatorial orbits are regular;
+the prograde chart excludes the retrograde-equatorial singularity.
+
+```python
+from octavian import MeanElements, mean_to_osculating, osculating_to_mean, propagate
+
+mean_initial = osculating_to_mean(initial, central_body=EARTH)
+history = propagate.mean_elements(mean_initial, times_s, central_body=EARTH)
+mean_rows = history.elements                # (N, 6), longitude stays unwrapped
+cartesian_rows = history.to_osculating()    # (N, 7), [R,V,t] in SI
+final_state = mean_to_osculating(
+    MeanElements(*mean_rows[-1]), central_body=EARTH,
+)
+```
+
+The model keeps mean a/e/i constant and advances node, periapsis, and mean
+anomaly with their first-order secular J2 rates. The paired transform uses a
+Fourier primitive of the periodic Gauss rates, with corrections defined to
+have zero average over unperturbed mean longitude. It includes the periodic
+mean-motion contribution to longitude. This defines Octavian's mean-element
+convention; it is **not** a Brouwer-Lyddane, DSST, or SGP4/TLE conversion.
+Use the same body, J2 setting, and `samples` in both transform directions.
+The secular rates follow the standard [J2 perturbation equations](https://ocw.mit.edu/courses/12-540-principles-of-the-global-positioning-system-spring-2012/2e7e22888dd18714ed32cbd3a592c520_MIT12_540S12_lec5.pdf).
+
+`samples=128` sets the Fourier grid per orbit, independently of output times.
+Increase it and check convergence for eccentric orbits. `j2=False` gives
+Keplerian mean-element motion and removes the short-period corrections.
+Transforms cannot infer revolution counts from a Cartesian state; propagation
+retains subsequent revolutions. Times are strictly monotonic elapsed seconds
+relative to the initial elements; backward propagation is supported.
+
+This is a first-order **unpowered, J2-only** analysis model. Neglected second-order
+terms accumulate phase error over long spans. Validate accuracy with
+`propagate.inertial` for the intended orbit and duration. Sun/Moon gravity,
+higher harmonics, drag, SRP, and thrust are not included. The low-thrust Q-law
+option `averaged=True` averages its thrust steering rates; it does not select
+this mean-J2 model or change the optimization dynamics.
+
+A mean circular orbit generally has nonzero *osculating* eccentricity. Existing
+mission element constraints target osculating elements. Transforming one mean
+target into a Cartesian endpoint fixes that orbital phase; it does not impose
+a phase-free mean-element constraint. See
+[example 11e](https://github.com/GHevia/octavian/blob/dev/examples/composable/earth_centered/11e_mean_element_propagation.py)
+for a circular mean orbit, paired conversion, and an independent numerical J2
+comparison with time-history plots.
 
 ## Inertial And Reduced Relative Histories
 

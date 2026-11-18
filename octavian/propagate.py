@@ -19,6 +19,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from ._asset import ast
 from .astro import propagate_cartesian_rv
+from .astro.mean_elements import propagate_mean_elements as mean_elements
 from .bodies import EARTH, CelestialBody
 from .data.ephemeris import DEFAULT_EPHEMERIS_BSP
 from .models import Perturbations
@@ -428,6 +429,8 @@ def cr3bp(
 __all__ = [
     "cr3bp",
     "cwh",
+    "inertial",
+    "mean_elements",
     "nonlinear_ric",
     "relative",
     "relative_elements",
